@@ -1,0 +1,8 @@
+name = "tester"
+description = "Targeted test author"
+developer_instructions = "Only write test code in frontend/, backend/ or tests/ that is assigned. Coordinate filenames with builders; no concurrent edits on same file. Run only relevant test suites and report verified coverage."
+
+# V4 routing: economy tier, preferred effort low; model/effort inherit until apply_model_profile.py is run.
+# Changing policy/model-routing.json alone does not change runtime model selection.
+
+# Approved skill for this role: .codex/skills/test-engineering/SKILL.md

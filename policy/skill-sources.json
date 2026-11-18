@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-11-18",
+  "policy": "Only official standards bodies or tool vendor documentation. Source is reference, not downloaded executable skill. Updating version or source requires human-reviewed PR.",
+  "sources": {
+    "openai-skills": {
+      "publisher": "OpenAI",
+      "purpose": "Skill design and progressive disclosure",
+      "url": "https://developers.openai.com/plugins/concepts/skills",
+      "version": "living",
+      "status": "official"
+    },
+    "openai-skill-evals": {
+      "publisher": "OpenAI",
+      "purpose": "Skill trigger and negative test evaluation",
+      "url": "https://developers.openai.com/blog/eval-skills",
+      "version": "living",
+      "status": "official"
+    },
+    "owasp-asvs": {
+      "publisher": "OWASP",
+      "purpose": "Application Security Verification Standard",
+      "url": "https://asvs.owasp.org/",
+      "version": "5.0.0",
+      "status": "stable"
+    },
+    "owasp-top10": {
+      "publisher": "OWASP",
+      "purpose": "Top 10 web app risks",
+      "url": "https://top10.owasp.org/",
+      "version": "2025",
+      "status": "stable"
+    },
+    "nist-ssdf": {
+      "publisher": "NIST",
+      "purpose": "Secure Software Development Framework",
+      "url": "https://csrc.nist.gov/pubs/sp/800/218/final",
+      "version": "1.1",
+      "status": "final"
+    },
+    "openapi": {
+      "publisher": "OpenAPI Initiative",
+      "purpose": "OpenAPI Specification",
+      "url": "https://spec.openapis.org/oas/",
+      "version": "living",
+      "status": "official"
+    },
+    "wcag": {
+      "publisher": "W3C",
+      "purpose": "Web Content Accessibility Guidelines",
+      "url": "https://www.w3.org/TR/WCAG22/",
+      "version": "2.2",
+      "status": "recommendation"
+    },
+    "postgres": {
+      "publisher": "PostgreSQL Global Development Group",
+      "purpose": "Official database documentation",
+      "url": "https://www.postgresql.org/docs/",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "react": {
+      "publisher": "React Team",
+      "purpose": "React official documentation",
+      "url": "https://react.dev/",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "nextjs": {
+      "publisher": "Vercel",
+      "purpose": "Next.js official documentation",
+      "url": "https://nextjs.org/docs",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "typescript": {
+      "publisher": "Microsoft",
+      "purpose": "TypeScript handbook",
+      "url": "https://www.typescriptlang.org/docs/",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "vitest": {
+      "publisher": "Vitest maintainers",
+      "purpose": "Vitest documentation",
+      "url": "https://vitest.dev/guide/",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "playwright": {
+      "publisher": "Microsoft",
+      "purpose": "Playwright documentation",
+      "url": "https://playwright.dev/docs/intro",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "sonar": {
+      "publisher": "SonarSource",
+      "purpose": "SonarQube documentation",
+      "url": "https://docs.sonarsource.com/sonarqube-server/",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "semgrep": {
+      "publisher": "Semgrep",
+      "purpose": "Semgrep documentation",
+      "url": "https://semgrep.dev/docs/",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "zap": {
+      "publisher": "OWASP",
+      "purpose": "ZAP documentation",
+      "url": "https://www.zaproxy.org/docs/",
+      "version": "version-matched",
+      "status": "vendor"
+    },
+    "github-actions": {
+      "publisher": "GitHub",
+      "purpose": "GitHub Actions security documentation",
+      "url": "https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions",
+      "version": "living",
+      "status": "vendor"
+    }
+  }
+}

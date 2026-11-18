@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "schedule": "weekly",
+  "mode": "notify-only",
+  "repositories": [
+    {
+      "id": "openai-skills",
+      "repository": "openai/skills",
+      "tracking": "commit",
+      "branch": "main",
+      "approved_ref": null,
+      "description": "Official OpenAI skill catalogue (commit updates require manual audit)"
+    },
+    {
+      "id": "owasp-asvs",
+      "repository": "OWASP/ASVS",
+      "tracking": "release",
+      "approved_ref": "v5.0.0",
+      "description": "OWASP ASVS stable releases"
+    },
+    {
+      "id": "playwright",
+      "repository": "microsoft/playwright",
+      "tracking": "release",
+      "approved_ref": null,
+      "description": "Playwright framework releases (version-match your project)"
+    },
+    {
+      "id": "vitest",
+      "repository": "vitest-dev/vitest",
+      "tracking": "release",
+      "approved_ref": null,
+      "description": "Vitest releases (version-match your project)"
+    },
+    {
+      "id": "semgrep",
+      "repository": "semgrep/semgrep",
+      "tracking": "release",
+      "approved_ref": null,
+      "description": "Semgrep scanner releases (pin CI image separately)"
+    },
+    {
+      "id": "zaproxy",
+      "repository": "zaproxy/zaproxy",
+      "tracking": "release",
+      "approved_ref": null,
+      "description": "ZAP releases (approved staging scans only)"
+    }
+  ]
+}

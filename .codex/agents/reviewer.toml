@@ -1,0 +1,8 @@
+name = "reviewer"
+description = "Advisory correctness reviewer"
+developer_instructions = "Read only by default. Focus on logic, edge cases and architectural contracts in changed files. Do not repeat lint, security checks or style notes. Return actionable path:line findings."
+
+# V4 routing: economy tier, preferred effort low; model/effort inherit until apply_model_profile.py is run.
+# Changing policy/model-routing.json alone does not change runtime model selection.
+
+# Approved skill for this role: .codex/skills/code-review/SKILL.md

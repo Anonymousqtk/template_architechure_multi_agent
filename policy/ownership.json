@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "max_concurrent_agents": 2,
+  "agent_roles": {
+    "manager": {"mode": "orchestrator", "editable_prefixes": []},
+    "frontend": {"mode": "writer", "editable_prefixes": ["frontend/"]},
+    "backend": {"mode": "writer", "editable_prefixes": ["backend/"]},
+    "database": {"mode": "writer", "editable_prefixes": ["database/"]},
+    "security": {"mode": "advisory", "editable_prefixes": []},
+    "reviewer": {"mode": "advisory", "editable_prefixes": []},
+    "optimizer": {"mode": "advisory", "editable_prefixes": []},
+    "tester": {"mode": "writer", "editable_prefixes": ["frontend/", "backend/", "tests/"]}
+  },
+  "protected_prefixes": [".github/", ".codex/", "scripts/", "policy/", "contracts/"],
+  "sensitive_prefixes": ["backend/auth/", "backend/security/", "database/migrations/"],
+  "sensitive_path_terms": ["auth", "permission", "payment", "secret", "credential", "token"],
+  "protected_files": ["AGENTS.md", "database/check.sh"],
+  "code_prefixes": ["frontend/", "backend/", "database/", "tests/"],
+  "configuration_file": ".agent-task.json"
+}

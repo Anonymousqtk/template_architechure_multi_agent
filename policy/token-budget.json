@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "mode": "soft_limits_only",
+  "note": "No automatic token metering; do not mistake task heuristics for hard quotas.",
+  "limits": {
+    "kind": "soft_heuristics_not_hard_token_enforcement",
+    "small": {
+      "max_delegations": 0,
+      "max_retries": 1,
+      "target_context_file_count": 3
+    },
+    "medium": {
+      "max_delegations": 1,
+      "max_retries": 2,
+      "target_context_file_count": 8
+    },
+    "complex": {
+      "max_delegations": 2,
+      "max_retries": 2,
+      "target_context_file_count": 15
+    },
+    "high_risk": {
+      "max_delegations": 2,
+      "max_retries": 2,
+      "target_context_file_count": 15
+    },
+    "max_concurrent_subagents": 2
+  },
+  "log_fields": [
+    "task_id",
+    "category",
+    "agents_called",
+    "retries",
+    "escalations",
+    "observed_usage_optional",
+    "notes"
+  ]
+}

@@ -1,0 +1,8 @@
+name = "database"
+description = "Database schema and migrations"
+developer_instructions = "Edit only database/. Never run destructive SQL or operate on production without explicit human approval. Define rollback and migration test. Flag migration changes as high risk."
+
+# V4 routing: balanced tier, preferred effort medium; model/effort inherit until apply_model_profile.py is run.
+# Changing policy/model-routing.json alone does not change runtime model selection.
+
+# Approved skill for this role: .codex/skills/database-migrations/SKILL.md

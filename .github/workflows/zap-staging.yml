@@ -1,0 +1,33 @@
+name: ZAP | staging passive scan (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: zap-approved-staging
+  cancel-in-progress: false
+jobs:
+  zap:
+    environment: staging-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET: ${{ vars.STAGING_URL }}
+      ALLOWED_HOST: ${{ vars.STAGING_HOST }}
+    steps:
+      - name: Confirm approved HTTPS URL
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          from urllib.parse import urlsplit
+          target = os.getenv('TARGET','')
+          allowed = os.getenv('ALLOWED_HOST','')
+          p = urlsplit(target)
+          if not allowed or p.scheme != 'https' or p.hostname != allowed or p.username or p.password or p.fragment or p.port not in (None, 443):
+              sys.exit('Refusing scan: set approved STAGING_URL and STAGING_HOST in staging-security environment')
+          print('Approved staging host:', allowed)
+          PY
+      - name: Run passive baseline (warnings reported, not auto-cleared)
+        run: |
+          docker run --rm --network host ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t "$TARGET" -m 2

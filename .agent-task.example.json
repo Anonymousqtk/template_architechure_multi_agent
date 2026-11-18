@@ -1,0 +1,8 @@
+{
+  "id": "TASK-001",
+  "summary": "Example: add employee search",
+  "allowed_scopes": ["frontend", "backend"],
+  "risk": "normal",
+  "security_review_required": false,
+  "acceptance": ["Search results match API contract", "Relevant tests pass"]
+}

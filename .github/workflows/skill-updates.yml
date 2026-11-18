@@ -1,0 +1,63 @@
+name: Skill upstream watch (no AI)
+on:
+  schedule:
+    - cron: '23 4 * * 1' # Monday 04:23 UTC (11:23 Asia/Bangkok)
+  workflow_dispatch:
+concurrency:
+  group: skill-upstream-watch
+  cancel-in-progress: false
+permissions:
+  contents: read
+  issues: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch official metadata, do not install anything
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check_skill_updates.py --output skill-update-report.json
+      - name: Publish report
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-update-report
+          path: skill-update-report.json
+          retention-days: 30
+      - name: Maintain one review issue, no auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('skill-update-report.json').read_text())
+          rows=[x for x in report['results'] if x['status'] in ('update-available','needs-baseline')]
+          if not rows:
+              Path('skill-review.md').write_text('')
+          else:
+              lines=['Review official skill/standard upstream changes before adoption.','', 'No content was downloaded, installed or executed.', '', '| Source | Status | Approved | Latest |', '|---|---|---|---|']
+              for x in rows:
+                  lines.append(f"| {x['id']} | {x['status']} | `{x.get('approved_ref') or 'not set'}` | [`{x['latest_ref']}`]({x['url']}) |")
+              lines += ['', 'Checklist: verify publisher and release notes; inspect diffs and scripts; check app compatibility; validate SKILL.md and routing; run tests; approve PR manually. Never auto-merge.']
+              Path('skill-review.md').write_text('\n'.join(lines)+'\n')
+          PY
+          if [ ! -s skill-review.md ]; then
+            echo 'No updates needing review.'
+            exit 0
+          fi
+          title='Review pending official Skill and standards updates'
+          issue_number=$(gh issue list --state open --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ -n "$issue_number" ]; then
+            gh issue edit "$issue_number" --body-file skill-review.md
+          else
+            gh issue create --title "$title" --body-file skill-review.md
+          fi

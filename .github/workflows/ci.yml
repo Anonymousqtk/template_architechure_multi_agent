@@ -1,0 +1,172 @@
+name: CI | deduplicated checks
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# No push trigger; avoid PR + push double execution.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.detect.outputs.frontend }}
+      backend: ${{ steps.detect.outputs.backend }}
+      database: ${{ steps.detect.outputs.database }}
+      code: ${{ steps.detect.outputs.code }}
+      sast: ${{ steps.detect.outputs.sast }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: python3 scripts/detect_changes.py
+
+  policy:
+    name: policy-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate declared scopes and governance risk
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: python3 scripts/policy_check.py
+      - name: Validate model-routing policy (no model calls)
+        run: python3 scripts/check_model_policy.py
+      - name: Validate approved skill routing (offline, no AI)
+        run: python3 scripts/check_skill_policy.py
+      - name: Test governance validator
+        run: python3 -m unittest discover -s tests -p 'test_policy.py'
+
+  quality:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true'
+        with:
+          node-version: '22'
+          # Do not configure cache until real project lockfile paths are verified.
+      - name: One install, lint, types, tests, build and dependency audit per affected workspace
+        env:
+          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
+          BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
+          DATABASE_CHANGED: ${{ needs.changes.outputs.database }}
+        run: bash scripts/run_quality.sh
+      - name: Publish coverage for SonarQube (not test again)
+        if: success() && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true')
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            frontend/coverage/lcov.info
+            backend/coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 2
+
+  security:
+    needs: changes
+    if: needs.changes.outputs.sast == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.144.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Single Semgrep scan of affected application directories
+        shell: sh
+        env:
+          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
+          BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
+        run: |
+          set -eu
+          set --
+          if [ "$FRONTEND_CHANGED" = true ]; then
+            test -d frontend || { echo 'Missing frontend directory'; exit 1; }
+            set -- "$@" frontend
+          fi
+          if [ "$BACKEND_CHANGED" = true ]; then
+            test -d backend || { echo 'Missing backend directory'; exit 1; }
+            set -- "$@" backend
+          fi
+          test "$#" -gt 0 || { echo 'No affected application directory'; exit 1; }
+          semgrep scan --config p/owasp-top-ten --error --quiet "$@"
+
+  sonar:
+    needs: [changes, quality]
+    if: >-
+      needs.changes.outputs.sast == 'true' &&
+      needs.quality.result == 'success' &&
+      vars.ENABLE_SONAR == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+      - name: Sonar analysis (reuses coverage; does not rerun tests)
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        with:
+          args: >-
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=frontend,backend
+            -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info,backend/coverage/lcov.info
+            -Dsonar.qualitygate.wait=true
+
+  gate:
+    name: required-gate
+    if: always()
+    needs: [changes, policy, quality, security, sonar]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate outcomes and optional Sonar policy
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          POLICY: ${{ needs.policy.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          SAST: ${{ needs.changes.outputs.sast }}
+          QUALITY: ${{ needs.quality.result }}
+          SECURITY: ${{ needs.security.result }}
+          SONAR: ${{ needs.sonar.result }}
+          ENABLE_SONAR: ${{ vars.ENABLE_SONAR }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CHANGES" == success ]] || { echo 'Change detection failed'; exit 1; }
+          [[ "$POLICY" == success ]] || { echo "Policy: $POLICY"; exit 1; }
+          if [[ "$CODE" == true ]]; then
+            [[ "$QUALITY" == success ]] || { echo "Quality: $QUALITY"; exit 1; }
+          fi
+          if [[ "$SAST" == true ]]; then
+            [[ "$SECURITY" == success ]] || { echo "SAST: $SECURITY"; exit 1; }
+          fi
+          if [[ "$ENABLE_SONAR" == true && "$SAST" == true ]]; then
+            if [[ "$EVENT_NAME" == pull_request && "$IS_FORK" == true ]]; then
+              echo 'Sonar skipped for untrusted fork; require manual trusted recheck before merge.'
+              exit 1
+            fi
+            [[ "$SONAR" == success ]] || { echo "Sonar: $SONAR"; exit 1; }
+          fi
+          echo 'All configured checks passed; skipped scopes were not tested.'

@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+coverage/
+dist/
+build/
+__pycache__/
+*.pyc
+
+skill-update-report.json
+skill-review.md
