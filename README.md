@@ -38,3 +38,13 @@ The V3 application scaffolding is still a template: the ManagerHR repo was empty
 - Local CLI: `python scripts/check_skill_updates.py --output skill-update-report.json`
 - Manual review process: `docs/SKILL-UPDATES.md`
 - No automatic Skill install, merge, execution or model calls; creates/updates a single GitHub Issue.
+
+
+## V5.2 — Invitation-only Authentication (AUTH-001)
+- Design: `docs/AUTH-INVITE-DESIGN.md`
+- Exact API routes: `contracts/api.md`
+- Proposed PostgreSQL migration: `database/migrations/001_auth_invitation_schema.sql` (NOT APPLIED)
+- Agent plan and acceptance cases: `docs/AGENT-TASK-AUTH-001.md`, `docs/AUTH-TEST-MATRIX.md`
+- Pasteable Codex Manager prompt: `prompts/MANAGER-AUTH-INVITE.md`
+- `.agent-task.json` records the high-risk task contract.
+**IMPORTANT:** This is an implementation-ready blueprint and V5.1 governance overlay, not a running Authentication app. Repository `Anonymousqtk/ManagerHR` was empty at validation; GitHub access is read-only. Developer must run Codex locally after putting files in a working repository.

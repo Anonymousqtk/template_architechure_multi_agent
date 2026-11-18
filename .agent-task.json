@@ -1,0 +1,19 @@
+{
+  "id": "AUTH-001",
+  "summary": "Invitation-only auth, login, forgot/reset password",
+  "allowed_scopes": [
+    "frontend",
+    "backend",
+    "database"
+  ],
+  "risk": "high",
+  "security_review_required": true,
+  "acceptance": [
+    "Only HR/Admin authorized invitation; no public signup",
+    "Invite token single use and expiry enforced atomically",
+    "Safe login/logout with server-side sessions",
+    "Forgot/reset flow generic and rate-limited",
+    "Cross-organization authorization denied",
+    "Tests and security gates evidenced"
+  ]
+}
