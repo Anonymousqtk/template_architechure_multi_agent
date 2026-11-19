@@ -1,8 +1,8 @@
 {
-  "version": 4,
-  "mode": "advisory-with-static-validation",
+  "version": "5.3",
+  "mode": "advisory-inherit-by-default",
   "default_profile": "inherit",
-  "max_parallel_subagents": 2,
+  "max_parallel_subagents": 1,
   "roles": {
     "frontend": {
       "default_tier": "economy",
@@ -48,14 +48,6 @@
         "balanced": null,
         "deep": null
       }
-    },
-    "example": {
-      "description": "Documentation example ONLY: requires confirmed access and explicit apply.",
-      "tier_models": {
-        "economy": "gpt-6-luna",
-        "balanced": "gpt-6.1-sol",
-        "deep": "gpt-6.1-sol"
-      }
     }
   },
   "escalation": {
@@ -66,15 +58,15 @@
       "HIGH_RISK_MIGRATION",
       "UNRESOLVED_REVIEW_FINDING"
     ],
-    "max_escalations_per_task": 1,
+    "max_escalations_per_task": 0,
     "approval_required": true,
     "override_target": "deep",
     "never_escalate_only_for_style": true
   },
   "routing": {
-    "trivial_max_files": 2,
-    "default_max_delegations": 1,
-    "max_delegations_complex": 2,
+    "trivial_max_files": 3,
+    "default_max_delegations": 0,
+    "max_delegations_complex": 1,
     "never_delegate_for": [
       "format",
       "lint",

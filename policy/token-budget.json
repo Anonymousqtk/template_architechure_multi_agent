@@ -1,38 +1,54 @@
 {
   "schema_version": 1,
-  "mode": "soft_limits_only",
-  "note": "No automatic token metering; do not mistake task heuristics for hard quotas.",
+  "mode": "advisory_not_enforced",
+  "note": "This is a behavioral budget, not actual token metering. Total task usage includes parent and all subagents; approval needed before exceptional delegation.",
   "limits": {
-    "kind": "soft_heuristics_not_hard_token_enforcement",
     "small": {
       "max_delegations": 0,
       "max_retries": 1,
       "target_context_file_count": 3
     },
     "medium": {
-      "max_delegations": 1,
-      "max_retries": 2,
-      "target_context_file_count": 8
+      "max_delegations": 0,
+      "max_retries": 1,
+      "target_context_file_count": 6
     },
     "complex": {
-      "max_delegations": 2,
-      "max_retries": 2,
-      "target_context_file_count": 15
+      "max_delegations": 1,
+      "max_retries": 1,
+      "target_context_file_count": 10
     },
     "high_risk": {
-      "max_delegations": 2,
-      "max_retries": 2,
-      "target_context_file_count": 15
+      "max_delegations": 1,
+      "max_retries": 1,
+      "target_context_file_count": 10
     },
-    "max_concurrent_subagents": 2
+    "max_concurrent_subagents": 1,
+    "max_model_escalations": 0,
+    "additional_delegation_requires_explicit_approval": true
   },
   "log_fields": [
     "task_id",
-    "category",
-    "agents_called",
-    "retries",
-    "escalations",
-    "observed_usage_optional",
-    "notes"
+    "delegations",
+    "why_delegated",
+    "files_read",
+    "tests_run",
+    "tests_reused",
+    "observed_usage_if_available",
+    "approval"
+  ],
+  "version": "5.3",
+  "tool_first": [
+    "changed_files",
+    "targeted_tests",
+    "lint",
+    "typecheck",
+    "existing_scan_reports"
+  ],
+  "no_repeat_if_same_commit_and_settings": true,
+  "stop_conditions": [
+    "targeted test failed twice: stop and summarize root cause",
+    "missing required credentials or services: report blocker",
+    "security control unverified: report NOT VERIFIED, do not claim PASS"
   ]
 }

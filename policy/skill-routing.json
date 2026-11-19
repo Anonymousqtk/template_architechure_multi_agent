@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "default": "auto_by_description",
+  "default": "none_until_task_requires_skill",
   "skills_root": ".codex/skills",
-  "max_skills_per_task": 2,
+  "max_skills_per_task": 1,
   "human_approval_for_external_skill": true,
   "roles": {
     "manager": [
@@ -47,10 +47,11 @@
     ]
   },
   "rules": [
-    "Choose at most 2 relevant skills per task; prefer one.",
-    "A skill defines procedure, not proof of compliance.",
-    "No external downloads or script execution from a discovered skill without review.",
-    "Never claim a skill was invoked without runtime evidence.",
-    "Automated security, test and approval gates remain mandatory."
+    "Default no project skill for trivial changes.",
+    "Read descriptions first; load one relevant SKILL.md only if necessary.",
+    "Security/migration procedures remain mandatory when applicable; these can be performed in main agent.",
+    "No automatic skill installation or execution.",
+    "CI tests and scans are never skipped solely to reduce tokens.",
+    "Skill routing policy does not prove runtime invocation."
   ]
 }

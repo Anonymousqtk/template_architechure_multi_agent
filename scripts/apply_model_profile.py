@@ -23,7 +23,7 @@ def validate(policy):
     names=set(policy['roles'])
     actual={p.stem for p in AGENTS.glob('*.toml')}
     if names!=actual: raise ValueError(f'Agent mismatch: policy={names} files={actual}')
-    if policy['max_parallel_subagents']>2: raise ValueError('Too many subagents')
+    if policy['max_parallel_subagents']>1: raise ValueError('Too many subagents')
     for role,routing in policy['roles'].items():
         assert routing['default_tier'] in ('economy','balanced','deep')
         assert routing['default_effort'] in ('low','medium','high')
@@ -31,11 +31,11 @@ def validate(policy):
         if cfg['name']!=role:raise ValueError(f'Invalid agent name: {role}')
         if ('model' in cfg)!=('model_reasoning_effort' in cfg): raise ValueError(f'Model/effort must be paired: {role}')
     cfg=tomllib.loads((ROOT/'.codex/config.toml').read_text())
-    if cfg['agents']['max_concurrent_threads_per_session']>2:raise ValueError('Concurrency exceeds governance cap')
+    if cfg['agents']['max_concurrent_threads_per_session']>1:raise ValueError('Concurrency exceeds governance cap')
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--profile',default='inherit',choices=['inherit','example'])
+    ap.add_argument('--profile',default='inherit',choices=list(json.loads(POLICY.read_text())['profiles']))
     ap.add_argument('--available-models',help='Comma-separated model IDs confirmed in YOUR Codex client')
     ap.add_argument('--apply',action='store_true',help='Modify agent TOML; otherwise dry run')
     args=ap.parse_args()

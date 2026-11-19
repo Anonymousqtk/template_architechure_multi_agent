@@ -1,3 +1,21 @@
+# ManagerHR V5.3 — TOKEN-LEAN STRICT (update to V5.2)
+
+**This package includes the V5.2 blueprint, plus V5.3 policy changes. It is NOT a deployed application.**
+
+Start: `docs/TOKEN-LEAN-V5.3.md`, then `prompts/MANAGER-TOKEN-LEAN.md`.
+
+- Default 0 subagents; 1 bounded delegation only for complex/high-risk tasks when justified.
+- At most 1 subagent simultaneously; this does not meter token usage.
+- Security, code review and tests are required where relevant, but need not be extra AI Agents.
+- Use account-selected model; no unverified model IDs in profiles.
+- One relevant Skill at most by default, load on demand.
+- Maintain existing deduplicated CI workflows and invitation-only auth design.
+- New offline policy validator: `python3 scripts/check_token_lean.py`.
+- Use `python3 -m unittest discover -s tests` for policy tests.
+- Do NOT overwrite existing app code or GitHub workflows without reviewing diffs.
+
+---
+
 # ManagerHR — V4 Model Routing + Agent Governance
 
 **This package extends V3. No repository code has been deployed or modified on GitHub.**

@@ -46,6 +46,8 @@ jobs:
         run: python3 scripts/policy_check.py
       - name: Validate model-routing policy (no model calls)
         run: python3 scripts/check_model_policy.py
+      - name: Validate token-lean policy (offline, no AI)
+        run: python3 scripts/check_token_lean.py
       - name: Validate approved skill routing (offline, no AI)
         run: python3 scripts/check_skill_policy.py
       - name: Test governance validator

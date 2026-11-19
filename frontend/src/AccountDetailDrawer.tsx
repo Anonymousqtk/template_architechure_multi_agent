@@ -1,0 +1,59 @@
+import { useSlideClose } from './useSlideClose';
+import './drawers.css';
+import { useEffect,useRef,useState } from 'react';
+import { createPortal } from 'react-dom';
+import { errorText,request,type Profile } from './api';
+import { roleLabels,statusLabel,type Account } from './account-types';
+
+type Props={id:string;profile:Profile;onClose:()=>void;onSaved:()=>void};
+export function AccountDetailDrawer({id,profile,onClose,onSaved}:Props) {
+  const dialog=useRef<HTMLDialogElement>(null),heading=useRef<HTMLHeadingElement>(null),editor=useRef<HTMLDivElement>(null),alive=useRef(true),saving=useRef(false);
+  const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[editing,setEditing]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+  const [role,setRole]=useState(''),[managerId,setManagerId]=useState(''),[managerSearch,setManagerSearch]=useState(''),[managers,setManagers]=useState<Account[]>([]);
+  const base='/api/organizations/'+encodeURIComponent(profile.organization.id)+'/users';
+  const canChange=Boolean(account&&account.id!==profile.user.id);
+  const canAssign=canChange&&Boolean(profile.permissions.assignRoles);
+  const canStatus=canChange&&Boolean(profile.permissions.manageUsers)&&(profile.permissions.assignRoles||account?.role==='EMPLOYEE');
+  const {closing,dismiss}=useSlideClose(onClose);
+  const dirty=Boolean(editing&&account&&(role!==account.role||(account.role==='EMPLOYEE'&&managerId!==(account.managerUserId||''))));
+  useEffect(()=>{
+    const modal=dialog.current!,previous=document.activeElement as HTMLElement|null,overflow=document.body.style.overflow;
+    modal.showModal();heading.current?.focus();document.body.style.overflow='hidden';
+    return()=>{modal.close();document.body.style.overflow=overflow;if(previous?.isConnected)previous.focus();else document.getElementById('users-heading')?.focus();};
+  },[]);
+  useEffect(()=>{alive.current=true;let active=true;request<{user:Account}>(base+'/'+encodeURIComponent(id)).then(r=>{if(active){setAccount(r.user);setRole(r.user.role);setManagerId(r.user.managerUserId||'');}}).catch(e=>{if(active)setError(errorText(e));}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;alive.current=false;};},[base,id]);
+  useEffect(()=>{if(!editing||!canAssign||account?.role!=='EMPLOYEE')return;let active=true;const timer=window.setTimeout(()=>{request<{items:Account[]}>(base+'?role=MANAGER&status=active&limit=100&q='+encodeURIComponent(managerSearch)).then(r=>{if(active)setManagers(r.items);}).catch(e=>{if(active)setError(errorText(e));});},200);return()=>{active=false;window.clearTimeout(timer);};},[editing,canAssign,account?.role,base,managerSearch]);
+  useEffect(()=>{if(editing)editor.current?.querySelector<HTMLElement>('select,input')?.focus();},[editing]);
+  useEffect(()=>{if(!dirty&&!busy)return;const prevent=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',prevent);return()=>window.removeEventListener('beforeunload',prevent);},[dirty,busy]);
+  function close(){if(saving.current||closing)return;if(dirty&&!window.confirm('Bỏ các thay đổi chưa lưu và đóng chi tiết?'))return;dismiss();}
+  function cancelEdit(){if(dirty&&!window.confirm('Bỏ các thay đổi chưa lưu?'))return;if(account){setRole(account.role);setManagerId(account.managerUserId||'');}setEditing(false);heading.current?.focus();}
+  async function change(action:'role'|'manager'|'status',body:Record<string,unknown>) {
+    if(!account||saving.current)return;
+    if(action==='role'&&managerId!==(account.managerUserId||'')&&!window.confirm('Đổi vai trò sẽ bỏ phần phân công quản lý chưa lưu. Tiếp tục?'))return;
+    saving.current=true;setBusy(true);setError('');setMessage('');
+    try {
+      await request(base+'/'+encodeURIComponent(id)+'/'+action,body);
+      if(!alive.current)return;
+      const updated={...account,...(action==='role'?{role:String(body.role),managerUserId:null}:action==='manager'?{managerUserId:body.managerUserId as string|null}:{isActive:Boolean(body.isActive)})};
+      setAccount(updated);if(action==='role'){setRole(updated.role);setManagerId('');}if(action==='manager')setManagerId(updated.managerUserId||'');
+      setMessage('Đã cập nhật tài khoản.');onSaved();
+      try {const fresh=await request<{user:Account}>(base+'/'+encodeURIComponent(id));if(alive.current){setAccount(fresh.user);if(action==='role'){setRole(fresh.user.role);setManagerId(fresh.user.managerUserId||'');}if(action==='manager')setManagerId(fresh.user.managerUserId||'');}}catch{if(alive.current)setError('Đã lưu thay đổi nhưng chưa tải lại được chi tiết. Đóng và mở lại để kiểm tra.');}
+    }catch(e){if(alive.current)setError(errorText(e));}finally{saving.current=false;if(alive.current)setBusy(false);}
+  }
+  return createPortal(<dialog ref={dialog} className={'account-drawer'+(closing?' is-closing':'')} aria-labelledby="account-detail-title" aria-modal="true" onCancel={event=>{event.preventDefault();close();}} onClick={event=>{if(event.target!==event.currentTarget)return;const rect=event.currentTarget.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)close();}}>
+    <header className="drawer-header"><div><span className="eyebrow">{editing?'CHỈNH SỬA':'THÔNG TIN TÀI KHOẢN'}</span><h2 id="account-detail-title" ref={heading} tabIndex={-1}>Chi tiết tài khoản</h2></div><button className="secondary" onClick={close} disabled={busy||closing} aria-label="Đóng chi tiết">×</button></header>
+    <div className="drawer-body" inert={closing} aria-busy={loading||busy}>
+      {error&&<p role="alert" className="notice error">{error}</p>}{message&&<p role="status" className="notice success">{message}</p>}
+      {loading&&<p role="status">Đang tải chi tiết…</p>}
+      {account&&<><div className={'drawer-profile-summary'+(editing?' is-editing':'')}><span className="drawer-profile-avatar" aria-hidden="true">{account.fullName.split(' ').filter(Boolean).slice(-2).map(part=>part[0]).join('').toUpperCase()}</span><div><h3>{account.fullName}</h3><p>{editing?account.email:roleLabels[account.role]}</p><span className={'drawer-account-badge'+(!account.isActive?' is-locked':'')}>{statusLabel(account)}</span></div></div>{!editing&&<dl className="drawer-detail-list"><div><dt>Email</dt><dd>{account.email}</dd></div><div><dt>Vai trò</dt><dd>{roleLabels[account.role]}</dd></div><div><dt>Trạng thái</dt><dd>{statusLabel(account)}</dd></div><div><dt>Email xác minh</dt><dd>{account.emailVerified?'Đã xác minh':'Chưa xác minh'}</dd></div><div><dt>Tham gia</dt><dd>{new Date(account.createdAt).toLocaleDateString('vi-VN')}</dd></div></dl>}
+      {!editing&&(canAssign||canStatus)&&<button className="primary" onClick={()=>{setEditing(true);setError('');setMessage('');}}>Chỉnh sửa tài khoản</button>}
+      {!canAssign&&!canStatus&&<p className="muted">Bạn chỉ có quyền xem tài khoản này.</p>}
+      {editing&&<div ref={editor}><p>Lưu từng phần khi cần. Đổi vai trò hoặc khóa tài khoản sẽ thu hồi các phiên liên quan.</p>
+        {canAssign&&<form className="role-editor" onSubmit={event=>{event.preventDefault();if(window.confirm('Đổi vai trò của '+account.email+'?'))void change('role',{role});}}><label className="field">Vai trò mới<select value={role} onChange={event=>setRole(event.target.value)} disabled={busy}>{Object.entries(roleLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><button className="primary" disabled={busy||role===account.role}>Lưu vai trò</button></form>}
+        {canAssign&&account.role==='EMPLOYEE'&&<form className="role-editor" onSubmit={event=>{event.preventDefault();void change('manager',{managerUserId:managerId||null});}}><label className="field">Tìm người quản lý<input type="search" value={managerSearch} onChange={event=>setManagerSearch(event.target.value)} disabled={busy}/></label><label className="field">Người quản lý<select value={managerId} onChange={event=>setManagerId(event.target.value)} disabled={busy}><option value="">Chưa phân công</option>{managerId&&!managers.some(manager=>manager.id===managerId)&&<option value={managerId}>Người quản lý hiện tại</option>}{managers.map(manager=><option key={manager.id} value={manager.id}>{manager.fullName} · {manager.email}</option>)}</select></label><button className="primary" disabled={busy||managerId===(account.managerUserId||'')}>Lưu phân công</button></form>}
+        {canStatus&&<section className="drawer-danger"><h3>Trạng thái truy cập</h3><p>Khóa tài khoản sẽ chặn đăng nhập và thu hồi các phiên liên quan.</p><button className="secondary" disabled={busy||!account.userIsActive} onClick={()=>{if(window.confirm((account.isActive?'Khóa':'Mở khóa')+' tài khoản '+account.email+'?'))void change('status',{isActive:!account.isActive});}}>{account.isActive?'Khóa tài khoản':'Mở khóa tài khoản'}</button></section>}
+      </div>}
+      </>}
+    </div><footer className="drawer-footer">{editing?<button className="secondary" disabled={busy||closing} onClick={cancelEdit}>Quay lại thông tin</button>:<span>Chỉ hiển thị thông tin trong phạm vi quyền của bạn.</span>}{busy&&<span role="status">Đang lưu, vui lòng đợi…</span>}</footer>
+  </dialog>,document.body);
+}

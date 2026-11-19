@@ -7,9 +7,9 @@ def main():
     cfg=json.loads((ROOT/'policy/model-routing.json').read_text())
     agents={p.stem:p for p in (ROOT/'.codex/agents').glob('*.toml')}
     if set(agents)!=set(cfg['roles']):raise ValueError('Agent role drift')
-    if cfg['max_parallel_subagents']!=2:raise ValueError('Unexpected concurrency policy')
+    if cfg['max_parallel_subagents']!=1:raise ValueError('Unexpected concurrency policy')
     parent=tomllib.loads((ROOT/'.codex/config.toml').read_text())
-    if parent['agents']['max_concurrent_threads_per_session']!=2:raise ValueError('Concurrency config drift')
+    if parent['agents']['max_concurrent_threads_per_session']!=1:raise ValueError('Concurrency config drift')
     chosen=set()
     for role,p in agents.items():
         doc=tomllib.loads(p.read_text()); r=cfg['roles'][role]

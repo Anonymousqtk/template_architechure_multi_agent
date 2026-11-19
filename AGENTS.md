@@ -13,8 +13,8 @@
 5. Check if deterministic lint, typecheck, test, SAST or dependency tools already answer the question; do not pay tokens for duplicate agent review.
 
 ## Routing and scope
-- <= 2 related source files: main agent handles directly if safe; only call subagent for specialized risk.
-- Larger tasks: call 1 relevant builder. At most 2 subagents simultaneously only for truly independent work.
+- Default: main agent implements all tasks. Never delegate based on file count alone.
+- For complex tasks, justify at most one bounded subagent (total per task); require explicit approval to exceed this. Concurrency cap: one.
 - Frontend owns `frontend/`; Backend owns `backend/`; Database owns `database/`.
 - Tester owns tests inside `frontend/`, `backend/` or `tests/` only when assigned; coordinate with builder to avoid file collisions.
 - Security and Reviewer are advisory/read-only by default. Optimizer proposes changes only after benchmark evidence.
@@ -30,14 +30,14 @@
 ## V4 model and token policy (mandatory behavior)
 - Read `policy/model-routing.json` for role and escalation rules; it is NOT a runtime model selector.
 - Read `policy/token-budget.json` for soft delegation/retry guardrails.
-- Default to no subagent on small tasks; one for medium; at most two independent subagents for complex tasks.
+- Default to no subagent on small tasks; zero for medium; at most one bounded subagent for complex tasks.
 - Never silently switch model, buy credits, invoke API fallback or imply hard token enforcement.
 - Escalate only for an enumerated trigger with recorded evidence and explicit operator approval.
 - Security checks, migration safety and verified CI quality gates override token-saving heuristics.
 
 ## V5 skills (mandatory routing policy)
 - Read `policy/skill-routing.json` to choose from pre-approved project skills when the task needs a repeatable workflow.
-- Skills are local at `.codex/skills/*/SKILL.md`; normally select at most one, at most two for genuinely cross-cutting tasks. Only load matching SKILL.md, not the full catalog.
+- Skills are local at `.codex/skills/*/SKILL.md`; normally select at most one, one by default; cross-cutting needs an explicit reason. Only load matching SKILL.md, not the full catalog.
 - Use `policy/skill-sources.json` for approved standards and vendor documentation. Standards are references, not externally installed skills; verify the actual project framework/version.
 - Do not automatically clone, install, fetch or execute third-party skills/scripts, even if search results recommend them. Require human code review and pinned revision before installation.
 - `scripts/check_skill_policy.py` validates metadata and routing, but cannot prove an agent invoked a skill or complied with an external standard.
@@ -49,3 +49,14 @@
 - Authentication is invitation-only. No anonymous registration, no role self-assignment, no automatic admin bootstrap.
 - Treat auth as high risk: require Security review and test evidence before release.
 - Schema SQL is a reviewable migration proposal, not proof of successful application.
+
+## V5.3 — TOKEN-LEAN STRICT (overrides earlier delegation advice)
+- SINGLE-AGENT FIRST: use main Codex session for implementation, tests and summary. The seven role TOMLs remain available but are not a mandatory pipeline.
+- No subagent by default for small/medium tasks. For complex or high-risk work: at most ONE total subagent if the parent cannot do a bounded independent portion efficiently. Ask the user before creating additional subagents.
+- Do NOT invoke Security, Tester and Reviewer as separate agents automatically. Run ordinary CLI scanners/tests locally; main agent analyzes actionable failures. High-risk auth/RBAC requires security controls and evidence, not necessarily a dedicated subagent.
+- Read task-specific policy only; do not open every policy and SKILL.md at startup. Root AGENTS.md applies; read the relevant policy on demand.
+- Check existing git diff and targeted tests first. Do not rerun identical checks on unchanged code and same inputs. Re-run tests affected by changes and full CI for release.
+- Limit terminal output: concise failure excerpts, paths and line ranges; never print full dependency trees, entire logs or entire source files unnecessarily.
+- Use existing Codex account model (inherit). No fabricated names, automatic model switching, API fallback or claims of enforced token quotas.
+- Auth security requirements, permission checks, migration safety, secret protection and required CI gates are non-negotiable.
+- Report: scope, changed files, checks actually run (PASS/FAIL/NOT VERIFIED), delegation count and why, outstanding risks.

@@ -1,19 +1,38 @@
 {
-  "id": "AUTH-001",
-  "summary": "Invitation-only auth, login, forgot/reset password",
+  "id": "UX-012",
+  "summary": "Match drawer behavior and prevent login flashes during authenticated navigation",
   "allowed_scopes": [
     "frontend",
     "backend",
-    "database"
+    "database",
+    "tests",
+    "governance"
   ],
   "risk": "high",
   "security_review_required": true,
   "acceptance": [
-    "Only HR/Admin authorized invitation; no public signup",
-    "Invite token single use and expiry enforced atomically",
-    "Safe login/logout with server-side sessions",
-    "Forgot/reset flow generic and rate-limited",
-    "Cross-organization authorization denied",
-    "Tests and security gates evidenced"
-  ]
+    "260/70 desktop rail with hover/keyboard overlay without shifting content",
+    "Single controlled accordion and fixed inner menu geometry",
+    "1200px mobile breakpoint, slide-in/out backdrop and focus/scroll restoration",
+    "Detail view/edit matches purple neutral design with no duplicated read-only fields in edit",
+    "Closing animation respects reduced motion and preserves dirty/busy guards",
+    "Authenticated menu navigation updates route without reloading session or briefly showing login; browser history remains functional",
+    "Tests lint typecheck build and browser geometry/motion checks pass"
+  ],
+  "model_profile": "inherit",
+  "governance": "V5.3",
+  "delegations": 0,
+  "notes": "User confirmed both drawers. Reference F:/Code/CloneRea/hr-manager remains read-only. Its detail modal is centered; preserve previously requested right-side detail interaction while applying reference tokens/profile layout. Also fix authenticated menu links reloading the app and rechecking session, which can flash login. Keep auth server/session controls unchanged; inspect client auth boundary and verify regression with focused tests. frontend-standards and test-engineering; no delegation.",
+  "status": "IN_PROGRESS",
+  "skills_used_current": [
+    "security-review",
+    "frontend-standards",
+    "test-engineering"
+  ],
+  "checks": {
+    "frontend_test": "PASS: npm test -- src/App.test.tsx src/DashboardShell.test.tsx (28 tests)",
+    "frontend_lint": "PASS: npm run lint",
+    "frontend_build": "PASS: npm run build (TypeScript check and Vite production build)",
+    "security_review": "NOT VERIFIED: frontend navigation only; no auth/session server code changed, no security scanner run"
+  }
 }

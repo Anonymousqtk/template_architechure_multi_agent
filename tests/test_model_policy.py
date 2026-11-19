@@ -11,10 +11,10 @@ class TestModelPolicy(unittest.TestCase):
   self.assertEqual(p.returncode,0,p.stderr)
   self.assertEqual(before,(ROOT/'.codex/agents/frontend.toml').read_bytes())
  def test_unsupported_unconfirmed_profile_rejected(self):
-  p=subprocess.run([sys.executable,str(ROOT/'scripts/apply_model_profile.py'),'--profile','example'],capture_output=True,text=True)
+  p=subprocess.run([sys.executable,str(ROOT/'scripts/apply_model_profile.py'),'--profile','unknown-unapproved-model'],capture_output=True,text=True)
   self.assertNotEqual(p.returncode,0)
  def test_roles_defined(self):
   policy=json.loads((ROOT/'policy/model-routing.json').read_text())
   self.assertEqual(len(policy['roles']),7)
-  self.assertEqual(policy['max_parallel_subagents'],2)
+  self.assertEqual(policy['max_parallel_subagents'],1)
 if __name__=='__main__': unittest.main()
