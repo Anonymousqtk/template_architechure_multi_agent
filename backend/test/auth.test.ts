@@ -477,7 +477,7 @@ describe('AUTH-003 advanced sessions and runtime MFA policy',()=>{
  beforeAll(async()=>{secureBase=await start({config:{...config,requireMfa:true,mfaKey}});});
  const secureActor=(email='admin@example.test')=>actor(email,secureBase);
  const currentCode=(secret:string)=>totp(secret,Math.floor(Date.now()/30000));
- async function enroll(client:Client){const begin=await client.post('/api/auth/mfa/enroll',{password});expect(begin.status).toBe(200);const done=await client.post('/api/auth/mfa/confirm',{code:currentCode(begin.body.secret)});expect(done.status).toBe(200);return {secret:begin.body.secret,codes:done.body.recoveryCodes as string[]};}
+ async function enroll(client:Client){const begin=await client.post('/api/auth/mfa/enroll',{password});expect(begin.status).toBe(200);const usedCode=currentCode(begin.body.secret);const done=await client.post('/api/auth/mfa/confirm',{code:usedCode});expect(done.status).toBe(200);return {secret:begin.body.secret,codes:done.body.recoveryCodes as string[],usedCode};}
  it('HARD-01 idle and absolute expiry reject otherwise valid sessions',async()=>{
    const client=await secureActor('employee@example.test');
    await pool.query("UPDATE user_sessions SET last_seen_at=now()-interval '31 minutes' WHERE user_id=$1",[employeeId]);expect((await client.request('/api/auth/me')).status).toBe(401);
@@ -500,7 +500,7 @@ describe('AUTH-003 advanced sessions and runtime MFA policy',()=>{
    const old=new Client(secureBase);old.cookies.set('managerhr',oldCookie!);expect((await old.request('/api/auth/me')).status).toBe(401);const status=await client.request('/api/auth/mfa/status');expect(status.body).not.toHaveProperty('secret');expect(status.body).not.toHaveProperty('recoveryCodes');
  });
  it('HARD-05 OTP replay across logins is rejected, recovery code consumed exactly once',async()=>{
-   const first=await secureActor(),enrolled=await enroll(first);const second=await secureActor();expect((await second.post('/api/auth/mfa/verify',{code:currentCode(enrolled.secret)})).status).toBe(401);const old=second.cookies.get('managerhr');expect((await second.post('/api/auth/mfa/verify',{code:enrolled.codes[0]})).status).toBe(204);expect(second.cookies.get('managerhr')).not.toBe(old);const third=await secureActor();expect((await third.post('/api/auth/mfa/verify',{code:enrolled.codes[0]})).status).toBe(401);expect((await third.request(`/api/organizations/${orgA}/users`)).status).toBe(403);
+   const first=await secureActor(),enrolled=await enroll(first);const second=await secureActor();expect((await second.post('/api/auth/mfa/verify',{code:enrolled.usedCode})).status).toBe(401);const old=second.cookies.get('managerhr');expect((await second.post('/api/auth/mfa/verify',{code:enrolled.codes[0]})).status).toBe(204);expect(second.cookies.get('managerhr')).not.toBe(old);const third=await secureActor();expect((await third.post('/api/auth/mfa/verify',{code:enrolled.codes[0]})).status).toBe(401);expect((await third.request(`/api/organizations/${orgA}/users`)).status).toBe(403);
  });
  it('HARD-06 concurrent recovery-code verify has exactly one winner',async()=>{
    const first=await secureActor(),enrolled=await enroll(first),second=await secureActor(),third=await secureActor();const results=await Promise.all([second.post('/api/auth/mfa/verify',{code:enrolled.codes[0]}),third.post('/api/auth/mfa/verify',{code:enrolled.codes[0]})]);expect(results.map(r=>r.status).sort()).toEqual([204,401]);

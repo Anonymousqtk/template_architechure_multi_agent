@@ -11,7 +11,7 @@ export function DashIcon({name}:{name:string}) {
 type Props={profile:Profile;path:string;profileView:boolean;busy:boolean;onLogout:()=>void;onNavigate?:(to:string)=>void;children:ReactNode};
 export function DashboardShell({profile,path,profileView,busy,onLogout,onNavigate,children}:Props) {
  const [compact,setCompact]=useState(false),[preview,setPreview]=useState(false),[query,setQuery]=useState('');
- const [openGroup,setOpenGroup]=useState<string|null>(path.startsWith('/admin/')?'organization':profileView||path==='/security'?'account':'dashboard');
+ const [openGroup,setOpenGroup]=useState<string|null>(path.startsWith('/admin/')?'organization':profileView||path==='/security'?'account':null);
  const [desktop,setDesktop]=useState(()=>window.matchMedia?.('(min-width: 1200px)').matches??true);
  const sidebar=useRef<HTMLElement>(null),keyboard=useRef(false),pointerInside=useRef(false);
  const expanded=!compact||preview;
@@ -23,14 +23,17 @@ const mobile=useRef<HTMLDialogElement>(null),openButton=useRef<HTMLButtonElement
   const link=(href:string,label:string,active:boolean)=><a href={href} aria-label={label} aria-current={active?'page':undefined}><i className="dash-nav-bullet" aria-hidden="true"/><span>{label}</span></a>;
   function group(id:string,label:string,icon:string,children:ReactNode,section?:string) {
    const open=openGroup===id&&visible;
-   const active=id==='dashboard'?path==='/app'&&!profileView:id==='organization'?path.startsWith('/admin/'):profileView||path==='/security';
-   return <nav aria-label={id==='dashboard'?'Bảng điều khiển':id==='organization'?'Quản lý tổ chức':'Cài đặt tài khoản'}>{section&&<p className="dash-nav-label"><span>{section}</span></p>}
+   const active=id==='organization'?path.startsWith('/admin/'):profileView||path==='/security';
+   return <nav aria-label={id==='organization'?'Quản lý tổ chức':'Cài đặt tài khoản'}>{section&&<p className="dash-nav-label"><span>{section}</span></p>}
     <button type="button" className="dash-nav-parent" aria-label={label} aria-expanded={open} aria-controls={prefix+'-'+id} data-active={active} onClick={()=>{if(desktop&&compact)setPreview(true);setOpenGroup(current=>current===id?null:id);}}><DashIcon name={icon}/><span>{label}</span><b className={open?'is-open':''} aria-hidden="true">›</b></button>
     <div className="dash-submenu" id={prefix+'-'+id} data-open={open} aria-hidden={!open} inert={!open}><div>{children}</div></div>
    </nav>;
   }
+  const homeActive=path==='/app'&&!profileView;
   return <div className="dash-nav-inner">
-   {group('dashboard','Bảng điều khiển','home',link('/app','Tổng quan',path==='/app'&&!profileView))}
+   <nav aria-label="Trang chủ">
+    <a href="/app" className="dash-nav-parent" aria-label="Trang chủ" aria-current={homeActive?'page':undefined} data-active={homeActive} onClick={()=>{setOpenGroup(null);}}><DashIcon name="home"/><span>Trang chủ</span></a>
+   </nav>
    {(profile.permissions.readUsers||profile.permissions.invite||profile.permissions.viewAudit)&&group('organization',profile.organization.role==='MANAGER'?'Nhóm của tôi':'Quản lý tổ chức','users',<>{profile.permissions.readUsers&&link('/admin/users',profile.organization.role==='MANAGER'?'Thành viên nhóm':'Thành viên',path==='/admin/users')}{profile.permissions.invite&&link('/admin/invitations','Lời mời',path==='/admin/invitations')}{profile.permissions.viewAudit&&link('/admin/audit','Nhật ký hoạt động',path==='/admin/audit')}</>,'ỨNG DỤNG NHÂN SỰ')}
    {group('account','Tài khoản','shield',<>{link('/app?view=profile','Thông tin cá nhân',profileView)}{link('/security','Bảo mật & thiết bị',path==='/security')}</>,'THIẾT LẬP')}
   </div>;

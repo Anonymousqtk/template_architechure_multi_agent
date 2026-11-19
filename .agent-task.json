@@ -1,38 +1,40 @@
 {
-  "id": "UX-012",
-  "summary": "Match drawer behavior and prevent login flashes during authenticated navigation",
+  "id": "AUTH-004",
+  "summary": "Authentication Production Readiness & Security Acceptance",
   "allowed_scopes": [
-    "frontend",
     "backend",
-    "database",
     "tests",
+    "docs",
     "governance"
   ],
   "risk": "high",
   "security_review_required": true,
   "acceptance": [
-    "260/70 desktop rail with hover/keyboard overlay without shifting content",
-    "Single controlled accordion and fixed inner menu geometry",
-    "1200px mobile breakpoint, slide-in/out backdrop and focus/scroll restoration",
-    "Detail view/edit matches purple neutral design with no duplicated read-only fields in edit",
-    "Closing animation respects reduced motion and preserves dirty/busy guards",
-    "Authenticated menu navigation updates route without reloading session or briefly showing login; browser history remains functional",
-    "Tests lint typecheck build and browser geometry/motion checks pass"
+    "Baseline verification across AUTH-001, AUTH-002, AUTH-003 complete and classified",
+    "Security acceptance across 13 OWASP/NIST risk categories evaluated",
+    "PostgreSQL migrations 001-004 constraints and rollback verified on disposable instance",
+    "Backend unit/integration/security test suite passing (62/62)",
+    "Frontend authentication and session security test suite passing (66/66)",
+    "Governance and policy checks passing (21/21)",
+    "Defect remediation applied and verified with regression tests",
+    "Comprehensive acceptance report written to docs/AUTH-004-ACCEPTANCE.md"
   ],
   "model_profile": "inherit",
   "governance": "V5.3",
   "delegations": 0,
-  "notes": "User confirmed both drawers. Reference F:/Code/CloneRea/hr-manager remains read-only. Its detail modal is centered; preserve previously requested right-side detail interaction while applying reference tokens/profile layout. Also fix authenticated menu links reloading the app and rechecking session, which can flash login. Keep auth server/session controls unchanged; inspect client auth boundary and verify regression with focused tests. frontend-standards and test-engineering; no delegation.",
-  "status": "IN_PROGRESS",
+  "notes": "Task AUTH-004: Audited and verified all authentication, authorization, session, MFA, and user management mechanisms. Remediated OTP replay race condition in HARD-05. Verified 62 backend tests, 66 frontend tests, 21 governance tests, and PostgreSQL migrations 001-004.",
+  "status": "READY",
   "skills_used_current": [
     "security-review",
-    "frontend-standards",
     "test-engineering"
   ],
   "checks": {
-    "frontend_test": "PASS: npm test -- src/App.test.tsx src/DashboardShell.test.tsx (28 tests)",
-    "frontend_lint": "PASS: npm run lint",
-    "frontend_build": "PASS: npm run build (TypeScript check and Vite production build)",
-    "security_review": "NOT VERIFIED: frontend navigation only; no auth/session server code changed, no security scanner run"
+    "backend_tests": "PASS: 62/62 tests (auth.test.ts 58, security.test.ts 4; statements 92.44%, lines 97.73%)",
+    "frontend_tests": "PASS: 66/66 tests across 6 test suites",
+    "migrations": "PASS: 001, 002, 003, 004, existing data upgrade test, rollback/constraint checks",
+    "typecheck_lint": "PASS: backend tsc+eslint, frontend tsc+eslint",
+    "build": "PASS: backend tsc, frontend vite build",
+    "governance_tests": "PASS: python -m unittest discover -s tests (21 tests)",
+    "security_review": "VERIFIED: 13 OWASP/NIST risk groups analyzed, no Critical/High unmitigated defects"
   }
 }
