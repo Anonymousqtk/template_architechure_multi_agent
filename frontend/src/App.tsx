@@ -4,6 +4,7 @@ import { AccountProfile } from './AccountProfile';
 import { AccountSecurity } from './AccountSecurity';
 import { UsersPanel, AuditPanel } from './Users';
 import { OrganizationView } from './OrganizationView';
+import { Employees } from './Employees';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, errorText, initialize, request, type DeliveryMode, type Invitation, type Profile } from './api';
 
@@ -161,7 +162,7 @@ export default function App() {
   const workspace=Boolean(ready&&profile&&!limited&&(personal||path.startsWith('/admin/')));
   const organizationHome=profile?.permissions.readUsers?'/admin/users':profile?.permissions.invite?'/admin/invitations':profile?.permissions.viewAudit?'/admin/audit':null;
   let content: ReactNode;
-  if (!ready) content = error ? <><Notice error>{error}</Notice><button onClick={() => window.location.reload()}>Tải lại trang</button></> : <p role="status">Đang kết nối an toàn…</p>;
+  if (!ready) { if (error) content = <><Notice error>{error}</Notice><button onClick={() => window.location.reload()}>Tải lại trang</button></>; else if (path.startsWith('/admin/') || path === '/app' || path === '/security') return <div className="workspace-loading-splash" role="status" aria-live="polite"><div className="workspace-loading-inner"><span className="dash-brand-mark" aria-hidden="true" /><div className="workspace-loading-text"><strong>ManagerHR</strong><span>Đang đồng bộ không gian làm việc…</span></div></div></div>; else content = <p role="status">Đang kết nối an toàn…</p>; }
   else if (profile && (path === '/security' || (profile.security?.mfaRequired && !profile.security?.mfaVerified && !['/forgot-password','/reset-password'].includes(path)))) content = <AccountSecurity profile={profile} />;
   else if (path === '/security') content = <Login onLogin={onLogin} />;
   else if (path === '/forgot-password') content = <Forgot />;
@@ -173,6 +174,7 @@ export default function App() {
   else if (path === '/admin/departments') content = profile ? <OrganizationView profile={profile} activeTab="departments" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
   else if (path === '/admin/positions') content = profile ? <OrganizationView profile={profile} activeTab="positions" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
   else if (path === '/admin/organization') content = profile ? <OrganizationView profile={profile} activeTab="organization" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
+  else if (path === '/admin/employees') content = profile ? <Employees profile={profile} /> : <Login onLogin={onLogin} />;
   else if (path === '/app') content = profile ? (profileView?<AccountProfile profile={profile} />:<Dashboard profile={profile}/>) : <><Notice error>Phiên đăng nhập không còn hiệu lực.</Notice><Login onLogin={onLogin} /></>;
   else if (path === '/login' || path === '/') content = <Login onLogin={onLogin} />;
   else content = <><h1>Không tìm thấy trang</h1><a href="/login">Về trang đăng nhập</a></>;

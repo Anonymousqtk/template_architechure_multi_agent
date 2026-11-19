@@ -88,6 +88,47 @@ BEGIN
     VALUES ('00000000-0000-0000-0000-000000000031','00000000-0000-0000-0000-000000000001','DEV','Developer Duplicate');
     RAISE EXCEPTION 'position duplicate code check absent';
   EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  -- EMP-001 & EMP-002 verification
+  INSERT INTO employees(id,organization_id,employee_code,full_name,hire_date,department_id,position_id,manager_user_id)
+  VALUES ('00000000-0000-0000-0000-000000000040','00000000-0000-0000-0000-000000000001','EMP-001','Employee One',CURRENT_DATE,'00000000-0000-0000-0000-000000000020','00000000-0000-0000-0000-000000000030','00000000-0000-0000-0000-000000000011');
+  -- Duplicate employee code in same org must fail
+  BEGIN
+    INSERT INTO employees(id,organization_id,employee_code,full_name,hire_date)
+    VALUES ('00000000-0000-0000-0000-000000000041','00000000-0000-0000-0000-000000000001','EMP-001','Employee Dup',CURRENT_DATE);
+    RAISE EXCEPTION 'employee duplicate code check absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+  -- Same employee code in another org must succeed
+  INSERT INTO employees(id,organization_id,employee_code,full_name,hire_date)
+  VALUES ('00000000-0000-0000-0000-000000000042','00000000-0000-0000-0000-000000000010','EMP-001','Employee Other Org',CURRENT_DATE);
+  -- Birth date after hire date must fail
+  BEGIN
+    INSERT INTO employees(id,organization_id,employee_code,full_name,hire_date,birth_date)
+    VALUES ('00000000-0000-0000-0000-000000000043','00000000-0000-0000-0000-000000000001','EMP-003','Employee Invalid Birth','2020-01-01','2021-01-01');
+    RAISE EXCEPTION 'employee birth date check absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+  -- Cross-tenant department reference must fail
+  BEGIN
+    INSERT INTO employees(id,organization_id,employee_code,full_name,hire_date,department_id)
+    VALUES ('00000000-0000-0000-0000-000000000044','00000000-0000-0000-0000-000000000001','EMP-004','Cross Dept',CURRENT_DATE,'00000000-0000-0000-0000-000000000022');
+    RAISE EXCEPTION 'cross-tenant department fk absent';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  -- Contract creation and activation
+  INSERT INTO employee_contracts(id,organization_id,employee_id,contract_number,contract_type,start_date,signed_on,status)
+  VALUES ('00000000-0000-0000-0000-000000000050','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000040','HD-001','INDEFINITE',CURRENT_DATE,CURRENT_DATE,'DRAFT');
+  UPDATE employee_contracts SET status='ACTIVE' WHERE id='00000000-0000-0000-0000-000000000050';
+  -- Second active contract for same employee must fail
+  BEGIN
+    INSERT INTO employee_contracts(id,organization_id,employee_id,contract_number,contract_type,start_date,signed_on,status)
+    VALUES ('00000000-0000-0000-0000-000000000051','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000040','HD-002','INDEFINITE',CURRENT_DATE,CURRENT_DATE,'DRAFT');
+    UPDATE employee_contracts SET status='ACTIVE' WHERE id='00000000-0000-0000-0000-000000000051';
+    RAISE EXCEPTION 'single active contract constraint absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+  -- Immutable work history deletion must fail
+  BEGIN
+    DELETE FROM employee_work_history WHERE employee_id='00000000-0000-0000-0000-000000000040';
+    RAISE EXCEPTION 'work history immutability trigger absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
 END $$;
 ROLLBACK;
 DO $$ BEGIN

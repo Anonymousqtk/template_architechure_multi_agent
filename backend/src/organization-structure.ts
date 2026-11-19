@@ -469,6 +469,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       if(data.isActive===false){
         const dependencies=await db.query(`SELECT 1 FROM departments WHERE organization_id=$1 AND parent_id=$2 AND is_active
           UNION ALL SELECT 1 FROM memberships WHERE organization_id=$1 AND department_id=$2 AND is_active
+          UNION ALL SELECT 1 FROM employees WHERE organization_id=$1 AND department_id=$2 AND employment_status<>'TERMINATED'
           UNION ALL SELECT 1 FROM positions WHERE organization_id=$1 AND department_id=$2 AND is_active LIMIT 1`,[identity.orgId,deptId]);
         if(dependencies.rowCount)fail(409,'DEPARTMENT_IN_USE');
       }
@@ -586,6 +587,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         fail(409, 'DEPARTMENT_IN_USE_HAS_POSITIONS');
       }
 
+      const employeeReferences=await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND department_id=$2 UNION ALL SELECT 1 FROM employee_work_history WHERE organization_id=$1 AND department_id=$2 LIMIT 1',[identity.orgId,deptId]);
+      if(employeeReferences.rowCount)fail(409,'DEPARTMENT_IN_USE');
       await db.query('DELETE FROM departments WHERE id = $1', [deptId]);
       await audit(db, 'DEPARTMENT_DELETED', identity.userId, identity.orgId, undefined, { departmentId: deptId });
     });
@@ -849,6 +852,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       if(data.departmentId!==undefined && nextDeptId!==null){
         const assigned=await db.query('SELECT 1 FROM memberships WHERE organization_id=$1 AND position_id=$2 AND department_id IS DISTINCT FROM $3::uuid LIMIT 1',[identity.orgId,posId,nextDeptId]);
         if(assigned.rowCount)fail(409,'POSITION_IN_USE');
+        const employeeAssigned=await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND position_id=$2 AND department_id IS DISTINCT FROM $3::uuid LIMIT 1',[identity.orgId,posId,nextDeptId]);
+        if(employeeAssigned.rowCount)fail(409,'POSITION_IN_USE');
       }
       await db.query(
         `UPDATE positions
@@ -903,6 +908,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         fail(409, 'POSITION_IN_USE_HAS_MEMBERS');
       }
 
+      const employeeReferences=await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND position_id=$2 UNION ALL SELECT 1 FROM employee_work_history WHERE organization_id=$1 AND position_id=$2 LIMIT 1',[identity.orgId,posId]);
+      if(employeeReferences.rowCount)fail(409,'POSITION_IN_USE');
       await db.query('DELETE FROM positions WHERE id = $1', [posId]);
       await audit(db, 'POSITION_DELETED', identity.userId, identity.orgId, undefined, { positionId: posId });
     });

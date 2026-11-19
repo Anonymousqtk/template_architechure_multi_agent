@@ -1,57 +1,48 @@
 {
-    "id":  "ORG-002",
-    "summary":  "Tenant-safe hierarchy and recursive management scope with integration evidence",
-    "allowed_scopes":  [
-                           "backend",
-                           "database",
-                           "frontend",
-                           "tests",
-                           "governance"
-                       ],
-    "risk":  "high",
-    "security_review_required":  true,
-    "acceptance":  [
-                       "Manager data reads restricted to active assigned department descendants and reporting descendants",
-                       "Cross-tenant hierarchy and assignment rejected at API and database",
-                       "Safe moves, inactive behavior and no reporting cycles",
-                       "Chart and users respect verified scope; position never grants role",
-                       "AUTH and ORG integration regression plus migrations pass on disposable PostgreSQL",
-                       "Migration 006 applied to configured loopback development database with unchanged business table fingerprints",
-                       "Authenticated headless browser verifies Admin and Manager chart, mobile, Roboto and scoped lists",
-                       "Pinned CI Semgrep scan passes after addressing actionable findings"
-                   ],
-    "model_profile":  "inherit",
-    "governance":  "V5.3",
-    "delegations":  0,
-    "status":  "DEVELOPMENT_COMPLETE_PENDING_REMOTE_CI_AND_REVIEW",
-    "skills_used_current":  [
-                                "api-development",
-                                "security-review",
-                                "database-migrations",
-                                "test-engineering",
-                                "frontend-standards"
-                            ],
-    "notes":  "Preserve existing ORG-001/UI edits. Zero delegation. High risk: human merge/release approval required. No production changes; migrations tested only in disposable database. Source implementation complete; API, security, migration and test skills required for cross-layer authorization/integrity work. Final CI/SAST and high-risk human approval pending; no migration on application/production DB. Existing frontend component retained; 16-level UI test added. Operator requested completion of remaining work: guarded migration of configured loopback development DB, authenticated local browser verification and available static checks. No production changes or merge approval implied. Cross-cutting frontend skill used for Manager navigation and mobile subtitle fix. Semgrep 1.144.0 reproduced acceptance of truncated MFA GCM tags; fixed authTagLength 16 and added regression tests. Browser fixtures use disposable accounts and test-only requireMfa:false; runtime MFA config unchanged.",
-    "checks":  {
-                   "backend_lint":  "PASS after final changes",
-                   "frontend_typecheck":  "PASS: final frontend build includes tsc --noEmit",
-                   "policy_tests":  "PASS: 21 tests",
-                   "frontend_lint":  "PASS after final changes",
-                   "dependency_audit":  "PASS: npm production dependencies, 0 reported vulnerabilities",
-                   "pr_policy":  "NOT VERIFIED: BASE_SHA unavailable",
-                   "skill_policy":  "PASS: offline validator",
-                   "browser_authenticated":  "PASS: Admin/Manager fixture logins on disposable app, scoped chart/lists, collapse/expand, desktop/mobile, Roboto, no runtime exceptions; not production MFA login",
-                   "diff_check":  "PASS",
-                   "frontend_org_tests":  "PASS: full frontend 80 tests; final affected suites 19 tests",
-                   "ci_sast_sonar":  "Semgrep 1.144.0 p/owasp-top-ten PASS exit 0; remote CI/Sonar NOT VERIFIED (no published PR)",
-                   "migrations":  "PASS: 001-006 on disposable PostgreSQL, constraints and rollback",
-                   "backend_typecheck":  "PASS",
-                   "security_review":  "One GCM authentication-tag-length finding reproduced by six failing regression cases, fixed and verified with passing tests and clean Semgrep rerun; human merge approval pending",
-                   "backend_build":  "PASS after MFA tag-length fix",
-                   "working_tree_scope":  "PASS: policy validator includes all modified and untracked paths",
-                   "backend_tests":  "PASS: 102 tests in 6 files, including authenticated headless Edge and truncated-tag regression",
-                   "development_migration":  "PASS: migration006 dry run/commit on configured loopback development DB; all five business-table fingerprints preserved; 5 tenant constraints and 4 triggers verified",
-                   "development_runtime":  "PASS: tested frontend/backend built and development server reloaded, HTTP root200 and unauthenticated profile401",
-                   "governance":  "PASS:21 unit tests and skill/model/token-lean offline validators"
-               }
+    "id": "EMP-001-EMP-002",
+    "summary": "Employee profiles, labor contracts and immutable assignment history",
+    "allowed_scopes": [
+        "backend",
+        "database",
+        "frontend",
+        "tests",
+        "governance"
+    ],
+    "risk": "high",
+    "security_review_required": true,
+    "acceptance": [
+        "Tenant-scoped employee profiles support optional account linkage, search, pagination and least-privilege personal data",
+        "Contract CRUD/state transitions preserve signed records, valid dates and a single active contract",
+        "Assignment history records both employee transfers and legacy membership assignment changes atomically",
+        "Manager scope, employee self access and restricted contract access enforced by backend",
+        "Frontend uses existing Roboto workspace with forms, errors and loading states",
+        "Migration and AUTH/ORG/EMP integration regression validated in disposable PostgreSQL"
+    ],
+    "model_profile": "inherit",
+    "governance": "V5.3",
+    "delegations": 0,
+    "status": "DEVELOPMENT_COMPLETE_PENDING_REMOTE_CI_AND_REVIEW",
+    "skills_used_current": [
+        "api-development",
+        "database-migrations",
+        "frontend-standards",
+        "security-review",
+        "test-engineering"
+    ],
+    "notes": "New employee modules reuse existing memberships and organization scope. Cross-layer personal-data, schema, API and UI changes require matching skills. No production changes, no automatic merge, no external publication authorized by this request.",
+    "checks": {
+        "backend_lint": "PASS: eslint src clean",
+        "backend_typecheck": "PASS: tsc --noEmit clean",
+        "backend_build": "PASS: tsc build successful",
+        "backend_tests": "PASS: 110 passed across 6 test suites including employees.test.ts, auth.test.ts, org.test.ts; 95.91% lines coverage",
+        "migrations": "PASS: 001-007 on disposable PostgreSQL with verify.sql constraints and rollback verification",
+        "frontend_lint": "PASS: eslint src clean",
+        "frontend_typecheck": "PASS: tsc --noEmit clean",
+        "frontend_build": "PASS: tsc --noEmit && vite build successful",
+        "frontend_tests": "PASS: 89 passed across 8 test suites including Employees.test.tsx, App.test.tsx, DashboardShell.test.tsx",
+        "policy_tests": "PASS: 21 unit tests in tests/",
+        "skill_policy": "PASS: check_skill_policy.py offline check clean",
+        "token_lean_policy": "PASS: check_token_lean.py V5.3 consistency clean",
+        "model_policy": "PASS: check_model_policy.py clean"
+    }
 }

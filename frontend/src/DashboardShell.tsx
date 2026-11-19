@@ -23,8 +23,9 @@ const mobile=useRef<HTMLDialogElement>(null),openButton=useRef<HTMLButtonElement
   const link=(href:string,label:string,active:boolean)=><a href={href} aria-label={label} aria-current={active?'page':undefined}><i className="dash-nav-bullet" aria-hidden="true"/><span>{label}</span></a>;
   function group(id:string,label:string,icon:string,children:ReactNode,section?:string) {
    const open=openGroup===id&&visible;
-   const active=id==='organization'?path.startsWith('/admin/'):profileView||path==='/security';
-   return <nav aria-label={id==='organization'?'Quản lý tổ chức':'Cài đặt tài khoản'}>{section&&<p className="dash-nav-label"><span>{section}</span></p>}
+   const active=id==='organization'?(path.startsWith('/admin/')&&path!=='/admin/employees'):(id==='employees'?path==='/admin/employees':profileView||path==='/security');
+   const navLabel=id==='organization'?'Quản lý tổ chức':(id==='employees'?'Hồ sơ nhân viên':'Cài đặt tài khoản');
+   return <nav aria-label={navLabel}>{section&&<p className="dash-nav-label"><span>{section}</span></p>}
     <button type="button" className="dash-nav-parent" aria-label={label} aria-expanded={open} aria-controls={prefix+'-'+id} data-active={active} onClick={()=>{if(desktop&&compact)setPreview(true);setOpenGroup(current=>current===id?null:id);}}><DashIcon name={icon}/><span>{label}</span><b className={open?'is-open':''} aria-hidden="true">›</b></button>
     <div className="dash-submenu" id={prefix+'-'+id} data-open={open} aria-hidden={!open} inert={!open}><div>{children}</div></div>
    </nav>;
@@ -35,6 +36,7 @@ const mobile=useRef<HTMLDialogElement>(null),openButton=useRef<HTMLButtonElement
     <a href="/app" className="dash-nav-parent" aria-label="Trang chủ" aria-current={homeActive?'page':undefined} data-active={homeActive} onClick={()=>{setOpenGroup(null);}}><DashIcon name="home"/><span>Trang chủ</span></a>
    </nav>
    {(profile.permissions.readUsers||profile.permissions.invite||profile.permissions.viewAudit||profile.permissions.manageOrg)&&group('organization',profile.organization.role==='MANAGER'?'Nhóm của tôi':'Quản lý tổ chức','users',<>{profile.permissions.readUsers&&link('/admin/users',profile.organization.role==='MANAGER'?'Thành viên nhóm':'Thành viên',path==='/admin/users')}{profile.permissions.invite&&link('/admin/invitations','Lời mời',path==='/admin/invitations')}{profile.permissions.viewAudit&&link('/admin/audit','Nhật ký hoạt động',path==='/admin/audit')}{(profile.permissions.manageOrg||['ADMIN','HR','MANAGER'].includes(profile.organization.role))&&<>{link('/admin/org-chart','Sơ đồ tổ chức',path==='/admin/org-chart')}{link('/admin/departments','Phòng ban',path==='/admin/departments')}{link('/admin/positions','Chức danh',path==='/admin/positions')}</>}</>,'ỨNG DỤNG NHÂN SỰ')}
+   {group('employees','Hồ sơ nhân viên','users',<>{link('/admin/employees',profile.organization.role==='EMPLOYEE'?'Hồ sơ của tôi':'Danh sách nhân viên',path==='/admin/employees')}</>,'QUẢN LÝ NHÂN SỰ')}
    {group('account','Tài khoản','shield',<>{link('/app?view=profile','Thông tin cá nhân',profileView)}{link('/security','Bảo mật & thiết bị',path==='/security')}</>,'THIẾT LẬP')}
   </div>;
  }

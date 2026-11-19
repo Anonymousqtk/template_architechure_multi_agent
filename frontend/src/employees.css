@@ -1,0 +1,101 @@
+/* Employees and Employee Drawer Styles */
+.emp-page{display:grid;gap:24px;}
+.emp-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+.emp-heading h1{font-size:26px;margin:6px 0;}
+.emp-heading h2{margin:6px 0;}
+.emp-heading p{color:#686477;margin:6px 0;line-height:1.6;}
+.emp-page .primary{width:auto;min-height:40px;padding:9px 16px;}
+.emp-page .secondary{min-height:38px;padding:8px 14px;}
+.emp-page .field{margin-bottom:0;}
+.emp-page .field input,.emp-page .field select,.emp-page textarea{min-height:42px;padding:9px 12px;font:inherit;}
+.emp-page textarea{width:100%;border:1px solid #dce2ee;border-radius:8px;resize:vertical;}
+.emp-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;}
+.emp-span{grid-column:1/-1;}
+.emp-editor{padding:20px;border:1px solid #e7e3f5;border-radius:10px;margin:16px 0;background:#faf9ff;}
+.emp-editor h2,.emp-editor h3,.emp-editor h4{margin-top:0;}
+.emp-choice{display:grid;gap:10px;min-width:0;}
+.emp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px;}
+.emp-filters{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
+.emp-filters .field:first-child{flex:1;min-width:180px;}
+.emp-page td small{display:block;margin-top:6px;color:#686477;}
+.emp-page table{min-width:650px;}
+.emp-page th{text-align:left;}
+.emp-page .table-wrap{overflow:auto;max-width:100%;}
+.emp-pagination{display:flex;justify-content:flex-end;align-items:center;gap:14px;flex-wrap:wrap;margin-top:18px;font-size:13px;}
+.emp-page .notice{display:flex;align-items:center;justify-content:space-between;gap:16px;line-height:1.6;}
+.emp-page :focus-visible{outline:3px solid #7367f0;outline-offset:3px;}
+
+/* Badges */
+.emp-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:500;line-height:1.3;}
+.emp-badge-active{background:#e8faf0;color:#228f55;}
+.emp-badge-on_leave{background:#fff4e5;color:#b26a00;}
+.emp-badge-terminated{background:#fff0f1;color:#c53d45;}
+.emp-badge-draft{background:#f3f2f7;color:#5d596c;}
+.emp-badge-expired{background:#f8f7fa;color:#8b8698;}
+.emp-badge-cancelled{background:#faf0f1;color:#a83e44;}
+.emp-badge-linked{background:#eeeaff;color:#5145bd;}
+.emp-badge-standalone{background:#f1f0f5;color:#6f6b7d;}
+
+/* Employee Detail Drawer */
+.emp-drawer{width:min(640px,100vw);}
+.emp-summary-header{display:flex;align-items:center;gap:18px;padding:8px 0 20px;border-bottom:1px solid #eeedf2;margin-bottom:20px;}
+.emp-summary-info{flex:1;min-width:0;}
+.emp-summary-info h3{margin:0 0 4px;font-size:20px;font-weight:600;color:#444050;overflow-wrap:anywhere;}
+.emp-summary-subtitle{margin:0 0 10px;font-size:13.5px;color:#8b8698;overflow-wrap:anywhere;}
+.emp-badges-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+
+.emp-drawer-tabs{display:flex;gap:8px;border-bottom:1px solid #eeedf2;margin-bottom:20px;overflow-x:auto;}
+.emp-drawer-tab{display:inline-flex;align-items:center;padding:10px 14px;background:none;border:none;border-bottom:2px solid transparent;color:#686477;font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .18s;}
+.emp-drawer-tab:hover{color:#7367f0;}
+.emp-drawer-tab.is-active{color:#7367f0;border-bottom-color:#7367f0;font-weight:600;}
+
+.emp-tab-panel{display:grid;gap:20px;}
+.emp-card{padding:18px 20px;border:1px solid #eeedf2;border-radius:10px;background:#fafbfc;}
+.emp-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
+.emp-card-header h4{margin:0;font-size:15px;font-weight:600;color:#444050;}
+.emp-form-stack{display:grid;gap:14px;border:0;padding:0;margin:0;}
+.emp-edit-form{background:#faf9ff;border-color:#e7e3f5;}
+.emp-link-card{background:#f8f9ff;border-color:#e4e6fb;}
+
+/* Contract Cards in Drawer */
+.emp-contracts-list{display:grid;gap:14px;margin-top:12px;}
+.emp-contract-card{padding:16px;border:1px solid #eeedf2;border-radius:8px;background:white;display:grid;gap:10px;transition:box-shadow .15s;}
+.emp-contract-card:hover{box-shadow:0 2px 10px rgba(47,43,61,.06);}
+.emp-contract-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+.emp-contract-top h5{margin:4px 0 0;font-size:15px;font-weight:600;color:#444050;}
+.emp-contract-dates{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#5d596c;}
+.emp-contract-notes{margin:0;padding:8px 12px;background:#f8f7fa;border-radius:6px;font-size:12.5px;color:#686477;}
+.emp-contract-actions{margin-top:4px;}
+
+/* Timeline in Drawer */
+.emp-timeline{list-style:none;padding:0;margin:12px 0 0;}
+.emp-timeline-item{display:flex;gap:18px;padding:16px 0;border-bottom:1px solid #eeedf2;position:relative;}
+.emp-timeline-item:last-child{border-bottom:none;}
+.emp-timeline-time{color:#7367f0;font-weight:600;font-size:13px;white-space:nowrap;width:90px;flex-shrink:0;padding-top:2px;}
+.emp-timeline-content{flex:1;min-width:0;display:grid;gap:6px;}
+.emp-timeline-badge{display:inline-block;padding:2px 8px;border-radius:4px;background:#eeeaff;color:#5145bd;font-size:11.5px;font-weight:600;width:fit-content;}
+.emp-timeline-desc{margin:0;font-size:13.5px;color:#444050;line-height:1.4;}
+
+/* Workspace Loading Splash (Prevents FOUC on Ctrl+F5) */
+.workspace-loading-splash{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f8f7fa;font-family:'Roboto','Segoe UI',Arial,sans-serif;}
+.workspace-loading-inner{display:flex;flex-direction:column;align-items:center;gap:16px;padding:36px 42px;background:white;border-radius:12px;box-shadow:0 4px 18px rgba(47,43,61,.08);text-align:center;}
+.workspace-loading-inner .dash-brand-mark{width:42px;height:38px;}
+.workspace-loading-text{display:flex;flex-direction:column;align-items:center;gap:6px;}
+.workspace-loading-text strong{font-size:20px;color:#444050;letter-spacing:-.4px;}
+.workspace-loading-text span{font-size:13px;color:#8b8698;}
+
+@media(max-width:700px){
+  .emp-form-grid{grid-template-columns:1fr;}
+  .emp-span{grid-column:auto;}
+  .emp-heading h1{font-size:23px;}
+  .emp-page{gap:16px;}
+  .emp-filters{align-items:stretch;flex-direction:column;}
+  .emp-pagination{justify-content:space-between;gap:8px;}
+  .emp-timeline-item{flex-direction:column;gap:6px;}
+  .emp-timeline-time{width:auto;}
+  .emp-page .notice{align-items:stretch;flex-direction:column;}
+  .emp-editor{padding:16px;}
+  .emp-heading>.primary{width:100%;}
+  .emp-summary-header{flex-direction:column;text-align:center;}
+  .emp-badges-row{justify-content:center;}
+}
