@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { fail, type Identity, type Role } from './types.js';
 
 export function permissionsFor(role: string) {
- return {invite:['ADMIN','HR'].includes(role),grantHR:role==='ADMIN',readUsers:['ADMIN','HR','MANAGER'].includes(role),manageUsers:['ADMIN','HR'].includes(role),assignRoles:role==='ADMIN',viewAudit:role==='ADMIN'};
+ return {invite:['ADMIN','HR'].includes(role),grantHR:role==='ADMIN',readUsers:['ADMIN','HR','MANAGER'].includes(role),manageUsers:['ADMIN','HR'].includes(role),assignRoles:role==='ADMIN',viewAudit:role==='ADMIN',manageOrg:['ADMIN','HR'].includes(role)};
 }
 
 export async function authorizeMutation(

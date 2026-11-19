@@ -1,17 +1,22 @@
-import { useEffect,useState } from 'react';
-import { request,type Profile,type Invitation } from './api';
+import { useEffect,useRef,useState } from 'react';
+import { errorText,request,type Profile,type Invitation } from './api';
 import { roleLabels,type Account } from './account-types';
 import { DashIcon } from './DashboardShell';
 type Resource={items?:unknown[];total?:number};
 type Activity={id:string;eventType:string;createdAt:string;metadata?:{outcome?:string}};
 type Session={id:string;deviceLabel:string;current:boolean;lastSeenAt:string};
 const events:Record<string,string>={LOGIN:'Đăng nhập',LOGOUT:'Đăng xuất',INVITATION_CREATED:'Tạo lời mời',INVITATION_ACCEPTED:'Chấp nhận lời mời',USER_ROLE_CHANGED:'Cập nhật vai trò',USER_STATUS_CHANGED:'Cập nhật trạng thái',PROFILE_UPDATED:'Cập nhật hồ sơ',MFA_VERIFIED:'Xác thực hai bước',MFA_ENABLED:'Bật xác thực hai bước',REAUTHENTICATED:'Xác thực lại'};
+const resourceLabels:Record<string,string>={sessions:'Phiên đăng nhập',users:'Danh sách tài khoản',active:'Tài khoản hoạt động',locked:'Tài khoản đã khóa',invitations:'Lời mời',audit:'Hoạt động gần đây',...roleLabels};
 export function Dashboard({profile}:{profile:Profile}) {
+ const retryKeys=useRef<string[]|null>(null);
+ const [failureDetails,setFailureDetails]=useState<Record<string,string>>({});
  const [data,setData]=useState<Record<string,Resource>>({}),[loading,setLoading]=useState(true),[errors,setErrors]=useState<string[]>([]),[revision,setRevision]=useState(0);
- useEffect(()=>{let alive=true;setLoading(true);setData({});setErrors([]);const base='/api/organizations/'+encodeURIComponent(profile.organization.id);const jobs:[string,string][]=[['sessions','/api/auth/sessions']];
+ useEffect(()=>{setLoading(true);setData({});setErrors([]);setFailureDetails({});retryKeys.current=null;},[profile.organization.id,profile.user.id,profile.permissions.readUsers,profile.permissions.invite,profile.permissions.viewAudit]);
+ useEffect(()=>{let alive=true;setLoading(true);const base='/api/organizations/'+encodeURIComponent(profile.organization.id);let jobs:[string,string][]=[['sessions','/api/auth/sessions']];
  if(profile.permissions.readUsers){jobs.push(['users',base+'/users?page=1&limit=5'],['active',base+'/users?page=1&limit=1&status=active'],['locked',base+'/users?page=1&limit=1&status=locked']);for(const role of Object.keys(roleLabels))jobs.push([role,base+'/users?page=1&limit=1&role='+role]);}
  if(profile.permissions.invite)jobs.push(['invitations',base+'/invitations?page=1&limit=8']);if(profile.permissions.viewAudit)jobs.push(['audit',base+'/audit-events?page=1&limit=5']);
- Promise.allSettled(jobs.map(async([key,path])=>{const result=await request<Resource>(path);if(!result||!Array.isArray(result.items))throw Error(key);return {key,result};})).then(results=>{if(!alive)return;const next:Record<string,Resource>={},failed:string[]=[];results.forEach((result,index)=>{if(result.status==='fulfilled')next[result.value.key]=result.value.result;else failed.push(jobs[index][0]);});setData(next);setErrors(failed);setLoading(false);});return()=>{alive=false;};
+ if(retryKeys.current)jobs=jobs.filter(([key])=>retryKeys.current!.includes(key));
+ Promise.allSettled(jobs.map(async([key,path])=>{const result=await request<Resource>(path);if(!result||!Array.isArray(result.items))throw Error(key);return {key,result};})).then(results=>{if(!alive)return;const next:Record<string,Resource>={},failed:string[]=[],details:Record<string,string>={};results.forEach((result,index)=>{if(result.status==='fulfilled')next[result.value.key]=result.value.result;else {const key=jobs[index][0];failed.push(key);details[key]=errorText(result.reason);}});setData(previous=>({...previous,...next}));setErrors(failed);setFailureDetails(details);retryKeys.current=failed;setLoading(false);});return()=>{alive=false;};
  },[profile.organization.id,profile.user.id,profile.permissions.readUsers,profile.permissions.invite,profile.permissions.viewAudit,revision]);
  const count=(key:string)=>typeof data[key]?.total==='number'?data[key].total!:null;
  const items=<T,>(key:string)=>data[key]?.items as T[]|undefined;
@@ -20,10 +25,11 @@ export function Dashboard({profile}:{profile:Profile}) {
  const accepted=invitations?.filter(invite=>invite.consumedAt).length;
  const invitationPercent=invitations?.length?Math.round((accepted||0)/invitations.length*100):0;
  const total=count('users'),active=count('active');const activePercent=total&&active!==null?Math.round(active/total*100):null;
- const display=(value:number|null|undefined)=>loading?'…':value??'—';
+ const display=(value:number|null|undefined)=>value??(loading?'…':'—');
  const cards=profile.permissions.readUsers;
  return <div className="hr-dashboard"><h1 className="dash-page-title">Xin chào, {profile.user.fullName}</h1><p className="dash-page-subtitle">Tổng quan · {profile.organization.name} · {new Intl.DateTimeFormat('vi-VN',{day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Bangkok'}).format(new Date())}</p>
- {errors.length>0&&<div role="alert" className="dash-data-error">Một số dữ liệu chưa tải được. Các mục thiếu được hiển thị bằng dấu —.<button onClick={()=>setRevision(value=>value+1)} disabled={loading}>Thử tải lại</button></div>}
+ {errors.length>0&&<div role="alert" className="dash-data-error"><div><strong>Một số dữ liệu chưa tải được</strong><p>Các mục thiếu được hiển thị bằng dấu —. Dữ liệu đã tải vẫn được giữ lại.</p><details><summary>Xem {errors.length} mục bị ảnh hưởng</summary><ul>{errors.map(key=><li key={key}><b>{resourceLabels[key]??key}:</b> {failureDetails[key]}</li>)}</ul></details></div><button onClick={()=>setRevision(value=>value+1)} disabled={loading}>{loading?'Đang tải lại…':'Thử tải lại'}</button></div>}
+ {loading&&<p role="status" className="dash-loading">Đang tải dữ liệu tổng quan…</p>}
  <div className="dash-overview-top">
   <section className="dash-card dash-welcome"><div className="dash-welcome-copy"><h2>{cards?'Tổng quan đội ngũ':'Không gian của bạn'}</h2><p>{cards?'Số liệu trong phạm vi quản lý của bạn':'Thông tin và bảo mật tài khoản cá nhân'}</p><h3>{cards?'Cùng nhau xây dựng đội ngũ':'Một nơi cho công việc mỗi ngày'}</h3><div className="dash-hero-facts">{cards?<><span><b>{display(total)}</b> Tài khoản</span><span><b>{display(active)}</b> Hoạt động</span><span><b>{display(count('locked'))}</b> Đã khóa</span><span><b>{display(sessions?.length)}</b> Phiên của bạn</span></>:<><span><b>{display(sessions?.length)}</b> Phiên đăng nhập</span><span><b><DashIcon name="shield"/></b> Bảo mật cá nhân</span></>}</div></div><div className="dash-welcome-art" aria-hidden="true"><span className="dash-art-orbit"/><div className="dash-art-card"><strong>{cards?display(total):profile.user.fullName.charAt(0)}</strong><small>PEOPLE FIRST</small><div>MH · HR</div></div><i/></div></section>
   <section className="dash-card dash-mini-card"><span className="dash-card-icon green"><DashIcon name={cards?'users':'shield'}/></span><h2>{cards?'Tài khoản hoạt động':'Bảo vệ tài khoản'}</h2><strong className="dash-number">{cards?display(active):profile.security?.mfaEnabled?'Đã bật':'Chưa bật'}</strong><p>{cards?'Trong phạm vi bạn được xem':'Xác thực hai bước'}</p>{cards?<><div className="dash-progress"><span style={{width:(activePercent??0)+'%'}}/></div><small>{activePercent===null?'Chưa đủ dữ liệu để tính tỷ lệ':activePercent+'% tài khoản đang hoạt động'}</small></>:<a href="/security">Kiểm tra bảo mật →</a>}</section>

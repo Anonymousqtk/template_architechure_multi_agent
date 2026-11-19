@@ -56,6 +56,38 @@ BEGIN
   EXCEPTION WHEN foreign_key_violation THEN NULL; END;
   INSERT INTO memberships(id,user_id,organization_id,role,manager_user_id)
   VALUES ('00000000-0000-0000-0000-000000000019','00000000-0000-0000-0000-000000000013','00000000-0000-0000-0000-000000000001','EMPLOYEE','00000000-0000-0000-0000-000000000011');
+  -- ORG-001 verification
+  INSERT INTO departments(id,organization_id,code,name)
+  VALUES ('00000000-0000-0000-0000-000000000020','00000000-0000-0000-0000-000000000001','ENG','Engineering');
+  -- Duplicate department code in same org must fail
+  BEGIN
+    INSERT INTO departments(id,organization_id,code,name)
+    VALUES ('00000000-0000-0000-0000-000000000021','00000000-0000-0000-0000-000000000001','ENG','Engineering Duplicate');
+    RAISE EXCEPTION 'department duplicate code check absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+  -- Same department code in another org must succeed
+  INSERT INTO departments(id,organization_id,code,name)
+  VALUES ('00000000-0000-0000-0000-000000000022','00000000-0000-0000-0000-000000000010','ENG','Engineering Other Org');
+  -- Department self-parent must fail
+  BEGIN
+    INSERT INTO departments(id,organization_id,parent_id,code,name)
+    VALUES ('00000000-0000-0000-0000-000000000023','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000023','SELF','Self Parent');
+    RAISE EXCEPTION 'department self-parent check absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+  -- Department cross-organization manager must fail
+  BEGIN
+    INSERT INTO departments(id,organization_id,code,name,manager_user_id)
+    VALUES ('00000000-0000-0000-0000-000000000024','00000000-0000-0000-0000-000000000001','FAIL_MGR','Fail Mgr','00000000-0000-0000-0000-000000000012');
+    RAISE EXCEPTION 'cross-organization department manager foreign key absent';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  -- Position duplicate code in same org must fail
+  INSERT INTO positions(id,organization_id,code,title)
+  VALUES ('00000000-0000-0000-0000-000000000030','00000000-0000-0000-0000-000000000001','DEV','Developer');
+  BEGIN
+    INSERT INTO positions(id,organization_id,code,title)
+    VALUES ('00000000-0000-0000-0000-000000000031','00000000-0000-0000-0000-000000000001','DEV','Developer Duplicate');
+    RAISE EXCEPTION 'position duplicate code check absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
 END $$;
 ROLLBACK;
 DO $$ BEGIN

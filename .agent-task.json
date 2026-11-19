@@ -1,40 +1,52 @@
 {
-  "id": "AUTH-004",
-  "summary": "Authentication Production Readiness & Security Acceptance",
-  "allowed_scopes": [
-    "backend",
-    "tests",
-    "docs",
-    "governance"
-  ],
-  "risk": "high",
-  "security_review_required": true,
-  "acceptance": [
-    "Baseline verification across AUTH-001, AUTH-002, AUTH-003 complete and classified",
-    "Security acceptance across 13 OWASP/NIST risk categories evaluated",
-    "PostgreSQL migrations 001-004 constraints and rollback verified on disposable instance",
-    "Backend unit/integration/security test suite passing (62/62)",
-    "Frontend authentication and session security test suite passing (66/66)",
-    "Governance and policy checks passing (21/21)",
-    "Defect remediation applied and verified with regression tests",
-    "Comprehensive acceptance report written to docs/AUTH-004-ACCEPTANCE.md"
-  ],
-  "model_profile": "inherit",
-  "governance": "V5.3",
-  "delegations": 0,
-  "notes": "Task AUTH-004: Audited and verified all authentication, authorization, session, MFA, and user management mechanisms. Remediated OTP replay race condition in HARD-05. Verified 62 backend tests, 66 frontend tests, 21 governance tests, and PostgreSQL migrations 001-004.",
-  "status": "READY",
-  "skills_used_current": [
-    "security-review",
-    "test-engineering"
-  ],
-  "checks": {
-    "backend_tests": "PASS: 62/62 tests (auth.test.ts 58, security.test.ts 4; statements 92.44%, lines 97.73%)",
-    "frontend_tests": "PASS: 66/66 tests across 6 test suites",
-    "migrations": "PASS: 001, 002, 003, 004, existing data upgrade test, rollback/constraint checks",
-    "typecheck_lint": "PASS: backend tsc+eslint, frontend tsc+eslint",
-    "build": "PASS: backend tsc, frontend vite build",
-    "governance_tests": "PASS: python -m unittest discover -s tests (21 tests)",
-    "security_review": "VERIFIED: 13 OWASP/NIST risk groups analyzed, no Critical/High unmitigated defects"
-  }
+    "id":  "ORG-001-FIX-UI",
+    "summary":  "Diagnose data loading failures and improve dashboard UI with self-hosted Roboto",
+    "allowed_scopes":  [
+                           "database",
+                           "backend",
+                           "frontend",
+                           "tests",
+                           "governance"
+                       ],
+    "risk":  "high",
+    "security_review_required":  true,
+    "acceptance":  [
+                       "Classify database availability/schema errors without exposing secrets",
+                       "Show actionable partial failures and retry only failed dashboard requests",
+                       "Use self-hosted Roboto and accessible responsive dashboard elements",
+                       "Run frontend checks and backend regression against disposable PostgreSQL",
+                       "Verify and repair missing ORG-001 schema on configured loopback development database without changing existing account data",
+                       "Provide retry actions on organization chart, departments and positions",
+                       "Organization chart renders actual backend departmentTree, top-level totals and nested manager response without runtime errors"
+                   ],
+    "model_profile":  "inherit",
+    "governance":  "V5.3",
+    "delegations":  0,
+    "notes":  "Existing ORG-001 changes preserved. Cross-layer error handling and regression tests require additional skills. High risk; human approval required before merge/release. No production migration authorized. Security review skill used for safe error serialization; no authorization changes. Follow-up confirmed missing ORG-001 tables/columns on configured 127.0.0.1 development database. Scope includes additive local migration 005; no production migration or deployment. Chart follow-up: confirmed frontend/API response contract mismatch; frontend-only repair with actual wire-shape regression fixtures.",
+    "status":  "IMPLEMENTED_PENDING_AUTHENTICATED_BROWSER_VERIFICATION",
+    "skills_used_current":  [
+                                "frontend-standards",
+                                "api-development",
+                                "test-engineering",
+                                "security-review",
+                                "database-migrations"
+                            ],
+    "checks":  {
+                   "frontend_lint":  "PASS after chart contract repair",
+                   "frontend_suite":  "PASS: 72 tests before final regression test addition",
+                   "live_database":  "PASS: configured loopback development DB missing migration 005; dry-run rollback and additive apply succeeded, existing account data fingerprints preserved; all three read-only schema queries pass",
+                   "dashboard_regression":  "PASS: 6 tests including retry-only-failed",
+                   "backend_suite":  "PASS: 86 tests with disposable PostgreSQL",
+                   "policy_tests":  "PASS: 21 tests",
+                   "security_review":  "Main-agent source review: safe error classification, existing authorization preserved; release/CI review pending",
+                   "browser_visual":  "NOT VERIFIED",
+                   "pr_policy":  "NOT VERIFIED: BASE_SHA unavailable",
+                   "migrations":  "PASS: 001-005 and constraints in disposable PostgreSQL only",
+                   "backend_lint":  "PASS",
+                   "frontend_typecheck":  "PASS: build includes tsc --noEmit after organization retry changes",
+                   "frontend_build":  "PASS: rebuilt after chart contract repair; typecheck included",
+                   "backend_typecheck":  "PASS",
+                   "org_ui_regression":  "PASS: 10 organization UI tests, actual backend wire contract, empty chart, manager display, expand/collapse and retry",
+                   "local_bundle":  "PASS: HTTP 200, served index-PPS5a308.js includes departmentTree"
+               }
 }

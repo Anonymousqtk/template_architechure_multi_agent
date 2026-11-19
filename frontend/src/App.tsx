@@ -3,7 +3,8 @@ import { DashboardShell } from './DashboardShell';
 import { AccountProfile } from './AccountProfile';
 import { AccountSecurity } from './AccountSecurity';
 import { UsersPanel, AuditPanel } from './Users';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { OrganizationView } from './OrganizationView';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, errorText, initialize, request, type DeliveryMode, type Invitation, type Profile } from './api';
 
 // Kept only in memory: remove credentials from browser history before any request.
@@ -15,7 +16,7 @@ const roleName: Record<string, string> = { MANAGER: 'Quản lý', ADMIN: 'Quản
 
 function Notice({ children, error = false }: { children: ReactNode; error?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (error) ref.current?.focus(); }, [error, children]);
+  useLayoutEffect(() => { if (error) ref.current?.focus(); }, [error, children]);
   return <div ref={ref} tabIndex={-1} className={`notice ${error ? 'error' : 'success'}`} role={error ? 'alert' : 'status'}>{children}</div>;
 }
 function Field({ label, name, type = 'text', autoComplete, minLength }: { label: string; name: string; type?: string; autoComplete?: string; minLength?: number }) {
@@ -168,6 +169,10 @@ export default function App() {
   else if (['/invite/accept', '/register'].includes(path)) content = <Accept profile={profile} onLogin={onLogin} />;
   else if (path === '/admin/invitations') content = profile ? <Invitations profile={profile} /> : <><Notice error>Vui lòng đăng nhập để quản lý lời mời.</Notice><Login onLogin={onLogin} /></>;
   else if (path === '/admin/users' || path === '/admin/audit') content = profile ? (path === '/admin/users' ? <UsersPanel profile={profile} /> : <AuditPanel profile={profile} />) : <Login onLogin={onLogin} />;
+  else if (path === '/admin/org-chart') content = profile ? <OrganizationView profile={profile} activeTab="org-chart" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
+  else if (path === '/admin/departments') content = profile ? <OrganizationView profile={profile} activeTab="departments" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
+  else if (path === '/admin/positions') content = profile ? <OrganizationView profile={profile} activeTab="positions" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
+  else if (path === '/admin/organization') content = profile ? <OrganizationView profile={profile} activeTab="organization" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
   else if (path === '/app') content = profile ? (profileView?<AccountProfile profile={profile} />:<Dashboard profile={profile}/>) : <><Notice error>Phiên đăng nhập không còn hiệu lực.</Notice><Login onLogin={onLogin} /></>;
   else if (path === '/login' || path === '/') content = <Login onLogin={onLogin} />;
   else content = <><h1>Không tìm thấy trang</h1><a href="/login">Về trang đăng nhập</a></>;

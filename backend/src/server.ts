@@ -9,7 +9,7 @@ const pool=new Pool({connectionString:process.env.DATABASE_URL,max:10});
 const app=createApp({pool,config});
 const frontendRoot=fileURLToPath(new URL('../../frontend/dist/',import.meta.url));
 app.use(express.static(frontendRoot,{index:false}));
-app.get(['/login','/forgot-password','/reset-password','/invite/accept','/register','/admin/invitations','/admin/users','/admin/audit','/security','/app','/'],(_req,res)=>res.sendFile('index.html',{root:frontendRoot}));
+app.use((req,res,next)=>{if(req.method!=='GET'||req.path.startsWith('/api'))return next();res.sendFile('index.html',{root:frontendRoot});});
 const server=app.listen(Number(process.env.PORT||3000),'127.0.0.1',()=>{
   console.info(`ManagerHR listening; email delivery: ${process.env.SMTP_HOST?'SMTP configured (delivery requires verification)':'DEV_ONLY — no email sent'}`);
 });

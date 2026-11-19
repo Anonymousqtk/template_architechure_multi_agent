@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { fail, type Authed, type Identity, type Role } from './types.js';
 
 import { authorizeMutation } from './authorization.js';
+import { detectReportingCycle } from './organization-structure.js';
 
 const uuid = z.string().uuid();
 const roleSchema = z.enum(['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE']);
@@ -17,6 +18,10 @@ export interface UserDto {
   userIsActive: boolean;
   emailVerified: boolean;
   managerUserId: string | null;
+  departmentId?: string | null;
+  positionId?: string | null;
+  departmentName?: string | null;
+  positionTitle?: string | null;
   createdAt: string;
 }
 
@@ -47,9 +52,13 @@ function mapUserRow(row: {
   user_is_active: boolean;
   email_verified_at: Date | string | null;
   manager_user_id: string | null;
+  department_id?: string | null;
+  position_id?: string | null;
+  department_name?: string | null;
+  position_title?: string | null;
   created_at: Date | string;
 }): UserDto {
-  return {
+  const dto: UserDto = {
     id: row.id,
     email: row.email,
     fullName: row.full_name,
@@ -60,6 +69,15 @@ function mapUserRow(row: {
     managerUserId: row.manager_user_id,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
   };
+  if (row.department_id) {
+    dto.departmentId = row.department_id;
+    if (row.department_name) dto.departmentName = row.department_name;
+  }
+  if (row.position_id) {
+    dto.positionId = row.position_id;
+    if (row.position_title) dto.positionTitle = row.position_title;
+  }
+  return dto;
 }
 
 export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
@@ -132,7 +150,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
       conditions.push(`(m.role = 'EMPLOYEE' OR m.user_id = $${params.length})`);
     } else if (identity.role === 'MANAGER') {
       params.push(identity.userId);
-      conditions.push(`((m.role = 'EMPLOYEE' AND m.manager_user_id = $${params.length}) OR m.user_id = $${params.length})`);
+      conditions.push(`(m.manager_user_id = $${params.length} OR m.user_id = $${params.length})`);
     }
 
     if (q) {
@@ -157,9 +175,12 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
     const listParams = [...params, limit, (page - 1) * limit];
     const rows = await pool.query(
       `SELECT u.id, u.email, u.full_name, m.role, m.is_active, u.is_active AS user_is_active,
-              u.email_verified_at, m.manager_user_id, m.created_at
+              u.email_verified_at, m.manager_user_id, m.department_id, m.position_id,
+              dept.name AS department_name, pos.title AS position_title, m.created_at
        FROM memberships m
        JOIN users u ON u.id = m.user_id
+       LEFT JOIN departments dept ON dept.id = m.department_id
+       LEFT JOIN positions pos ON pos.id = m.position_id
        WHERE ${whereClause}
        ORDER BY m.created_at ASC, u.id ASC
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
@@ -178,9 +199,12 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
 
     const result = await pool.query(
       `SELECT u.id, u.email, u.full_name, m.role, m.is_active, u.is_active AS user_is_active,
-              u.email_verified_at, m.manager_user_id, m.created_at
+              u.email_verified_at, m.manager_user_id, m.department_id, m.position_id,
+              dept.name AS department_name, pos.title AS position_title, m.created_at
        FROM memberships m
        JOIN users u ON u.id = m.user_id
+       LEFT JOIN departments dept ON dept.id = m.department_id
+       LEFT JOIN positions pos ON pos.id = m.position_id
        WHERE m.organization_id = $1 AND m.user_id = $2`,
       [identity.orgId, targetUserId],
     );
@@ -189,7 +213,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
 
     if (targetUserId !== identity.userId) {
       if (identity.role === 'HR' && row.role !== 'EMPLOYEE') fail(404, 'USER_NOT_FOUND');
-      if (identity.role === 'MANAGER' && !(row.role === 'EMPLOYEE' && row.manager_user_id === identity.userId)) {
+      if (identity.role === 'MANAGER' && row.manager_user_id !== identity.userId) {
         fail(404, 'USER_NOT_FOUND');
       }
     }
@@ -257,7 +281,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
         await ensureAnotherActiveAdminExists(db, identity.orgId, targetUserId);
       }
 
-      const nextManagerUserId = data.role === 'EMPLOYEE' ? target.manager_user_id : null;
+      const nextManagerUserId = ['EMPLOYEE', 'MANAGER'].includes(data.role) ? target.manager_user_id : null;
       await db.query('UPDATE memberships SET role=$1, manager_user_id=$2 WHERE id=$3', [
         data.role,
         nextManagerUserId,
@@ -304,9 +328,12 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
       );
       const target = targetResult.rows[0];
       if (!target) fail(404, 'USER_NOT_FOUND');
-      if (target.role !== 'EMPLOYEE') fail(400, 'INVALID_MANAGER');
+      if (!['EMPLOYEE', 'MANAGER'].includes(target.role)) fail(400, 'INVALID_MANAGER');
 
       if (data.managerUserId !== null) {
+        const isCycle = await detectReportingCycle(db, identity.orgId, targetUserId, data.managerUserId);
+        if (isCycle) fail(400, 'CIRCULAR_REPORTING');
+
         const managerResult = await db.query<{
           role: Role;
           m_active: boolean;

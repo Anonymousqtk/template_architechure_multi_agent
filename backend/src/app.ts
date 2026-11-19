@@ -11,6 +11,8 @@ import { HttpError, fail, type Authed, type Identity } from './types.js';
 import { authorizeMutation, permissionsFor } from './authorization.js';
 import { registerSecurityRoutes } from './session-security.js';
 import { registerUserRoutes } from './users.js';
+import { registerOrgStructureRoutes } from './organization-structure.js';
+import { serviceErrorCode } from './service-errors.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -306,6 +308,7 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
   });
   registerSecurityRoutes(app, {pool,config,transaction,audit,requireIdentity,throttle});
   registerUserRoutes(app, { pool, transaction, audit, requireIdentity });
+  registerOrgStructureRoutes(app, { pool, transaction, audit, requireIdentity });
   app.use('/api',(_req,res)=>res.status(404).json({code:'NOT_FOUND'}));
   app.use(async(error: unknown,_req: Authed,res: Response,_next: NextFunction)=>{
     void _next;
@@ -320,6 +323,8 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     if(error instanceof HttpError) {if(error.status===429) res.setHeader('Retry-After','900');res.status(error.status).json({code:error.code});return;}
     if(error instanceof SyntaxError) {res.status(400).json({code:'INVALID_JSON'});return;}
     // Never serialize database, SMTP, request, password or URL/token errors.
+    const serviceCode=serviceErrorCode(error);
+    if(serviceCode) {res.status(503).json({code:serviceCode});return;}
     res.status(500).json({code:'INTERNAL_ERROR'});
   });
   return app;

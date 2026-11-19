@@ -12,6 +12,19 @@ const fixture=async(path:string)=>{if(path==='/api/auth/sessions')return session
 const card=(name:string)=>within(screen.getByRole('heading',{name}).closest('section')!);
 beforeEach(()=>{mock.mockReset();mock.mockImplementation(fixture);});afterEach(cleanup);
 describe('permission-scoped dashboard',()=>{
+ it('retries only failed resources and preserves loaded totals',async()=>{
+  let failed=true;
+  mock.mockImplementation(async path=>{if(path.includes('status=active')&&failed)throw Error('offline');return fixture(path);});
+  render(<Dashboard profile={profile}/>);
+  await screen.findByRole('alert');
+  expect(screen.getByText('Xem 1 mục bị ảnh hưởng')).toBeVisible();
+  const before=mock.mock.calls.length;
+  failed=false;
+  fireEvent.click(screen.getByRole('button',{name:'Thử tải lại'}));
+  await waitFor(()=>expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(mock.mock.calls.slice(before).map(([path])=>path)).toEqual(['/api/organizations/org-a/users?page=1&limit=1&status=active']);
+  expect(card('Tổng quan đội ngũ').getAllByText('12')[0]).toBeVisible();
+ });
  it('uses server totals and labels invitation statistics as a recent sample',async()=>{render(<Dashboard profile={profile}/>);await waitFor(()=>expect(card('Tài khoản hoạt động').getByText('10')).toBeVisible());expect(card('Tổng quan đội ngũ').getAllByText('12')[0]).toBeVisible();expect(card('Lời mời chờ tham gia').getByText('1')).toBeVisible();expect(card('Lời mời chờ tham gia').getByText('Trong tối đa 8 lời mời gần nhất')).toBeVisible();expect(card('Theo dõi lời mời').getByText('50%')).toBeVisible();expect(await screen.findByText('Tạo lời mời')).toBeVisible();expect(mock.mock.calls.every(([path])=>!path.includes('/organizations/')||path.includes('/organizations/org-a/'))).toBe(true);});
  it('ordinary employee requests only own sessions and never privileged datasets',async()=>{const employee={...profile,organization:{...profile.organization,role:'EMPLOYEE' as const},permissions:{invite:false,grantHR:false}};render(<Dashboard profile={employee}/>);expect(await screen.findByText('Chrome')).toBeVisible();expect(mock.mock.calls.map(([path])=>path)).toEqual(['/api/auth/sessions']);expect(screen.queryByRole('heading',{name:'Cơ cấu vai trò'})).not.toBeInTheDocument();expect(screen.queryByRole('heading',{name:'Hoạt động gần đây'})).not.toBeInTheDocument();});
  it('Manager reads scoped users but never invitations or audit',async()=>{render(<Dashboard profile={{...profile,organization:{...profile.organization,role:'MANAGER'},permissions:{invite:false,grantHR:false,readUsers:true}}}/>);await waitFor(()=>expect(card('Tài khoản hoạt động').getByText('10')).toBeVisible());expect(mock.mock.calls.some(([path])=>path.includes('/invitations')||path.includes('/audit-events'))).toBe(false);expect(screen.getByText('Số liệu trong phạm vi quản lý của bạn')).toBeVisible();});
