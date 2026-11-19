@@ -9,10 +9,14 @@ it('Managers can discover scoped chart, departments and positions without mutati
  render(<DashboardShell profile={manager} path="/admin/org-chart" profileView={false} busy={false} onLogout={()=>{}}>Chart</DashboardShell>);
  expect(screen.getByRole('link',{name:'Sơ đồ tổ chức'})).toHaveAttribute('href','/admin/org-chart');
  expect(screen.getByRole('link',{name:'Phòng ban'})).toBeVisible();
- expect(screen.getByRole('link',{name:'Chức danh'})).toBeVisible();
+ expect(screen.getByRole('link',{name:'Chức danh và vị trí'})).toBeVisible();
  expect(screen.queryByRole('link',{name:'Lời mời'})).not.toBeInTheDocument();
 });
 beforeEach(()=>{Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:function(this:HTMLDialogElement){this.setAttribute('open','');}});Object.defineProperty(HTMLDialogElement.prototype,'close',{configurable:true,value:function(this:HTMLDialogElement){this.removeAttribute('open');}});});afterEach(()=>{cleanup();vi.unstubAllGlobals();});
+it('opens the employee navigation when loading attendance directly', () => {
+ render(<DashboardShell profile={profile} path="/admin/attendance" profileView={false} busy={false} onLogout={()=>{}}>Attendance</DashboardShell>);
+ expect(screen.getByRole('link', { name: 'Chấm công và nghỉ phép' })).toHaveAttribute('aria-current', 'page');
+});
 it('mobile navigation restores body scrolling and opener focus on Escape',()=>{render(<DashboardShell profile={profile} path="/app" profileView={false} busy={false} onLogout={()=>{}}>Dashboard</DashboardShell>);const opener=screen.getByRole('button',{name:'Mở điều hướng'});opener.focus();fireEvent.click(opener);expect(document.body.style.overflow).toBe('hidden');const modal=screen.getByRole('dialog',{name:'Điều hướng'});fireEvent(modal,new Event('cancel',{cancelable:true}));expect(document.body.style.overflow).toBe('');expect(opener).toHaveFocus();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();});
 it('does not leave scroll locked if the shell unmounts with navigation open',()=>{const view=render(<DashboardShell profile={profile} path="/app" profileView={false} busy={false} onLogout={()=>{}}>Dashboard</DashboardShell>);fireEvent.click(screen.getByRole('button',{name:'Mở điều hướng'}));view.unmount();expect(document.body.style.overflow).toBe('');});
 it('closes mobile menu when resizing to desktop',()=>{let resized:()=>void=()=>{};const media={matches:false,addEventListener:vi.fn((_name:string,handler:()=>void)=>{resized=handler;}),removeEventListener:vi.fn()};vi.stubGlobal('matchMedia',()=>media);render(<DashboardShell profile={profile} path="/app" profileView={false} busy={false} onLogout={()=>{}}>Dashboard</DashboardShell>);fireEvent.click(screen.getByRole('button',{name:'Mở điều hướng'}));media.matches=true;act(resized);expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(document.body.style.overflow).toBe('');});

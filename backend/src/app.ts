@@ -14,6 +14,7 @@ import { passkeysAvailable, registerPasskeyRoutes } from './passkeys.js';
 import { registerUserRoutes } from './users.js';
 import { registerOrgStructureRoutes } from './organization-structure.js';
 import { registerEmployeeRoutes } from './employees.js';
+import { registerAttendanceRoutes } from './attendance.js';
 import { serviceErrorCode } from './service-errors.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
@@ -317,6 +318,7 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
   registerUserRoutes(app, { pool, transaction, audit, requireIdentity });
   registerOrgStructureRoutes(app, { pool, transaction, audit, requireIdentity });
   registerEmployeeRoutes(app, { pool, transaction, audit, requireIdentity });
+  registerAttendanceRoutes(app, { pool, transaction, audit, requireIdentity });
   app.use('/api',(_req,res)=>res.status(404).json({code:'NOT_FOUND'}));
   app.use(async(error: unknown,_req: Authed,res: Response,_next: NextFunction)=>{
     void _next;

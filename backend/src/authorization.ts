@@ -10,6 +10,7 @@ export async function authorizeMutation(
     identity: Identity,
     userIdsToLock: string[],
     allowedRoles: readonly Role[],
+    { requireRecent = true } = {},
   ): Promise<Role> {
     const org = await db.query('SELECT id FROM organizations WHERE id=$1 AND is_active FOR UPDATE', [identity.orgId]);
     if (!org.rowCount) fail(401, 'AUTHENTICATION_REQUIRED');
@@ -39,7 +40,7 @@ export async function authorizeMutation(
     if(identity.mfaEnforced!==false){
       const factor=await db.query('SELECT enabled_at FROM user_mfa WHERE user_id=$1',[identity.userId]);
       if((['ADMIN','HR'].includes(actorRow.role)||factor.rows[0]?.enabled_at)&&!session.rows[0].mfa_verified_at)fail(403,'MFA_REQUIRED');
-      if(!session.rows[0].reauthenticated_at||Date.now()-new Date(session.rows[0].reauthenticated_at).getTime()>600000)fail(403,'REAUTH_REQUIRED');
+      if(requireRecent&&(!session.rows[0].reauthenticated_at||Date.now()-new Date(session.rows[0].reauthenticated_at).getTime()>600000))fail(403,'REAUTH_REQUIRED');
     }
     return actorRow.role;
   }

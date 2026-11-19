@@ -356,7 +356,7 @@ export function Employees({ profile }: { profile: Profile }) {
               <tr>
                 <th>Mã nhân viên</th>
                 <th>Họ và tên</th>
-                <th>Phòng ban / chức danh</th>
+                <th>Phòng ban / vị trí</th>
                 <th>Trạng thái</th>
                 <th>Chi tiết</th>
               </tr>
@@ -373,7 +373,7 @@ export function Employees({ profile }: { profile: Profile }) {
                   </td>
                   <td>
                     {e.departmentName || 'Chưa phân công'}
-                    <small>{e.positionTitle || 'Chưa có chức danh'}</small>
+                    <small>{e.positionTitle || 'Chưa có vị trí'}</small>
                   </td>
                   <td>
                     <span className={`emp-badge emp-badge-${e.employmentStatus.toLowerCase()}`}>

@@ -1,18 +1,1 @@
-{
-    "id":  "AUTH-PASSKEY-001",
-    "summary":  "Passkey sign-in and accessible authentication challenge",
-    "allowed_scopes":  [
-                           "backend",
-                           "database",
-                           "frontend",
-                           "tests",
-                           "governance"
-                       ],
-    "risk":  "high",
-    "security_review_required":  true,
-    "acceptance":  [
-                       "Sign in with verified passkey and retain invitation-only authentication",
-                       "Separate MFA challenge from account settings and preserve fallback",
-                       "Verify authentication regression, migration and browser behavior"
-                   ]
-}
+{"id":"UI-001","summary":"Refine shared ManagerHR workspace and attendance layout","allowed_scopes":["frontend","backend","database","tests","governance"],"risk":"high","security_review_required":true,"acceptance":["Improve workspace content hierarchy and navigation","Make attendance filters forms and records responsive","Preserve accumulated AUTH, ORG and ATT behavior in the existing worktree"]}

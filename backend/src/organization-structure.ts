@@ -8,6 +8,57 @@ import { managementScope } from './management-scope.js';
 
 const uuid = z.string().uuid();
 const codeRegex = /^[A-Za-z0-9_.-]+$/;
+const catalogRoles = ['ADMIN', 'HR'] as const;
+const catalogCode = z.string().trim().min(1).max(30).regex(codeRegex).transform(value => value.toUpperCase());
+const jobTitleInput = z.object({
+  code: catalogCode,
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(500).nullable().optional(),
+  isActive: z.boolean().optional(),
+}).strict();
+const positionReferences = { jobTitleId: uuid.nullish(), managerPositionId: uuid.nullish() };
+const positionReferenceColumns = `
+  jt.id AS "jobTitleId", jt.name AS "jobTitleName",
+  parent.id AS "managerPositionId", parent.title AS "managerPositionTitle",
+  parent.department_id AS "managerDepartmentId", parent.is_active AS "managerActive"`;
+const positionReferenceJoins = `
+  LEFT JOIN job_titles jt ON jt.id=p.job_title_id AND jt.organization_id=p.organization_id
+  LEFT JOIN positions parent ON parent.id=p.manager_position_id AND parent.organization_id=p.organization_id`;
+
+type PositionReferences = {
+  jobTitleId: string | null; jobTitleName: string | null;
+  managerPositionId: string | null; managerPositionTitle: string | null;
+  managerDepartmentId: string | null; managerActive: boolean | null;
+};
+
+function visiblePositionReferences(row: PositionReferences, identity: Identity, scope: Awaited<ReturnType<typeof managementScope>>) {
+  const canSeeManager = identity.role !== 'EMPLOYEE' &&
+    (!scope || (row.managerActive && row.managerDepartmentId && scope.departments.includes(row.managerDepartmentId)));
+  return {
+    jobTitleId: row.jobTitleId, jobTitleName: row.jobTitleName,
+    managerPositionId: canSeeManager ? row.managerPositionId : null,
+    managerPositionTitle: canSeeManager ? row.managerPositionTitle : null,
+  };
+}
+
+async function validatePositionReferences(db: PoolClient, orgId: string, data: z.infer<z.ZodObject<typeof positionReferences>>, positionId: string) {
+  if (data.jobTitleId && !(await db.query('SELECT 1 FROM job_titles WHERE id=$1 AND organization_id=$2 AND is_active', [data.jobTitleId, orgId])).rowCount) {
+    fail(400, 'INVALID_JOB_TITLE');
+  }
+  if (data.managerPositionId === positionId) fail(400, 'CIRCULAR_POSITION_REPORTING');
+  if (data.managerPositionId && !(await db.query('SELECT 1 FROM positions WHERE id=$1 AND organization_id=$2 AND is_active', [data.managerPositionId, orgId])).rowCount) {
+    fail(400, 'INVALID_MANAGER_POSITION');
+  }
+}
+
+async function writePosition(db: PoolClient, sql: string, values: unknown[]) {
+  try {
+    await db.query(sql, values);
+  } catch (error) {
+    if ((error as { constraint?: string }).constraint === 'positions_reporting_cycle') fail(400, 'CIRCULAR_POSITION_REPORTING');
+    throw error;
+  }
+}
 
 export interface OrgStructureDeps {
   pool: Pool;
@@ -81,6 +132,73 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     if (identity.orgId !== req.params.organizationId) fail(403, 'FORBIDDEN');
     return identity;
   }
+
+  function requireCatalogIdentity(req: Authed) {
+    const identity = requireOrgIdentity(req);
+    if (!catalogRoles.some(role => identity.role === role)) fail(403, 'FORBIDDEN');
+    return identity;
+  }
+
+  app.get(`${orgPrefix}/job-titles`, async (req: Authed, res) => {
+    const identity = requireCatalogIdentity(req);
+    const query = z.object({
+      q: z.string().trim().max(100).default(''),
+      isActive: z.enum(['true', 'false']).optional(),
+      page: z.coerce.number().int().min(1).max(100000).default(1),
+      limit: z.coerce.number().int().min(1).max(100).default(20),
+    }).strict().parse(req.query);
+    const params = [identity.orgId, `%${escapeLike(query.q)}%`, query.isActive ?? null];
+    const where = `organization_id=$1 AND (name ILIKE $2 ESCAPE '\\' OR code ILIKE $2 ESCAPE '\\')
+      AND ($3::boolean IS NULL OR is_active=$3)`;
+    const [list, count] = await Promise.all([
+      pool.query(`SELECT id,code,name,description,is_active AS "isActive" FROM job_titles WHERE ${where} ORDER BY code LIMIT $4 OFFSET $5`,
+        [...params, query.limit, (query.page - 1) * query.limit]),
+      pool.query<{ total: number }>(`SELECT count(*)::int AS total FROM job_titles WHERE ${where}`, params),
+    ]);
+    res.json({ items: list.rows, total: count.rows[0].total, page: query.page, limit: query.limit });
+  });
+
+  app.get(`${orgPrefix}/job-titles/:jobTitleId`, async (req: Authed, res) => {
+    const identity = requireCatalogIdentity(req);
+    const id = uuid.parse(req.params.jobTitleId);
+    const result = await pool.query('SELECT id,code,name,description,is_active AS "isActive" FROM job_titles WHERE organization_id=$1 AND id=$2', [identity.orgId, id]);
+    if (!result.rowCount) fail(404, 'JOB_TITLE_NOT_FOUND');
+    res.json({ jobTitle: result.rows[0] });
+  });
+
+  app.post(`${orgPrefix}/job-titles`, async (req: Authed, res) => {
+    const identity = requireCatalogIdentity(req);
+    const data = jobTitleInput.parse(req.body);
+    const id = randomUUID();
+    await transaction(async db => {
+      await authorizeMutation(db, identity, [identity.userId], catalogRoles);
+      const result = await db.query(`INSERT INTO job_titles (id,organization_id,code,name,description,is_active)
+        VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (organization_id,code) DO NOTHING`,
+      [id, identity.orgId, data.code, data.name, data.description ?? null, data.isActive ?? true]);
+      if (!result.rowCount) fail(409, 'JOB_TITLE_CODE_EXISTS');
+      await audit(db, 'JOB_TITLE_CREATED', identity.userId, identity.orgId, undefined, { jobTitleId: id });
+    });
+    res.status(201).json({ id });
+  });
+
+  app.patch(`${orgPrefix}/job-titles/:jobTitleId`, async (req: Authed, res) => {
+    const identity = requireCatalogIdentity(req);
+    const id = uuid.parse(req.params.jobTitleId);
+    const data = jobTitleInput.partial().parse(req.body);
+    await transaction(async db => {
+      await authorizeMutation(db, identity, [identity.userId], catalogRoles);
+      if (data.code && (await db.query('SELECT 1 FROM job_titles WHERE organization_id=$1 AND code=$2 AND id<>$3', [identity.orgId, data.code, id])).rowCount) {
+        fail(409, 'JOB_TITLE_CODE_EXISTS');
+      }
+      const result = await db.query(`UPDATE job_titles SET code=COALESCE($3,code), name=COALESCE($4,name),
+        description=CASE WHEN $5::boolean THEN $6 ELSE description END, is_active=COALESCE($7,is_active)
+        WHERE organization_id=$1 AND id=$2`,
+      [identity.orgId, id, data.code, data.name, data.description !== undefined, data.description, data.isActive]);
+      if (!result.rowCount) fail(404, 'JOB_TITLE_NOT_FOUND');
+      await audit(db, 'JOB_TITLE_UPDATED', identity.userId, identity.orgId, undefined, { jobTitleId: id });
+    });
+    res.status(204).end();
+  });
 
   // =========================================================================
   // 1. Organization Details & Hierarchy (ORG-001.1)
@@ -605,17 +723,28 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       .object({
         q: z.string().trim().max(100).optional(),
         departmentId: z.string().optional(),
+        jobTitleId: uuid.optional(),
+        managerPositionId: uuid.optional(),
         isActive: z.enum(['true', 'false', 'all']).default('all').optional(),
         page: z.coerce.number().int().min(1).max(100000).default(1),
         limit: z.coerce.number().int().min(1).max(100).default(50),
       })
       .strict();
-    const { q, departmentId, isActive, page, limit } = querySchema.parse(req.query);
+    const { q, departmentId, jobTitleId, managerPositionId, isActive, page, limit } = querySchema.parse(req.query);
 
     const conditions = ['p.organization_id = $1'];
     const params: unknown[] = [identity.orgId];
     const scope = await managementScope(pool,identity);
     if(scope){params.push(scope.departments);conditions.push(`p.department_id=ANY($${params.length}::uuid[]) AND p.is_active`);}
+    if (jobTitleId) {
+      params.push(jobTitleId);
+      conditions.push(`p.job_title_id=$${params.length}`);
+    }
+    if (managerPositionId) {
+      requireCatalogIdentity(req);
+      params.push(managerPositionId);
+      conditions.push(`p.manager_position_id=$${params.length}`);
+    }
 
     if (isActive === 'true') conditions.push('p.is_active = true');
     else if (isActive === 'false') conditions.push('p.is_active = false');
@@ -650,12 +779,14 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       member_count: number;
       created_at: Date;
       updated_at: Date;
-    }>(
+    } & PositionReferences>(
       `SELECT p.id, p.organization_id, p.department_id, d.name AS department_name, p.code, p.title,
               p.description, p.is_active, p.created_at, p.updated_at,
+              ${positionReferenceColumns},
               COALESCE(m_count.total, 0)::int AS member_count
        FROM positions p
        LEFT JOIN departments d ON d.id = p.department_id
+       ${positionReferenceJoins}
        LEFT JOIN (
          SELECT position_id, count(*)::int AS total
          FROM memberships
@@ -670,6 +801,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
     res.json({
       items: rows.rows.map(r => ({
+        ...visiblePositionReferences(r, identity, scope),
         id: r.id,
         organizationId: r.organization_id,
         departmentId: r.department_id,
@@ -706,12 +838,14 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       member_count: number;
       created_at: Date;
       updated_at: Date;
-    }>(
+    } & PositionReferences>(
       `SELECT p.id, p.organization_id, p.department_id, d.name AS department_name, p.code, p.title,
               p.description, p.is_active, p.created_at, p.updated_at,
+              ${positionReferenceColumns},
               COALESCE(m_count.total, 0)::int AS member_count
        FROM positions p
        LEFT JOIN departments d ON d.id = p.department_id
+       ${positionReferenceJoins}
        LEFT JOIN (
          SELECT position_id, count(*)::int AS total
          FROM memberships
@@ -726,6 +860,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
     res.json({
       position: {
+        ...visiblePositionReferences(row, identity, scope),
         id: row.id,
         organizationId: row.organization_id,
         departmentId: row.department_id,
@@ -751,6 +886,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         title: z.string().trim().min(1).max(100),
         description: z.string().trim().max(500).optional().nullable(),
         departmentId: uuid.optional().nullable(),
+        isActive: z.boolean().optional(),
+        ...positionReferences,
       })
       .strict();
     const data = schema.parse(req.body);
@@ -774,10 +911,12 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       }
 
       const id = randomUUID();
-      await db.query(
-        `INSERT INTO positions(id, organization_id, department_id, code, title, description)
-         VALUES($1, $2, $3, $4, $5, $6)`,
-        [id, identity.orgId, data.departmentId ?? null, code, data.title, data.description ?? null],
+      await validatePositionReferences(db, identity.orgId, data, id);
+      await writePosition(db,
+        `INSERT INTO positions(id, organization_id, department_id, code, title, description, job_title_id, manager_position_id, is_active)
+         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, identity.orgId, data.departmentId ?? null, code, data.title, data.description ?? null,
+          data.jobTitleId ?? null, data.managerPositionId ?? null, data.isActive ?? true],
       );
 
       await audit(db, 'POSITION_CREATED', identity.userId, identity.orgId, undefined, {
@@ -785,6 +924,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         code,
         title: data.title,
         departmentId: data.departmentId ?? null,
+        jobTitleId: data.jobTitleId ?? null,
+        managerPositionId: data.managerPositionId ?? null,
       });
 
       return id;
@@ -805,6 +946,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         description: z.string().trim().max(500).optional().nullable(),
         departmentId: uuid.optional().nullable(),
         isActive: z.boolean().optional(),
+        ...positionReferences,
       })
       .strict();
     const data = schema.parse(req.body);
@@ -818,8 +960,10 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         title: string;
         department_id: string | null;
         is_active: boolean;
+        job_title_id: string | null;
+        manager_position_id: string | null;
       }>(
-        'SELECT id, code, title, department_id, is_active FROM positions WHERE organization_id = $1 AND id = $2 FOR UPDATE',
+        'SELECT id, code, title, department_id, is_active, job_title_id, manager_position_id FROM positions WHERE organization_id = $1 AND id = $2 FOR UPDATE',
         [identity.orgId, posId],
       );
       const pos = posRes.rows[0];
@@ -855,15 +999,20 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         const employeeAssigned=await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND position_id=$2 AND department_id IS DISTINCT FROM $3::uuid LIMIT 1',[identity.orgId,posId,nextDeptId]);
         if(employeeAssigned.rowCount)fail(409,'POSITION_IN_USE');
       }
-      await db.query(
+      await validatePositionReferences(db, identity.orgId, data, posId);
+      const nextJobTitleId = data.jobTitleId === undefined ? pos.job_title_id : data.jobTitleId;
+      const nextManagerPositionId = data.managerPositionId === undefined ? pos.manager_position_id : data.managerPositionId;
+      await writePosition(db,
         `UPDATE positions
          SET code = $1,
              title = COALESCE($2, title),
              description = CASE WHEN $3::boolean THEN $4 ELSE description END,
              department_id = CASE WHEN $5::boolean THEN $6 ELSE department_id END,
              is_active = COALESCE($7, is_active),
+             job_title_id = $9,
+             manager_position_id = $10,
              updated_at = now()
-         WHERE id = $8`,
+         WHERE id = $8 AND organization_id = $11`,
         [
           nextCode,
           data.title ?? null,
@@ -873,13 +1022,17 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
           nextDeptId,
           data.isActive ?? null,
           posId,
+          nextJobTitleId,
+          nextManagerPositionId,
+          identity.orgId,
         ],
       );
 
       await audit(db, 'POSITION_UPDATED', identity.userId, identity.orgId, undefined, {
         positionId: posId,
         before: pos,
-        after: { code: nextCode, title: data.title ?? pos.title, departmentId: nextDeptId, isActive: data.isActive ?? pos.is_active },
+        after: { code: nextCode, title: data.title ?? pos.title, departmentId: nextDeptId, isActive: data.isActive ?? pos.is_active,
+          jobTitleId: nextJobTitleId, managerPositionId: nextManagerPositionId },
       });
     });
 
@@ -910,7 +1063,10 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
       const employeeReferences=await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND position_id=$2 UNION ALL SELECT 1 FROM employee_work_history WHERE organization_id=$1 AND position_id=$2 LIMIT 1',[identity.orgId,posId]);
       if(employeeReferences.rowCount)fail(409,'POSITION_IN_USE');
-      await db.query('DELETE FROM positions WHERE id = $1', [posId]);
+      if ((await db.query('SELECT 1 FROM positions WHERE organization_id=$1 AND manager_position_id=$2 LIMIT 1', [identity.orgId, posId])).rowCount) {
+        fail(409, 'POSITION_HAS_REPORTS');
+      }
+      await db.query('DELETE FROM positions WHERE id = $1 AND organization_id = $2', [posId, identity.orgId]);
       await audit(db, 'POSITION_DELETED', identity.userId, identity.orgId, undefined, { positionId: posId });
     });
 

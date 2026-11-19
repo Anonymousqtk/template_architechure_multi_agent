@@ -39,6 +39,32 @@ The server verifies the origin, relying-party ID and device user verification. C
 
 ## ORG-002 organization and management scope
 
+### Job titles and position reporting
+
+- Admin and HR manage the tenant catalog at `/api/organizations/:organizationId/job-titles`. GET lists paginated titles with `q` and `isActive`. GET by ID returns `{jobTitle}`. POST accepts `{code,name,description?,isActive?}`. PATCH accepts partial fields. Codes are unique per tenant after normalization.
+- Position POST and PATCH also accept `jobTitleId` and `managerPositionId`. An explicit `null` clears a relationship. Position reads show the linked title and visible manager position. Use `jobTitleId` to filter by title and, as Admin or HR, `managerPositionId` to list direct reports. Managers only see supervisor details for active positions in their own department scope.
+- New relationships require active references in the same tenant. Deactivation preserves existing relationships. A position with direct reports cannot be deleted until those reports are moved or detached. The Position reporting structure and existing employee reporting are maintained independently. Neither a job title nor a position changes system permissions.
+- Migration `009` adds nullable relationships without inferring links for existing positions. For rollback in a shared environment, use an approved backup or reviewed forward repair.
+
+## ATT-001 attendance, scheduling and leave
+
+All routes below use `/api/organizations/:organizationId/attendance`. Use the same session and CSRF rules as the other organization APIs. Employee resolution and review scope are tenant-bound. Admin/HR configure catalogs and schedules. Managers review within their existing management scope. Employees record their own punches. A reviewer cannot approve or reject their own request or a request they submitted on behalf of someone else.
+
+| Method | Relative path | Operation |
+|---|---|---|
+| GET | `/employees?q=&page=` · `/catalog` | Scope-filtered employee list and attendance catalogs. |
+| GET | `/employees/:employeeId/ledger?from=&to=&timeZone=` | Calendar (shift local dates), raw/effective punches, correction history, leave (requested time zone, UTC default), and balances. |
+| PUT | `/shifts/:id` · `/leave-types/:id` | Create with `new` or replace the named configuration. |
+| PUT/DELETE | `/employees/:employeeId/schedule/:id` | Add (`new`), replace or remove future, unpunched shift/off assignments. Shifts snapshot their hours, time zone and thresholds. Ambiguous local times require an explicit ISO offset. |
+| POST | `/punches/:scheduleId` | `{action:"IN"\|"OUT"}` only. Server provides time and checks eligibility. |
+| POST | `/corrections/:scheduleId` · `/corrections/:id/review` | Propose an effective in/out pair after shift end, or approve/reject with a reason. Raw punches stay intact. |
+| PUT | `/employees/:employeeId/balances/:leaveTypeId` | Set total authorized allowance minutes with a reason. |
+| POST | `/employees/:employeeId/leave` · `/leave/:id/review` · `/leave/:id/cancel` | Submit an explicit time interval, approve/reject, or cancel with a reason. Pending cancellation is available to the requester/employee and scoped reviewers. Approved cancellation requires a different authorized reviewer with recent authentication. |
+
+Late, early departure and after-shift overtime indicators are computed only when their respective shift thresholds are configured. Recorded minutes describe elapsed timestamps. Break deductions, payroll rounding, overtime payment, accrual, holidays, expiry and carryover require approved business rules. Tracked leave approval requires an explicit `chargeMinutes`; available minutes are allowance minus approved charges, so replay cannot double-charge and cancellation releases the allocation. Existing scheduled work stays visible under approved leave. Worked time and approved leave conflicts are exposed for reconciliation.
+
+Migration `010` is additive. Production rollback requires an approved backup or a reviewed forward repair because attendance records carry audit history.
+
 `/api/organizations/:organizationId` remains an authenticated tenant boundary.
 Internal branches, departments, teams and groups reuse `departments.parent_id`;
 the current schema has no separate tenant group. A non-null

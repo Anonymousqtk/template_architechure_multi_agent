@@ -9,6 +9,7 @@ import { WebAuthnAbortService, browserSupportsWebAuthn, browserSupportsWebAuthnA
 import { UsersPanel, AuditPanel } from './Users';
 import { OrganizationView } from './OrganizationView';
 import { Employees } from './Employees';
+import { Attendance } from './Attendance';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, errorText, initialize, request, type DeliveryMode, type Invitation, type Profile } from './api';
 
@@ -261,6 +262,7 @@ export default function App() {
   else if (path === '/admin/positions') content = profile ? <OrganizationView profile={profile} activeTab="positions" onNavigate={navigate} /> : login;
   else if (path === '/admin/organization') content = profile ? <OrganizationView profile={profile} activeTab="organization" onNavigate={navigate} /> : login;
   else if (path === '/admin/employees') content = profile ? <Employees profile={profile} /> : login;
+  else if (path === '/admin/attendance') content = profile ? <Attendance profile={profile} /> : login;
   else if (path === '/app') content = profile ? (profileView?<AccountProfile profile={profile} />:<Dashboard profile={profile}/>) : <><Notice error>Phiên đăng nhập không còn hiệu lực.</Notice>{login}</>;
   else if (path === '/login' || path === '/') content = login;
   else content = <><h1>Không tìm thấy trang</h1><a href="/login">Về trang đăng nhập</a></>;

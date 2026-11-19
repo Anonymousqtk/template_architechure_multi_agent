@@ -200,7 +200,7 @@ describe('ORG-001 Organization Structure UI', () => {
     expect(screen.getByText('Quality Assurance')).toBeVisible();
     expect(screen.getByText(/Bob Intern/)).toBeVisible();
     expect(screen.getByText('Tổng số phòng ban')).toBeVisible();
-    expect(screen.getByText('Tổng số chức danh')).toBeVisible();
+    expect(screen.getByText('Tổng số vị trí')).toBeVisible();
     expect(screen.getByText('Tổng số thành viên')).toBeVisible();
   });
 
@@ -241,6 +241,7 @@ describe('ORG-001 Organization Structure UI', () => {
 
   it('PositionsPanel renders positions table and handles create position modal', async () => {
     mock.mockImplementation(async (path: string) => {
+      if (path.includes('/job-titles')) return { items: [{ id: 'title-1', name: 'Engineer', code: 'ENG' }], total: 1 };
       if (path.includes('/positions')) {
         return { items: samplePositions, total: 1 };
       }
@@ -254,11 +255,15 @@ describe('ORG-001 Organization Structure UI', () => {
     expect(await screen.findByText('DEV_SR')).toBeVisible();
     expect(screen.getByText('Senior Software Engineer')).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: '+ Thêm chức danh mới' }));
-    expect(screen.getByText('Thêm chức danh mới')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '+ Thêm vị trí mới' }));
+    expect(screen.getByText('Thêm vị trí mới')).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText(/Mã chức danh/i), { target: { value: 'QA_ENG' } });
-    fireEvent.change(screen.getByLabelText(/Tên chức danh/i), { target: { value: 'QA Engineer' } });
+    fireEvent.change(screen.getByLabelText(/Mã vị trí/i), { target: { value: 'QA_ENG' } });
+    fireEvent.change(screen.getByLabelText(/Tên vị trí/i), { target: { value: 'QA Engineer' } });
+    await screen.findByRole('option', { name: 'Engineer (ENG)' });
+    fireEvent.change(screen.getByLabelText('Chức danh'), { target: { value: 'title-1' } });
+    fireEvent.change(screen.getByLabelText('Vị trí cấp trên'), { target: { value: samplePositions[0].id } });
+    fireEvent.change(screen.getByLabelText('Trạng thái vị trí'), { target: { value: 'false' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Tạo mới' }));
     await waitFor(() => {
@@ -267,9 +272,26 @@ describe('ORG-001 Organization Structure UI', () => {
         expect.objectContaining({
           code: 'QA_ENG',
           title: 'QA Engineer',
+          jobTitleId: 'title-1',
+          managerPositionId: samplePositions[0].id,
+          isActive: false,
         }),
       );
     });
+  });
+
+  it('opens the distinct job-title catalog and edits title status', async () => {
+    mock.mockImplementation(async (path: string) => {
+      if (path.includes('/job-titles?')) return { items: [{ id: 'title-1', code: 'ENG', name: 'Engineer', isActive: true }], total: 1 };
+      return { items: [], total: 0 };
+    });
+    render(<OrganizationView profile={adminProfile} activeTab="positions" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Danh mục chức danh' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa chức danh Engineer' }));
+    fireEvent.change(screen.getByLabelText('Trạng thái chức danh'), { target: { value: 'false' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu chức danh' }));
+    await waitFor(() => expect(mock).toHaveBeenCalledWith('/api/organizations/org-test/job-titles/title-1',
+      expect.objectContaining({ code: 'ENG', isActive: false }), 'PATCH'));
   });
 
   it('OrganizationPanel displays organization details and allows Admin edit', async () => {

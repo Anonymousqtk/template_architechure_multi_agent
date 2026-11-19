@@ -40,11 +40,22 @@ export interface Position {
   departmentName: string | null;
   code: string;
   title: string;
+  jobTitleId?: string | null;
+  jobTitleName?: string | null;
+  managerPositionId?: string | null;
+  managerPositionTitle?: string | null;
   description: string | null;
   isActive: boolean;
   memberCount: number;
   createdAt: string;
   updatedAt: string;
+}
+export interface JobTitle {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
 }
 export interface OrgChartMember {
   userId: string;
@@ -100,7 +111,7 @@ export async function initialize(): Promise<{ csrfToken: string; deliveryMode: D
   csrfToken = result.csrfToken;
   return result;
 }
-export async function request<T = void>(path: string, body?: unknown, methodOverride?: 'GET' | 'POST' | 'PATCH' | 'DELETE'): Promise<T> {
+export async function request<T = void>(path: string, body?: unknown, methodOverride?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'): Promise<T> {
   try {
     return await send<T>(path, body, methodOverride);
   } catch (cause) {
@@ -113,7 +124,7 @@ export async function request<T = void>(path: string, body?: unknown, methodOver
   }
 }
 
-async function send<T>(path: string, body?: unknown, methodOverride?: 'GET' | 'POST' | 'PATCH' | 'DELETE'): Promise<T> {
+async function send<T>(path: string, body?: unknown, methodOverride?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'): Promise<T> {
   const method = methodOverride || (body === undefined ? 'GET' : 'POST');
   const response = await fetch(path, {
     method, credentials: 'same-origin',
@@ -128,7 +139,35 @@ async function send<T>(path: string, body?: unknown, methodOverride?: 'GET' | 'P
 }
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) {
-    const messages:Record<string,string>={EMPLOYEE_NOT_FOUND:'Không tìm thấy hồ sơ trong phạm vi được phép.',EMPLOYEE_CODE_EXISTS:'Mã nhân viên đã tồn tại trong tổ chức.',EMPLOYEE_ACCOUNT_EXISTS:'Tài khoản đã được liên kết với một hồ sơ.',INVALID_EMPLOYEE_ACCOUNT:'Tài khoản phải đang hoạt động trong cùng tổ chức.',ACCOUNT_ASSIGNMENT_MISMATCH:'Phân công của hồ sơ liên kết phải khớp với tài khoản hiện có.',INVALID_EMPLOYEE_DATES:'Kiểm tra ngày vào làm và ngày sinh. Ngày vào làm không được ở tương lai.',STALE_RECORD:'Dữ liệu đã thay đổi. Hãy tải lại hồ sơ trước khi lưu.',INVALID_HISTORY_DATE:'Ngày công tác phải từ ngày vào làm, không ở tương lai và không trước mốc đã ghi nhận.',ASSIGNMENT_UNCHANGED:'Phòng ban, chức danh và quản lý chưa có thay đổi.',CONTRACT_NUMBER_EXISTS:'Số hợp đồng đã tồn tại trong tổ chức.',CONTRACT_NOT_FOUND:'Không tìm thấy hợp đồng.',INVALID_CONTRACT_DATES:'Kiểm tra thời hạn, ngày ký và ngày chấm dứt hợp đồng.',CONTRACT_IMMUTABLE:'Nội dung hợp đồng đã được khóa. Hãy tạo hợp đồng mới để ghi nhận thay đổi.',INVALID_CONTRACT_TRANSITION:'Không thể chuyển sang trạng thái hợp đồng này.',ACTIVE_CONTRACT_EXISTS:'Nhân viên đã có một hợp đồng đang thực hiện.',CONTRACT_SIGNATURE_DATE_REQUIRED:'Cần ghi ngày ký hợp lệ trước khi hoàn tất hợp đồng.'};
+    const attendanceMessages: Record<string, string> = {
+      ATT_EMPLOYEE_NOT_FOUND: 'Không tìm thấy nhân viên trong phạm vi được phép.',
+      ATT_EMPLOYEE_INACTIVE: 'Hồ sơ nhân viên đã kết thúc công tác.',
+      ATT_SCHEDULE_NOT_FOUND: 'Không tìm thấy lịch làm việc.',
+      ATT_SHIFT_NOT_FOUND: 'Ca làm việc không tồn tại hoặc đã ngừng sử dụng.',
+      ATT_INVALID_ZONE: 'Múi giờ IANA không hợp lệ.',
+      ATT_INVALID_RANGE: 'Kiểm tra ngày hoặc thứ tự giờ bắt đầu và kết thúc.',
+      ATT_AMBIGUOUS_SCHEDULE: 'Giờ ca không tồn tại hoặc xuất hiện hai lần. Hãy kiểm tra múi giờ và độ lệch giờ.',
+      ATT_SCHEDULE_STARTED: 'Chỉ có thể thay đổi lịch tương lai chưa ghi giờ.',
+      ATT_SCHEDULE_CONFLICT: 'Lịch mới trùng với ca hoặc ngày nghỉ đã phân.',
+      ATT_DUPLICATE_NAME: 'Tên đã tồn tại trong danh mục.',
+      ATT_PUNCH_UNAVAILABLE: 'Ca này không thể ghi giờ.',
+      ATT_DUPLICATE_PUNCH: 'Dấu giờ này đã được ghi hoặc chưa có giờ vào.',
+      ATT_OPEN_PUNCH: 'Bạn còn một ca chưa ghi giờ ra. Hãy hoàn tất hoặc đề nghị điều chỉnh công.',
+      ATT_PUNCH_WINDOW: 'Chưa đến hoặc đã hết thời gian check-in của ca.',
+      ATT_LEAVE_CONFLICT: 'Thời gian trùng với đơn nghỉ đang chờ hoặc đã duyệt.',
+      ATT_WORK_CONFLICT: 'Thời gian trùng với giờ công đã ghi nhận.',
+      ATT_PENDING_CORRECTION: 'Ca này đã có đề nghị điều chỉnh đang chờ duyệt.',
+      ATT_STALE_CORRECTION: 'Dấu giờ gốc đã thay đổi. Từ chối đề nghị cũ trước khi lập đề nghị mới.',
+      ATT_REQUEST_NOT_FOUND: 'Không tìm thấy đơn trong phạm vi được phép.',
+      ATT_ALREADY_REVIEWED: 'Đơn đã đổi trạng thái. Hãy làm mới danh sách.',
+      ATT_SELF_REVIEW: 'Cần người có thẩm quyền khác xử lý yêu cầu này.',
+      ATT_LEAVE_TYPE_UNAVAILABLE: 'Loại phép không khả dụng hoặc không cho đổi cách theo dõi số dư.',
+      ATT_INSUFFICIENT_BALANCE: 'Số dư phép không đủ hoặc chưa được cấp.',
+      ATT_CHARGE_REQUIRED: 'Nhập số phút trừ theo chính sách đã duyệt.',
+      ATT_INVALID_CHARGE: 'Số phút trừ không phù hợp với loại phép hoặc khoảng thời gian đã yêu cầu.',
+    };
+    if (attendanceMessages[error.code]) return attendanceMessages[error.code];
+    const messages:Record<string,string>={EMPLOYEE_NOT_FOUND:'Không tìm thấy hồ sơ trong phạm vi được phép.',EMPLOYEE_CODE_EXISTS:'Mã nhân viên đã tồn tại trong tổ chức.',EMPLOYEE_ACCOUNT_EXISTS:'Tài khoản đã được liên kết với một hồ sơ.',INVALID_EMPLOYEE_ACCOUNT:'Tài khoản phải đang hoạt động trong cùng tổ chức.',ACCOUNT_ASSIGNMENT_MISMATCH:'Phân công của hồ sơ liên kết phải khớp với tài khoản hiện có.',INVALID_EMPLOYEE_DATES:'Kiểm tra ngày vào làm và ngày sinh. Ngày vào làm không được ở tương lai.',STALE_RECORD:'Dữ liệu đã thay đổi. Hãy tải lại hồ sơ trước khi lưu.',INVALID_HISTORY_DATE:'Ngày công tác phải từ ngày vào làm, không ở tương lai và không trước mốc đã ghi nhận.',ASSIGNMENT_UNCHANGED:'Phòng ban, vị trí và quản lý chưa có thay đổi.',CONTRACT_NUMBER_EXISTS:'Số hợp đồng đã tồn tại trong tổ chức.',CONTRACT_NOT_FOUND:'Không tìm thấy hợp đồng.',INVALID_CONTRACT_DATES:'Kiểm tra thời hạn, ngày ký và ngày chấm dứt hợp đồng.',CONTRACT_IMMUTABLE:'Nội dung hợp đồng đã được khóa. Hãy tạo hợp đồng mới để ghi nhận thay đổi.',INVALID_CONTRACT_TRANSITION:'Không thể chuyển sang trạng thái hợp đồng này.',ACTIVE_CONTRACT_EXISTS:'Nhân viên đã có một hợp đồng đang thực hiện.',CONTRACT_SIGNATURE_DATE_REQUIRED:'Cần ghi ngày ký hợp lệ trước khi hoàn tất hợp đồng.'};
     if(messages[error.code])return messages[error.code];
     if (error.code === 'INVALID_PASSKEY') return 'Không thể xác minh passkey. Hãy thử lại hoặc dùng mật khẩu.';
     if (error.code === 'PASSKEY_CHALLENGE_EXPIRED') return 'Yêu cầu xác minh đã hết hạn. Hãy thử lại.';
@@ -142,21 +181,27 @@ export function errorText(error: unknown): string {
     if (error.code === 'SELF_CHANGE_FORBIDDEN') return 'Bạn không thể tự thay đổi vai trò hoặc khóa tài khoản của mình.';
     if (error.code === 'INVALID_MANAGER') return 'Hãy chọn người quản lý đang hoạt động trong cùng tổ chức.';
     if (error.code === 'DEPARTMENT_CODE_EXISTS') return 'Mã phòng ban đã tồn tại trong tổ chức.';
-    if (error.code === 'POSITION_CODE_EXISTS') return 'Mã chức danh đã tồn tại trong tổ chức.';
+    if (error.code === 'POSITION_CODE_EXISTS') return 'Mã vị trí đã tồn tại trong tổ chức.';
     if (error.code === 'ORGANIZATION_CODE_EXISTS') return 'Mã tổ chức đã tồn tại trên hệ thống.';
     if (error.code === 'CIRCULAR_HIERARCHY') return 'Không thể chọn đơn vị con hoặc chính đơn vị này làm đơn vị cha (gây lặp vòng).';
     if (error.code === 'CIRCULAR_REPORTING') return 'Không thể thiết lập quan hệ quản lý vòng lặp.';
     if (error.code === 'DEPARTMENT_IN_USE_HAS_CHILDREN') return 'Không thể xóa phòng ban đang có đơn vị trực thuộc. Vui lòng chuyển hoặc xóa đơn vị con trước.';
     if (error.code === 'DEPARTMENT_IN_USE_HAS_MEMBERS') return 'Không thể xóa phòng ban đang có nhân viên trực thuộc.';
-    if (error.code === 'DEPARTMENT_IN_USE_HAS_POSITIONS') return 'Không thể xóa phòng ban đang có chức danh liên kết.';
-    if (error.code === 'POSITION_IN_USE_HAS_MEMBERS') return 'Không thể xóa chức danh đang được phân công cho nhân viên.';
-    if (error.code === 'POSITION_DEPARTMENT_MISMATCH') return 'Chức danh được chọn không thuộc phòng ban đã chỉ định.';
+    if (error.code === 'DEPARTMENT_IN_USE_HAS_POSITIONS') return 'Không thể xóa phòng ban đang có vị trí liên kết.';
+    if (error.code === 'POSITION_IN_USE_HAS_MEMBERS') return 'Không thể xóa vị trí đang được phân công cho nhân viên.';
+    if (error.code === 'POSITION_DEPARTMENT_MISMATCH') return 'Vị trí được chọn không thuộc phòng ban đã chỉ định.';
     if (error.code === 'INVALID_CODE') return 'Mã chỉ được chứa chữ cái, số, gạch nối (-) hoặc gạch dưới (_).';
     if (error.code === 'INVALID_PARENT') return 'Đơn vị cha không hợp lệ hoặc không thuộc tổ chức.';
     if (error.code === 'INVALID_DEPARTMENT') return 'Phòng ban được chọn không hợp lệ hoặc không thuộc tổ chức.';
-    if (error.code === 'INVALID_POSITION') return 'Chức danh được chọn không hợp lệ hoặc không thuộc tổ chức.';
+    if (error.code === 'INVALID_POSITION') return 'Vị trí được chọn không hợp lệ hoặc không thuộc tổ chức.';
+    if (error.code === 'INVALID_JOB_TITLE') return 'Chọn chức danh đang hoạt động trong tổ chức.';
+    if (error.code === 'JOB_TITLE_CODE_EXISTS') return 'Mã chức danh đã tồn tại trong tổ chức.';
+    if (error.code === 'JOB_TITLE_NOT_FOUND') return 'Không tìm thấy chức danh.';
+    if (error.code === 'INVALID_MANAGER_POSITION') return 'Chọn vị trí cấp trên đang hoạt động trong tổ chức.';
+    if (error.code === 'CIRCULAR_POSITION_REPORTING') return 'Không thể chọn chính vị trí này hoặc một vị trí cấp dưới làm cấp trên.';
+    if (error.code === 'POSITION_HAS_REPORTS') return 'Hãy chuyển các vị trí cấp dưới sang cấp trên khác trước khi xóa.';
     if (error.code === 'DEPARTMENT_NOT_FOUND') return 'Không tìm thấy phòng ban hoặc phòng ban đã bị xóa.';
-    if (error.code === 'POSITION_NOT_FOUND') return 'Không tìm thấy chức danh hoặc chức danh đã bị xóa.';
+    if (error.code === 'POSITION_NOT_FOUND') return 'Không tìm thấy vị trí hoặc vị trí đã bị xóa.';
     if (error.code === 'ORGANIZATION_NOT_FOUND') return 'Không tìm thấy thông tin tổ chức.';
     if (error.code === 'PARENT_ORGANIZATION_NOT_FOUND') return 'Không tìm thấy tổ chức cấp trên đã chỉ định.';
     if (error.code === 'USER_NOT_FOUND') return 'Không tìm thấy người dùng hoặc tài khoản không tồn tại.';

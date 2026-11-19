@@ -6,7 +6,7 @@ import { fail } from './types.js';
  * UNION deduplicates nodes, so corrupt pre-existing cycles cannot recurse forever.
  * Job titles never participate in authorization. Null means tenant-wide visibility.
  */
-export async function managementScope(db: Pool, identity: Identity): Promise<{departments:string[];users:string[]}|null> {
+export async function managementScope(db: Pick<Pool, 'query'>, identity: Identity): Promise<{departments:string[];users:string[]}|null> {
   if(['ADMIN','HR','EMPLOYEE'].includes(identity.role)) return null;
   if(identity.role !== 'MANAGER') fail(403,'FORBIDDEN');
   const departments = await db.query<{id:string}>(`WITH RECURSIVE scope(id) AS (

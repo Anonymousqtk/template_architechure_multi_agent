@@ -34,6 +34,154 @@ beforeEach(async()=>{
  today=(await pool.query('SELECT CURRENT_DATE::text AS today')).rows[0].today;
 });
 afterAll(async()=>{server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await pool.end();});
+
+describe('ATT-001 attendance, scheduling and leave', () => {
+ const att = () => '/api/organizations/' + org + '/attendance';
+ const period = '?from=2020-01-01&to=2020-02-01';
+ const shift = {
+   name: 'Night', timeZone: 'Asia/Bangkok', startTime: '22:00', endTime: '06:00',
+   earlyCheckIn: 15, lateGrace: null, earlyGrace: null, overtimeAfter: null, active: true,
+ };
+ const reason = 'Test policy decision';
+ let employee: string;
+ beforeEach(async () => {
+   const admin = await actor('admin');
+   const created = await create(admin, { userId });
+   expect(created.status).toBe(201);
+   employee = created.body.id;
+ });
+
+ it('resolves overnight shifts, protects calendar intervals and handles daylight saving gaps and folds', async () => {
+   const admin = await actor('admin');
+   const shiftResponse = await admin.call(att() + '/shifts/new', 'PUT', shift);
+   expect(shiftResponse.status).toBe(201);
+   const assign = att() + '/employees/' + employee + '/schedule/new';
+   const overnight = await admin.call(assign, 'PUT', { kind: 'SHIFT', shiftId: shiftResponse.body.id, workDate: '2099-01-10' });
+   expect(overnight.status, JSON.stringify(overnight.body)).toBe(201);
+   const ledger = await admin.call(att() + '/employees/' + employee + '/ledger?from=2099-01-10&to=2099-01-11');
+   expect(ledger.status, JSON.stringify(ledger.body)).toBe(200);
+   expect(ledger.body.schedule[0]).toMatchObject({
+     startsAt: '2099-01-10T15:00:00.000Z', endsAt: '2099-01-10T23:00:00.000Z',
+     late: null, leftEarly: null, overtimeMinutes: null, status: 'SCHEDULED',
+   });
+   expect((await admin.call(assign, 'PUT', { kind: 'OFF', workDate: '2099-01-11', timeZone: shift.timeZone })).body.code).toBe('ATT_SCHEDULE_CONFLICT');
+   expect((await admin.call(att() + '/employees/' + employee + '/schedule/' + overnight.body.id, 'DELETE', {})).status).toBe(204);
+   expect((await admin.call(assign, 'PUT', { kind: 'OFF', workDate: '2099-01-11', timeZone: shift.timeZone })).status).toBe(201);
+
+   const zone = 'America/New_York';
+   const foldShift = (await admin.call(att() + '/shifts/new', 'PUT', { ...shift, name: 'Fold', timeZone: zone, startTime: '01:30', endTime: '03:00' })).body.id;
+   const gapShift = (await admin.call(att() + '/shifts/new', 'PUT', { ...shift, name: 'Gap', timeZone: zone, startTime: '02:30', endTime: '04:00' })).body.id;
+   expect((await admin.call(assign, 'PUT', { kind: 'SHIFT', shiftId: gapShift, workDate: '2099-03-08' })).body.code).toBe('ATT_AMBIGUOUS_SCHEDULE');
+   expect((await admin.call(assign, 'PUT', { kind: 'SHIFT', shiftId: foldShift, workDate: '2099-11-01' })).body.code).toBe('ATT_AMBIGUOUS_SCHEDULE');
+   expect((await admin.call(assign, 'PUT', { kind: 'SHIFT', shiftId: foldShift, workDate: '2099-11-01',
+     startsAt: '2099-11-01T01:30:00-04:00' })).status).toBe(201);
+ });
+
+ it('serializes check-in, rejects forged timestamps and preserves raw punches after adjustment', async () => {
+   const admin = await actor('admin'), worker = await actor('employee'), manager = await actor('manager'), outsider = await actor('outsider');
+   const shiftId = (await admin.call(att() + '/shifts/new', 'PUT', shift)).body.id;
+   const schedule = randomUUID();
+   await pool.query(`INSERT INTO work_schedule(id,organization_id,employee_id,shift_id,label,work_date,time_zone,starts_at,ends_at,early_check_in,late_grace)
+     VALUES($1,$2,$3,$4,'Fixture','2020-01-12','UTC',now()-interval '1 hour',now()+interval '1 hour',0,0)`,
+   [schedule, org, employee, shiftId]);
+   const punch = att() + '/punches/' + schedule;
+   expect((await worker.call(punch, 'POST', { action: 'IN', at: '2020-01-12T00:00:00Z' })).status).toBe(400);
+   expect((await outsider.call(punch, 'POST', { action: 'IN' })).status).toBe(404);
+   expect((await admin.call(punch, 'POST', { action: 'IN' })).status).toBe(403);
+   const concurrent = await Promise.all([worker.call(punch, 'POST', { action: 'IN' }), worker.call(punch, 'POST', { action: 'IN' })]);
+   expect(concurrent.map(result => result.status).sort()).toEqual([200,409]);
+   expect((await worker.call(punch, 'POST', { action: 'OUT' })).status).toBe(200);
+   expect((await worker.call(punch, 'POST', { action: 'OUT' })).status).toBe(409);
+   const original = (await pool.query('SELECT checked_in_at,checked_out_at FROM attendance_punches WHERE schedule_id=$1', [schedule])).rows[0];
+   await pool.query("UPDATE work_schedule SET ends_at=now()-interval '1 second' WHERE id=$1", [schedule]);
+   const proposedIn = new Date(Date.now() - 1800000).toISOString();
+   const proposedOut = new Date(Date.now() - 1200000).toISOString();
+   const correction = await worker.call(att() + '/corrections/' + schedule, 'POST', { checkedInAt: proposedIn, checkedOutAt: proposedOut, reason });
+   expect(correction.status, JSON.stringify(correction.body)).toBe(201);
+   const review = att() + '/corrections/' + correction.body.id + '/review';
+   expect((await outsider.call(review, 'POST', { action: 'APPROVE', reason })).status).toBe(403);
+   expect((await manager.call(review, 'POST', { action: 'APPROVE', reason })).status).toBe(204);
+   expect((await manager.call(review, 'POST', { action: 'APPROVE', reason })).status).toBe(409);
+   const ledger = await worker.call(att() + '/employees/' + employee + '/ledger' + period);
+   expect(ledger.body.schedule[0]).toMatchObject({ adjusted: true, late: true, checkedInAt: proposedIn, rawIn: original.checked_in_at.toISOString() });
+   expect((await pool.query('SELECT checked_in_at,checked_out_at FROM attendance_punches WHERE schedule_id=$1', [schedule])).rows[0]).toEqual(original);
+   expect((await pool.query("SELECT count(*)::int AS total FROM auth_audit_events WHERE organization_id=$1 AND event_type='ATT_CORRECTION_REVIEWED'", [org])).rows[0].total).toBe(1);
+ });
+
+ it('enforces scope and debits a limited balance atomically, then releases it on cancellation', async () => {
+   const admin = await actor('admin'), worker = await actor('employee'), manager = await actor('manager');
+   const outsider = await actor('outsider');
+   const otherId = await user('foreign@employee.test', 'ADMIN', otherOrg);
+   expect(otherId).toBeTruthy();
+   const other = await new Client().login('foreign@employee.test');
+   const type = (await admin.call(att() + '/leave-types/new', 'PUT', { name: 'Paid', tracksBalance: true, active: true })).body.id;
+   const employeePath = att() + '/employees/' + employee;
+   expect((await worker.call(att() + '/employees?q=Test')).body.items).toEqual([
+     expect.objectContaining({ id: employee, self: true }),
+   ]);
+   expect((await outsider.call(att() + '/employees?q=Test')).body.items).toEqual([]);
+   expect((await admin.call(employeePath + '/balances/' + type, 'PUT', { allowanceMinutes: 60, reason })).status).toBe(204);
+   const firstInput = { leaveTypeId: type, startsAt: '2099-01-01T09:00:00Z', endsAt: '2099-01-01T11:00:00Z', reason };
+   const first = await worker.call(employeePath + '/leave', 'POST', firstInput);
+   expect(first.status, JSON.stringify(first.body)).toBe(201);
+   expect((await worker.call(employeePath + '/leave', 'POST', firstInput)).body.code).toBe('ATT_LEAVE_CONFLICT');
+   const second = await admin.call(employeePath + '/leave', 'POST', { ...firstInput, startsAt: '2099-01-03T09:00:00Z', endsAt: '2099-01-03T11:00:00Z' });
+   expect(second.status).toBe(201);
+   const review = (id: string) => att() + '/leave/' + id + '/review';
+   expect((await admin.call(review(second.body.id), 'POST', { action: 'APPROVE', chargeMinutes: 60, reason })).body.code).toBe('ATT_SELF_REVIEW');
+   expect((await admin.call(review(first.body.id), 'POST', { action: 'APPROVE', reason })).body.code).toBe('ATT_CHARGE_REQUIRED');
+   expect((await outsider.call(employeePath + '/ledger' + period)).status).toBe(404);
+   expect((await other.call(att().replace(org, otherOrg) + '/leave/' + first.body.id + '/review', 'POST', { action: 'APPROVE', chargeMinutes: 60, reason })).status).toBe(404);
+   const decision = { action: 'APPROVE', chargeMinutes: 60, reason };
+   const outcomes = await Promise.all([first, second].map(item => manager.call(review(item.body.id), 'POST', decision)));
+   expect(outcomes.map(result => result.status).sort()).toEqual([204,409]);
+   expect(outcomes.find(result => result.status === 409)?.body.code).toBe('ATT_INSUFFICIENT_BALANCE');
+   const approved = [first, second][outcomes.findIndex(result => result.status === 204)].body.id;
+   expect((await manager.call(review(approved), 'POST', decision)).body.code).toBe('ATT_ALREADY_REVIEWED');
+   const report = async () => (await worker.call(employeePath + '/ledger?from=2099-01-01&to=2099-01-04')).body;
+   expect((await report()).balances[0].availableMinutes).toBe(0);
+   const cancel = att() + '/leave/' + approved + '/cancel';
+   expect((await worker.call(cancel, 'POST', { reason })).status).toBe(403);
+   expect((await manager.call(cancel, 'POST', { reason })).status).toBe(204);
+   expect((await manager.call(cancel, 'POST', { reason })).status).toBe(409);
+   const ledger = await report();
+   expect(ledger.balances[0].availableMinutes).toBe(60);
+   expect(ledger.leave.find((row: { id: string }) => row.id === approved)).toMatchObject({ status: 'CANCELLED', chargeMinutes: 60, reviewReason: reason, cancelReason: reason });
+   const remaining = [first, second].find(item => item.body.id !== approved)!;
+   expect((await manager.call(review(remaining.body.id), 'POST', { action: 'REJECT', reason })).status).toBe(204);
+   expect((await report()).leave.find((row: { id: string }) => row.id === remaining.body.id)).toMatchObject({ status: 'REJECTED', reviewReason: reason });
+ });
+
+ it('computes review indicators only from configured thresholds and keeps adjacent intervals valid', async () => {
+   const admin = await actor('admin'), worker = await actor('employee');
+   const shiftId = (await admin.call(att() + '/shifts/new', 'PUT', shift)).body.id;
+   const rows = [
+     ['2020-01-10', '2020-01-10T08:10:00Z', '2020-01-10T16:40:00Z'],
+     ['2020-01-11', '2020-01-11T08:01:00Z', '2020-01-11T17:45:00Z'],
+     ['2020-01-12', null, null],
+   ];
+   for (const [date, rawIn, rawOut] of rows) {
+     const id = randomUUID();
+     await pool.query(`INSERT INTO work_schedule(id,organization_id,employee_id,shift_id,label,work_date,time_zone,starts_at,ends_at,
+       early_check_in,late_grace,early_grace,overtime_after) VALUES($1,$2,$3,$4,'Fixture',$5,'UTC',$6,$7,0,5,10,15)`,
+     [id, org, employee, shiftId, date, date + 'T08:00:00Z', date + 'T17:00:00Z']);
+     if (rawIn) await pool.query('INSERT INTO attendance_punches(schedule_id,organization_id,checked_in_at,checked_out_at) VALUES($1,$2,$3,$4)',
+       [id, org, rawIn, rawOut]);
+   }
+   const ledger = await worker.call(att() + '/employees/' + employee + '/ledger' + period);
+   expect(ledger.body.schedule).toMatchObject([
+     { status: 'COMPLETE', late: true, leftEarly: true, overtimeMinutes: 0, recordedMinutes: 510 },
+     { status: 'COMPLETE', late: false, leftEarly: false, overtimeMinutes: 30, recordedMinutes: 584 },
+     { status: 'MISSING', late: null, leftEarly: null, overtimeMinutes: null, recordedMinutes: null },
+   ]);
+   const type = (await admin.call(att() + '/leave-types/new', 'PUT', { name: 'Untracked', tracksBalance: false, active: true })).body.id;
+   const input = { leaveTypeId: type, startsAt: '2020-01-11T17:45:00Z', endsAt: '2020-01-11T18:00:00Z', reason };
+   const created = await worker.call(att() + '/employees/' + employee + '/leave', 'POST', input);
+   expect(created.status).toBe(201);
+   const cancel = await worker.call(att() + '/leave/' + created.body.id + '/cancel', 'POST', { reason });
+   expect(cancel.status).toBe(204);
+ });
+});
 describe('EMP-001 profiles and EMP-002 contracts/history',()=>{
  it('creates independent and account-linked profiles; validates dates, duplicate codes/accounts and mass assignment',async()=>{
   const admin=await actor('admin'),hr=await actor('hr');

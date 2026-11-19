@@ -132,6 +132,70 @@ afterAll(async () => {
   await pool.end();
 });
 
+describe('ORG-001.3 and ORG-001.4 job catalog and reporting', () => {
+  it('manages job titles with normalized codes, tenant boundaries and status filters', async () => {
+    const admin = await actor('admin@example.test');
+    const hr = await actor('hr@example.test');
+    const manager = await actor('manager@example.test');
+    const employee = await actor('employee@example.test');
+    const other = await actor('other-admin@example.test');
+    const path = `/api/organizations/${orgA}/job-titles`;
+    const foreign = `/api/organizations/${orgB}/job-titles`;
+    const input = { code: ' admin ', name: 'Operations lead' };
+    const created = await hr.post(path, input);
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+    expect((await admin.post(path, { ...input, code: 'ADMIN' })).body.code).toBe('JOB_TITLE_CODE_EXISTS');
+    expect((await other.post(foreign, input)).status).toBe(201);
+    expect((await other.request(path + '/' + id)).status).toBe(403);
+    expect((await other.request(foreign + '/' + id)).status).toBe(404);
+    expect((await other.patch(foreign + '/' + id, { isActive: false })).status).toBe(404);
+    expect((await manager.post(path, input)).status).toBe(403);
+    expect((await employee.request(path)).status).toBe(403);
+    expect((await hr.patch(path + '/' + id, { role: 'ADMIN' })).status).toBe(400);
+    expect((await hr.patch(path + '/' + id, { isActive: false, description: 'Archived' })).status).toBe(204);
+    expect((await admin.request(path + '?q=lead&isActive=false')).body.items).toEqual([
+      { id, code: 'ADMIN', name: 'Operations lead', description: 'Archived', isActive: false },
+    ]);
+    expect((await admin.request(path + '?isActive=true')).body.items).toEqual([]);
+    expect((await hr.request('/api/auth/me')).body.organization.role).toBe('HR');
+  });
+
+  it('persists multi-level reporting, preserves scope and rejects invalid references and cycles', async () => {
+    const admin = await actor('admin@example.test');
+    const other = await actor('other-admin@example.test');
+    const manager = await actor('manager@example.test');
+    const prefix = `/api/organizations/${orgA}`;
+    const foreign = `/api/organizations/${orgB}`;
+    const dept = (await admin.post(prefix + '/departments', { code: 'TEAM', name: 'Team', managerUserId: managerId })).body.id;
+    const add = (code: string, fields: object = {}) => admin.post(prefix + '/positions', { code, title: code, ...fields });
+    const job = (await admin.post(prefix + '/job-titles', { code: 'OPS', name: 'Operations' })).body.id;
+    const otherJob = (await other.post(foreign + '/job-titles', { code: 'OPS', name: 'Private title' })).body.id;
+    const foreignPos = (await other.post(foreign + '/positions', { code: 'PRIVATE', title: 'Private position' })).body.id;
+    expect((await add('BAD_TITLE', { jobTitleId: otherJob })).body.code).toBe('INVALID_JOB_TITLE');
+    expect((await add('BAD_MANAGER', { managerPositionId: foreignPos })).body.code).toBe('INVALID_MANAGER_POSITION');
+    const root = (await add('TOP')).body.id;
+    const middle = (await add('MIDDLE', { departmentId: dept, jobTitleId: job, managerPositionId: root })).body.id;
+    const leaf = (await add('LEAF', { departmentId: dept, managerPositionId: middle })).body.id;
+    expect((await admin.request(prefix + '/positions?managerPositionId=' + middle)).body.items.map((p: { id: string }) => p.id)).toEqual([leaf]);
+    expect((await admin.request(prefix + '/positions/' + middle)).body.position).toMatchObject({
+      jobTitleId: job, jobTitleName: 'Operations', managerPositionId: root, managerPositionTitle: 'TOP',
+    });
+    expect((await manager.request(prefix + '/positions/' + middle)).body.position).toMatchObject({ managerPositionId: null, managerPositionTitle: null });
+    expect((await manager.patch(prefix + '/positions/' + leaf, { managerPositionId: null })).status).toBe(403);
+    expect((await admin.patch(prefix + '/positions/' + root, { managerPositionId: root })).body.code).toBe('CIRCULAR_POSITION_REPORTING');
+    expect((await admin.patch(prefix + '/positions/' + root, { managerPositionId: leaf })).body.code).toBe('CIRCULAR_POSITION_REPORTING');
+    expect((await admin.delete(prefix + '/positions/' + root)).body.code).toBe('POSITION_HAS_REPORTS');
+    await expect(pool.query('UPDATE positions SET job_title_id=$1 WHERE id=$2', [otherJob, root])).rejects.toMatchObject({ code: '23503' });
+    await expect(pool.query('UPDATE positions SET manager_position_id=$1 WHERE id=$2', [foreignPos, root])).rejects.toMatchObject({ code: '23503' });
+    await expect(pool.query('UPDATE positions SET manager_position_id=$1 WHERE id=$2', [leaf, root])).rejects.toMatchObject({ code: '23514' });
+    expect((await admin.patch(prefix + '/positions/' + middle, { isActive: false })).status).toBe(204);
+    expect((await add('INACTIVE', { managerPositionId: middle })).body.code).toBe('INVALID_MANAGER_POSITION');
+    expect((await admin.patch(prefix + '/positions/' + leaf, { managerPositionId: null })).status).toBe(204);
+    expect((await admin.request(prefix + '/positions/' + leaf)).body.position.managerPositionId).toBeNull();
+  });
+});
+
 describe('ORG-001 Organization Structure, Departments, Positions & Hierarchy', () => {
   it('ORG-002: recursive Manager scope restricts lists, details, users, chart and mutations', async () => {
     const admin=await actor('admin@example.test');
