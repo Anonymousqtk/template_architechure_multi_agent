@@ -250,6 +250,16 @@ input:-webkit-autofill { -webkit-box-shadow: 0 0 0 30px white inset; }
 .workspace details.profile-editor,.workspace details.user-detail{border:1px solid #e1e6f2;border-radius:12px;padding:20px;max-width:none;margin:20px 0;background:white;}
 .workspace details[open]>summary{margin-bottom:16px;}
 .verification-layout .brand-story,.verification-layout .brand-footer{display:none;}
+.sign-in-verification{max-width:440px;margin-inline:auto;}
+.sign-in-verification .muted{overflow-wrap:anywhere;}
+.verification-actions{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:18px;}
+.verification-actions button{min-height:44px;padding:4px 0;border:0;background:transparent;color:#3444a1;text-decoration:underline;text-underline-offset:3px;font:inherit;cursor:pointer;text-align:left;}
+.verification-actions button:disabled{opacity:.5;cursor:default;}
+.auth-passkey-button{width:100%;min-height:44px;margin:0 0 16px;}
+.sensitive-action-dialog{width:min(440px,calc(100% - 32px));max-height:calc(100% - 32px);padding:24px;border:1px solid #dbe0f3;border-radius:12px;background:#fff;color:#192540;}
+.sensitive-action-dialog::backdrop{background:rgb(14 23 46 / .55);}
+.sensitive-action-dialog h2{margin:0 0 10px;font-size:22px;}
+.sensitive-action-dialog .primary{width:100%;height:auto;min-height:44px;}
 .verification-layout .brand-panel{justify-content:center;}
 @media(max-width:720px){.workspace main{padding:0 20px;}.workspace .profile-details{grid-template-columns:1fr;gap:0;}.workspace .profile-details>div{border-bottom:1px solid #edf0f6;}.section-nav{gap:4px;}.section-nav a{padding:9px 11px;}.workspace .topbar{gap:8px;}.workspace details.profile-editor,.workspace details.user-detail{padding:16px;}}
 

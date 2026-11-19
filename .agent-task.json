@@ -1,48 +1,18 @@
 {
-    "id": "EMP-001-EMP-002",
-    "summary": "Employee profiles, labor contracts and immutable assignment history",
-    "allowed_scopes": [
-        "backend",
-        "database",
-        "frontend",
-        "tests",
-        "governance"
-    ],
-    "risk": "high",
-    "security_review_required": true,
-    "acceptance": [
-        "Tenant-scoped employee profiles support optional account linkage, search, pagination and least-privilege personal data",
-        "Contract CRUD/state transitions preserve signed records, valid dates and a single active contract",
-        "Assignment history records both employee transfers and legacy membership assignment changes atomically",
-        "Manager scope, employee self access and restricted contract access enforced by backend",
-        "Frontend uses existing Roboto workspace with forms, errors and loading states",
-        "Migration and AUTH/ORG/EMP integration regression validated in disposable PostgreSQL"
-    ],
-    "model_profile": "inherit",
-    "governance": "V5.3",
-    "delegations": 0,
-    "status": "DEVELOPMENT_COMPLETE_PENDING_REMOTE_CI_AND_REVIEW",
-    "skills_used_current": [
-        "api-development",
-        "database-migrations",
-        "frontend-standards",
-        "security-review",
-        "test-engineering"
-    ],
-    "notes": "New employee modules reuse existing memberships and organization scope. Cross-layer personal-data, schema, API and UI changes require matching skills. No production changes, no automatic merge, no external publication authorized by this request.",
-    "checks": {
-        "backend_lint": "PASS: eslint src clean",
-        "backend_typecheck": "PASS: tsc --noEmit clean",
-        "backend_build": "PASS: tsc build successful",
-        "backend_tests": "PASS: 110 passed across 6 test suites including employees.test.ts, auth.test.ts, org.test.ts; 95.91% lines coverage",
-        "migrations": "PASS: 001-007 on disposable PostgreSQL with verify.sql constraints and rollback verification",
-        "frontend_lint": "PASS: eslint src clean",
-        "frontend_typecheck": "PASS: tsc --noEmit clean",
-        "frontend_build": "PASS: tsc --noEmit && vite build successful",
-        "frontend_tests": "PASS: 89 passed across 8 test suites including Employees.test.tsx, App.test.tsx, DashboardShell.test.tsx",
-        "policy_tests": "PASS: 21 unit tests in tests/",
-        "skill_policy": "PASS: check_skill_policy.py offline check clean",
-        "token_lean_policy": "PASS: check_token_lean.py V5.3 consistency clean",
-        "model_policy": "PASS: check_model_policy.py clean"
-    }
+    "id":  "AUTH-PASSKEY-001",
+    "summary":  "Passkey sign-in and accessible authentication challenge",
+    "allowed_scopes":  [
+                           "backend",
+                           "database",
+                           "frontend",
+                           "tests",
+                           "governance"
+                       ],
+    "risk":  "high",
+    "security_review_required":  true,
+    "acceptance":  [
+                       "Sign in with verified passkey and retain invitation-only authentication",
+                       "Separate MFA challenge from account settings and preserve fallback",
+                       "Verify authentication regression, migration and browser behavior"
+                   ]
 }

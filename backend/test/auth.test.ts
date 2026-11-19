@@ -478,6 +478,31 @@ describe('AUTH-003 advanced sessions and runtime MFA policy',()=>{
  const secureActor=(email='admin@example.test')=>actor(email,secureBase);
  const currentCode=(secret:string)=>totp(secret,Math.floor(Date.now()/30000));
  async function enroll(client:Client){const begin=await client.post('/api/auth/mfa/enroll',{password});expect(begin.status).toBe(200);const usedCode=currentCode(begin.body.secret);const done=await client.post('/api/auth/mfa/confirm',{code:usedCode});expect(done.status).toBe(200);return {secret:begin.body.secret,codes:done.body.recoveryCodes as string[],usedCode};}
+ it('binds passkey challenges to a browser and consumes them once', async () => {
+   const first = await new Client(secureBase).initialize();
+   const second = await new Client(secureBase).initialize();
+   const options = await first.post('/api/auth/passkeys/login/options');
+   expect(options.status).toBe(200);
+   expect(options.body).toMatchObject({ rpId: 'localhost', userVerification: 'required' });
+   const assertion = { challenge: options.body.challenge, response: { id: 'YQ' } };
+   expect((await second.post('/api/auth/passkeys/login/verify', assertion)).body.code).toBe('PASSKEY_CHALLENGE_EXPIRED');
+   expect((await first.post('/api/auth/passkeys/login/verify', assertion)).body.code).toBe('INVALID_PASSKEY');
+   expect((await first.post('/api/auth/passkeys/login/verify', assertion)).body.code).toBe('PASSKEY_CHALLENGE_EXPIRED');
+   expect((await first.request('/api/auth/me')).status).toBe(401);
+ });
+ it('only issues registration options to a verified and recent Admin or HR session', async () => {
+   const admin = await secureActor();
+   const optionsPath = '/api/auth/passkeys/register/options';
+   expect((await admin.post(optionsPath)).body.code).toBe('MFA_REQUIRED');
+   await enroll(admin);
+   const options = await admin.post(optionsPath);
+   expect(options.status).toBe(200);
+   expect(options.body.authenticatorSelection).toMatchObject({ residentKey: 'required', userVerification: 'required' });
+   await pool.query("UPDATE user_sessions SET reauthenticated_at=now()-interval '11 minutes' WHERE user_id=$1", [adminId]);
+   expect((await admin.post(optionsPath)).body.code).toBe('REAUTH_REQUIRED');
+   const employee = await secureActor('employee@example.test');
+   expect((await employee.post(optionsPath)).body.code).toBe('FORBIDDEN');
+ });
  it('HARD-01 idle and absolute expiry reject otherwise valid sessions',async()=>{
    const client=await secureActor('employee@example.test');
    await pool.query("UPDATE user_sessions SET last_seen_at=now()-interval '31 minutes' WHERE user_id=$1",[employeeId]);expect((await client.request('/api/auth/me')).status).toBe(401);

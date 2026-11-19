@@ -10,6 +10,7 @@ import { createMailer, type Mailer } from './mail.js';
 import { HttpError, fail, type Authed, type Identity } from './types.js';
 import { authorizeMutation, permissionsFor } from './authorization.js';
 import { registerSecurityRoutes } from './session-security.js';
+import { passkeysAvailable, registerPasskeyRoutes } from './passkeys.js';
 import { registerUserRoutes } from './users.js';
 import { registerOrgStructureRoutes } from './organization-structure.js';
 import { registerEmployeeRoutes } from './employees.js';
@@ -66,9 +67,10 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
       [randomUUID(), event, actor || null, org || null, subject || null, JSON.stringify({outcome:'SUCCESS',...metadata})],
     );
   }
-  async function throttle(req: Request, keys: string[], maximum=rateLimit) {
+  async function throttle(req: Request, keys: string[], maximum=rateLimit, namespace='auth') {
     // Shared persistent counters; the default untrusted-forwarded-header policy uses socket IP.
-    for (const key of [`ip:${req.ip || req.socket.remoteAddress}`, ...keys]) {
+    const ipKey = `ip:${req.ip || req.socket.remoteAddress}`;
+    for (const key of [namespace === 'auth' ? ipKey : `${namespace}:${ipKey}`, ...keys]) {
       const result = await pool.query(`INSERT INTO auth_rate_limits(key_hash,window_start,attempts) VALUES($1,now(),1)
         ON CONFLICT(key_hash) DO UPDATE SET attempts=CASE WHEN auth_rate_limits.window_start < now()-interval '15 minutes' THEN 1 ELSE auth_rate_limits.attempts+1 END,
         window_start=CASE WHEN auth_rate_limits.window_start < now()-interval '15 minutes' THEN now() ELSE auth_rate_limits.window_start END RETURNING attempts`,[digest(key)]);
@@ -79,7 +81,7 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     const current=String(_req.cookies[csrfName]||'').split('.');
     const value=current.length===2 && validToken(current[0]) && same(sign(current[0],config.csrfSecret),current[1]) ? current[0] : token();
     const signed=`${value}.${sign(value,config.csrfSecret)}`;
-    res.cookie(csrfName,signed,{...cookieOptions,maxAge:3600000}); res.json({csrfToken:value,deliveryMode:mailer.mode});
+    res.cookie(csrfName,signed,{...cookieOptions,maxAge:3600000}); res.json({csrfToken:value,deliveryMode:mailer.mode,passkeysAvailable:passkeysAvailable(config)});
   });
   app.use('/api',(req,res,next)=>{
     if (!['POST','PUT','PATCH','DELETE'].includes(req.method)) return next();
@@ -107,6 +109,8 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     } catch(error) { next(error); }
   });
   const limitedPaths=new Set(['/api/auth/login','/api/auth/forgot-password','/api/auth/reset-password','/api/auth/invitations/validate','/api/auth/me','/api/auth/logout','/api/auth/mfa/status','/api/auth/mfa/enroll','/api/auth/mfa/confirm','/api/auth/mfa/verify','/api/auth/mfa/recover']);
+  limitedPaths.add('/api/auth/passkeys/login/options');
+  limitedPaths.add('/api/auth/passkeys/login/verify');
   app.use('/api',(req:Authed,res,next)=>{
     const identity=req.identity;
     if(identity && config.requireMfa!==false && (['ADMIN','HR'].includes(identity.role)||identity.mfaEnabled) && !identity.mfaVerified && !limitedPaths.has(req.originalUrl.split('?')[0])) {
@@ -308,6 +312,8 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     await deliver(id,to,raw,identity);res.status(202).json({message:'Invitation request processed.',deliveryMode:mailer.mode});
   });
   registerSecurityRoutes(app, {pool,config,transaction,audit,requireIdentity,throttle});
+  registerPasskeyRoutes(app, {pool,config,transaction,audit,requireIdentity,profile,
+    throttle:(req,keys,limit)=>throttle(req,keys,limit,'passkey')});
   registerUserRoutes(app, { pool, transaction, audit, requireIdentity });
   registerOrgStructureRoutes(app, { pool, transaction, audit, requireIdentity });
   registerEmployeeRoutes(app, { pool, transaction, audit, requireIdentity });

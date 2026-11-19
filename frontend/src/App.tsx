@@ -2,6 +2,10 @@ import { Dashboard } from './Dashboard';
 import { DashboardShell } from './DashboardShell';
 import { AccountProfile } from './AccountProfile';
 import { AccountSecurity } from './AccountSecurity';
+import { SignInVerification } from './SignInVerification';
+import { PasskeySettings } from './PasskeySettings';
+import { SensitiveActionConfirmation } from './SensitiveActionConfirmation';
+import { WebAuthnAbortService, browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import { UsersPanel, AuditPanel } from './Users';
 import { OrganizationView } from './OrganizationView';
 import { Employees } from './Employees';
@@ -25,17 +29,64 @@ function Field({ label, name, type = 'text', autoComplete, minLength }: { label:
 }
 function values(event: FormEvent<HTMLFormElement>) { event.preventDefault(); return new FormData(event.currentTarget); }
 
-function Login({ onLogin, inline = false }: { onLogin: (profile: Profile) => void; inline?: boolean }) {
+function Login({ onLogin, inline = false, passkeys = false }: { onLogin: (profile: Profile) => void; inline?: boolean; passkeys?: boolean }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const active = useRef(false);
+  const attempt = useRef(0);
+  const supportsPasskeys = passkeys && !inline && browserSupportsWebAuthn();
+  useEffect(() => {
+    if (!supportsPasskeys) return;
+    const generation = ++attempt.current;
+    async function autofill() {
+      if (!await browserSupportsWebAuthnAutofill() || generation !== attempt.current) return;
+      const optionsJSON = await request<PublicKeyCredentialRequestOptionsJSON>('/api/auth/passkeys/login/options', {});
+      if (generation !== attempt.current) return;
+      const response = await startAuthentication({ optionsJSON, useBrowserAutofill: true });
+      if (generation !== attempt.current || active.current) return;
+      active.current = true;
+      setBusy(true);
+      try {
+        onLogin(await request<Profile>('/api/auth/passkeys/login/verify', { challenge: optionsJSON.challenge, response }));
+      } catch (error) {
+        setError(errorText(error));
+      } finally {
+        active.current = false;
+        setBusy(false);
+      }
+    }
+    void autofill().catch(() => {});
+    return () => { ++attempt.current; WebAuthnAbortService.cancelCeremony(); };
+  }, [onLogin, supportsPasskeys]);
+  function begin() {
+    if (active.current) return false;
+    active.current = true;
+    ++attempt.current;
+    if (supportsPasskeys) WebAuthnAbortService.cancelCeremony();
+    setBusy(true);
+    setError('');
+    return true;
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
-    const data = values(event); setBusy(true); setError('');
+    const data = values(event);
+    if (!begin()) return;
     try { onLogin(await request<Profile>('/api/auth/login', { email: data.get('email'), password: data.get('password') })); }
-    catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+    catch (e) { setError(errorText(e)); } finally { active.current = false; setBusy(false); }
+  }
+  async function signInWithPasskey() {
+    if (!begin()) return;
+    try {
+      const optionsJSON = await request<PublicKeyCredentialRequestOptionsJSON>('/api/auth/passkeys/login/options', {});
+      const response = await startAuthentication({ optionsJSON });
+      onLogin(await request<Profile>('/api/auth/passkeys/login/verify', { challenge: optionsJSON.challenge, response }));
+    } catch (e) {
+      setError(e instanceof ApiError ? errorText(e) : 'Bạn có thể thử passkey lại hoặc dùng mật khẩu.');
+    } finally { active.current = false; setBusy(false); }
   }
   return <><div className="eyebrow">CHÀO MỪNG TRỞ LẠI</div><h1>{inline ? 'Xác nhận tài khoản của bạn' : 'Đăng nhập'}</h1><p className="muted">Một ngày làm việc hiệu quả bắt đầu từ đây.</p>
     {error && <Notice error>{error}</Notice>}
+    {supportsPasskeys && <button className="secondary auth-passkey-button" type="button" disabled={busy} onClick={() => void signInWithPasskey()}>Đăng nhập bằng passkey</button>}
     <form onSubmit={submit} aria-busy={busy}><fieldset disabled={busy}>
-      <Field label="Email công việc" name="email" type="email" autoComplete="username" />
+      <Field label="Email công việc" name="email" type="email" autoComplete={supportsPasskeys ? 'username webauthn' : 'username'} />
       <Field label="Mật khẩu" name="password" type="password" autoComplete="current-password" />
       {!inline && <a className="forgot" href="/forgot-password">Quên mật khẩu?</a>}
       <button className="primary" type="submit">{busy ? 'Đang đăng nhập…' : 'Đăng nhập →'}</button>
@@ -120,6 +171,8 @@ function Invitations({ profile }: { profile: Profile }) {
 
 export default function App() {
   const [ready, setReady] = useState(false), [profile, setProfile] = useState<Profile | null>(null), [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('DEV_ONLY'), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [passkeys, setPasskeys] = useState(false);
+  const [passkeyOffer, setPasskeyOffer] = useState(false);
   const [route, setRoute] = useState(() => ({ pathname: window.location.pathname, search: window.location.search }));
   const path = route.pathname;
   useEffect(() => {
@@ -127,14 +180,13 @@ export default function App() {
     const syncRoute = () => setRoute({ pathname: window.location.pathname, search: window.location.search });
     window.addEventListener('popstate', syncRoute);
     initialize().then(async config => {
-      if (!alive) return; setDeliveryMode(config.deliveryMode);
+      if (!alive) return; setDeliveryMode(config.deliveryMode); setPasskeys(Boolean(config.passkeysAvailable));
       try {
         const result = await request<Profile>('/api/auth/me');
         if (alive) {
-          if (['/','/login'].includes(window.location.pathname)) {
-            const destination=result.security?.mfaRequired&&!result.security?.mfaVerified?'/security':'/app';
-            window.history.replaceState(null,'',destination);
-            setRoute({ pathname: destination, search: '' });
+          if (['/','/login'].includes(window.location.pathname) && (!result.security?.mfaRequired || result.security.mfaVerified)) {
+            window.history.replaceState(null,'','/app');
+            setRoute({ pathname: '/app', search: '' });
           }
           setProfile(result);
         }
@@ -150,41 +202,75 @@ export default function App() {
     window.history.pushState(null, '', relative);
     setRoute({ pathname: destination.pathname, search: destination.search });
   };
-  const onLogin = (result: Profile) => { setProfile(result); if (!['/invite/accept', '/register'].includes(path)) window.location.assign(result.security?.mfaRequired&&!result.security?.mfaVerified?'/security':'/app'); };
+  const entryPage = ['/login', '/', '/invite/accept', '/register'].includes(path);
+  const destination = entryPage ? '/app' : path + route.search;
+  function onLogin(result: Profile) {
+    setProfile(result);
+    if ((!result.security?.mfaRequired || result.security.mfaVerified) && ['/login', '/'].includes(path)) navigate(destination);
+  }
+  async function completeVerification() {
+    const result = await request<Profile>('/api/auth/me');
+    const offerKey = 'managerhr-passkey-offer:' + result.user.id;
+    if (passkeys && browserSupportsWebAuthn() && ['ADMIN', 'HR'].includes(result.organization.role)) {
+      try {
+        if (!localStorage.getItem(offerKey)) {
+          const registered = await request<{ items: unknown[] }>('/api/auth/passkeys');
+          if (!registered.items.length) setPasskeyOffer(true);
+        }
+      } catch {
+        // The optional enrollment offer must not prevent sign-in.
+      }
+    }
+    setProfile(result);
+    if (['/', '/login', '/security'].includes(path)) navigate('/app');
+  }
   async function logout() {
     setBusy(true); setError('');
     try { await request('/api/auth/logout', {}); window.location.assign('/login'); }
     catch (e) { setError(errorText(e)); setBusy(false); }
   }
   const limited=Boolean(profile?.security?.mfaRequired&&!profile?.security?.mfaVerified);
+  const verifying = limited && Boolean(profile?.security?.mfaEnabled) &&
+    !['/forgot-password','/reset-password'].includes(path);
+  const login = <Login onLogin={onLogin} passkeys={passkeys} />;
   const profileView=path==='/app'&&new URLSearchParams(route.search).get('view')==='profile';
   const personal=path==='/app'||path==='/security';
-  const workspace=Boolean(ready&&profile&&!limited&&(personal||path.startsWith('/admin/')));
+  const workspace=Boolean(ready&&profile&&!limited&&!passkeyOffer&&(personal||path.startsWith('/admin/')));
   const organizationHome=profile?.permissions.readUsers?'/admin/users':profile?.permissions.invite?'/admin/invitations':profile?.permissions.viewAudit?'/admin/audit':null;
   let content: ReactNode;
   if (!ready) { if (error) content = <><Notice error>{error}</Notice><button onClick={() => window.location.reload()}>Tải lại trang</button></>; else if (path.startsWith('/admin/') || path === '/app' || path === '/security') return <div className="workspace-loading-splash" role="status" aria-live="polite"><div className="workspace-loading-inner"><span className="dash-brand-mark" aria-hidden="true" /><div className="workspace-loading-text"><strong>ManagerHR</strong><span>Đang đồng bộ không gian làm việc…</span></div></div></div>; else content = <p role="status">Đang kết nối an toàn…</p>; }
-  else if (profile && (path === '/security' || (profile.security?.mfaRequired && !profile.security?.mfaVerified && !['/forgot-password','/reset-password'].includes(path)))) content = <AccountSecurity profile={profile} />;
-  else if (path === '/security') content = <Login onLogin={onLogin} />;
+  else if (profile && passkeyOffer) content = <PasskeySettings onContinue={() => {
+    try { localStorage.setItem('managerhr-passkey-offer:' + profile.user.id, 'seen'); } catch { /* Storage can be unavailable. */ }
+    setPasskeyOffer(false);
+  }} />;
+  else if (profile && limited && !['/forgot-password','/reset-password'].includes(path)) content = profile.security?.mfaEnabled
+    ? <SignInVerification email={profile.user.email} onVerified={completeVerification} onCancel={() => void logout()} />
+    : <AccountSecurity profile={profile} onEnrollmentComplete={completeVerification} />;
+  else if (profile && path === '/security') content = <><AccountSecurity profile={profile} />{
+    passkeys && profile.security?.mfaEnabled && profile.security.mfaVerified && ['ADMIN', 'HR'].includes(profile.organization.role)
+      && <PasskeySettings />
+  }</>;
+  else if (path === '/security') content = login;
   else if (path === '/forgot-password') content = <Forgot />;
   else if (path === '/reset-password') content = <Reset />;
   else if (['/invite/accept', '/register'].includes(path)) content = <Accept profile={profile} onLogin={onLogin} />;
-  else if (path === '/admin/invitations') content = profile ? <Invitations profile={profile} /> : <><Notice error>Vui lòng đăng nhập để quản lý lời mời.</Notice><Login onLogin={onLogin} /></>;
-  else if (path === '/admin/users' || path === '/admin/audit') content = profile ? (path === '/admin/users' ? <UsersPanel profile={profile} /> : <AuditPanel profile={profile} />) : <Login onLogin={onLogin} />;
-  else if (path === '/admin/org-chart') content = profile ? <OrganizationView profile={profile} activeTab="org-chart" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
-  else if (path === '/admin/departments') content = profile ? <OrganizationView profile={profile} activeTab="departments" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
-  else if (path === '/admin/positions') content = profile ? <OrganizationView profile={profile} activeTab="positions" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
-  else if (path === '/admin/organization') content = profile ? <OrganizationView profile={profile} activeTab="organization" onNavigate={navigate} /> : <Login onLogin={onLogin} />;
-  else if (path === '/admin/employees') content = profile ? <Employees profile={profile} /> : <Login onLogin={onLogin} />;
-  else if (path === '/app') content = profile ? (profileView?<AccountProfile profile={profile} />:<Dashboard profile={profile}/>) : <><Notice error>Phiên đăng nhập không còn hiệu lực.</Notice><Login onLogin={onLogin} /></>;
-  else if (path === '/login' || path === '/') content = <Login onLogin={onLogin} />;
+  else if (path === '/admin/invitations') content = profile ? <Invitations profile={profile} /> : <><Notice error>Vui lòng đăng nhập để quản lý lời mời.</Notice>{login}</>;
+  else if (path === '/admin/users' || path === '/admin/audit') content = profile ? (path === '/admin/users' ? <UsersPanel profile={profile} /> : <AuditPanel profile={profile} />) : login;
+  else if (path === '/admin/org-chart') content = profile ? <OrganizationView profile={profile} activeTab="org-chart" onNavigate={navigate} /> : login;
+  else if (path === '/admin/departments') content = profile ? <OrganizationView profile={profile} activeTab="departments" onNavigate={navigate} /> : login;
+  else if (path === '/admin/positions') content = profile ? <OrganizationView profile={profile} activeTab="positions" onNavigate={navigate} /> : login;
+  else if (path === '/admin/organization') content = profile ? <OrganizationView profile={profile} activeTab="organization" onNavigate={navigate} /> : login;
+  else if (path === '/admin/employees') content = profile ? <Employees profile={profile} /> : login;
+  else if (path === '/app') content = profile ? (profileView?<AccountProfile profile={profile} />:<Dashboard profile={profile}/>) : <><Notice error>Phiên đăng nhập không còn hiệu lực.</Notice>{login}</>;
+  else if (path === '/login' || path === '/') content = login;
   else content = <><h1>Không tìm thấy trang</h1><a href="/login">Về trang đăng nhập</a></>;
-  if(workspace&&profile)return <DashboardShell profile={profile} path={path} profileView={profileView} busy={busy} onLogout={()=>void logout()} onNavigate={navigate}>{deliveryMode==='DEV_ONLY'&&path==='/admin/invitations'&&<div className="dev-warning" role="status"><strong>DEV_ONLY · Chưa cấu hình gửi email</strong><span>Không có email thực tế được gửi trong chế độ này.</span></div>}{error&&<Notice error>{error}</Notice>}{content}</DashboardShell>;
-  return <div className={`layout ${limited?'verification-layout':''}`}><a className="skip-link" href="#main-content">Đến nội dung chính</a><aside className="brand-panel"><a className="brand" href={profile ? '/app' : '/login'} aria-label="ManagerHR trang chủ"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18V6l8 8 8-8v12" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg></span>Manager<span>HR</span></a>
+  if(workspace&&profile)return <DashboardShell profile={profile} path={path} profileView={profileView} busy={busy} onLogout={()=>void logout()} onNavigate={navigate}>{deliveryMode==='DEV_ONLY'&&path==='/admin/invitations'&&<div className="dev-warning" role="status"><strong>DEV_ONLY · Chưa cấu hình gửi email</strong><span>Không có email thực tế được gửi trong chế độ này.</span></div>}{error&&<Notice error>{error}</Notice>}{content}<SensitiveActionConfirmation useCode={Boolean(profile.security?.mfaEnabled)} /></DashboardShell>;
+  return <div className={`layout ${limited||passkeyOffer?'verification-layout':''}`}><a className="skip-link" href="#main-content">Đến nội dung chính</a><aside className="brand-panel"><a className="brand" href={profile ? '/app' : '/login'} aria-label="ManagerHR trang chủ"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18V6l8 8 8-8v12" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg></span>Manager<span>HR</span></a>
       <div className="brand-story"><span className="hero-tag"><span aria-hidden="true">✦</span> NỀN TẢNG QUẢN TRỊ NHÂN SỰ</span><h2>Quản lý nhân sự.<br /><span>Kết nối đội ngũ.</span></h2><p>Mọi con người, một không gian chung.<br />Đơn giản hơn mỗi ngày cùng ManagerHR.</p>
         <div className="workspace-preview" aria-hidden="true"><div className="preview-top"><span className="preview-symbol">M</span><strong>Không gian đội ngũ</strong><span className="preview-dots">•••</span></div><div className="preview-body"><div className="preview-greeting"><span>CÙNG NHAU PHÁT TRIỂN</span><strong>Một đội ngũ. Nhiều khả năng.</strong></div><div className="preview-people"><span className="avatar avatar-blue">AN</span><span className="avatar avatar-purple">LH</span><span className="avatar avatar-teal">MT</span><span className="avatar avatar-peach">HK</span><span className="avatar avatar-more">+</span><span className="connection-line" /></div><div className="preview-flow"><span className="flow-check">✓</span><div><strong>Kết nối đúng người</strong><small>Lời mời riêng · Vai trò rõ ràng</small></div><span className="flow-arrow">↗</span></div><div className="preview-bottom"><span><i /> Không gian làm việc gắn kết</span><span>Minh họa giao diện</span></div></div></div>
         <div className="hero-benefits"><span><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 6 2v5c0 4-6 8-6 8s-6-4-6-8V4l6-2Z" stroke="currentColor" strokeWidth="1.5"/><path d="m7 9 2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> Truy cập theo lời mời</span><span><span className="benefit-dot" /> Quản lý theo vai trò</span></div>
       </div><small className="brand-footer">Dành cho con người. Đồng hành cùng tổ chức.</small></aside>
-    <main id="main-content" tabIndex={-1}><header className="topbar"><span className="security-label"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="8" width="10" height="9" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M7 8V6a3 3 0 0 1 6 0v2" stroke="currentColor" strokeWidth="1.5"/><circle cx="10" cy="12" r="1" fill="currentColor"/></svg> Cổng thông tin nội bộ</span>{profile && <nav className="account-nav" aria-label="Tài khoản">{!limited&&<><a href="/app" aria-current={personal?'page':undefined}>Tài khoản</a>{organizationHome&&<a href={organizationHome} aria-current={path.startsWith('/admin/')?'page':undefined}>{profile.organization.role==='MANAGER'?'Nhóm của tôi':'Tổ chức'}</a>}</>}<button onClick={() => void logout()} disabled={busy}>Đăng xuất</button></nav>}</header><div className="content">
+    <main id="main-content" tabIndex={-1}><header className="topbar"><span className="security-label"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="8" width="10" height="9" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M7 8V6a3 3 0 0 1 6 0v2" stroke="currentColor" strokeWidth="1.5"/><circle cx="10" cy="12" r="1" fill="currentColor"/></svg> Cổng thông tin nội bộ</span>{profile && !verifying && <nav className="account-nav" aria-label="Tài khoản">{!limited&&<><a href="/app" aria-current={personal?'page':undefined}>Tài khoản</a>{organizationHome&&<a href={organizationHome} aria-current={path.startsWith('/admin/')?'page':undefined}>{profile.organization.role==='MANAGER'?'Nhóm của tôi':'Tổ chức'}</a>}</>}<button onClick={() => void logout()} disabled={busy}>Đăng xuất</button></nav>}</header><div className="content">
       {ready && deliveryMode === 'DEV_ONLY' && <div className="dev-warning" role="status"><strong>DEV_ONLY · Chưa cấu hình gửi email</strong><span>Không có email thực tế được gửi trong chế độ này.</span></div>}
       {ready && error && <Notice error>{error}</Notice>}{content}</div><footer className="main-footer"><span>Chỉ dành cho thành viên được tổ chức mời tham gia.</span><span>© {new Date().getFullYear()} ManagerHR</span></footer></main></div>;
 }

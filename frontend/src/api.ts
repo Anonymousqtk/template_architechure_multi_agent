@@ -88,12 +88,32 @@ export class ApiError extends Error {
   constructor(public status: number, public code: string) { super(code); }
 }
 let csrfToken = '';
-export async function initialize(): Promise<{ csrfToken: string; deliveryMode: DeliveryMode }> {
-  const result = await request<{ csrfToken: string; deliveryMode: DeliveryMode }>('/api/auth/csrf');
+let confirmSensitiveAction: (() => Promise<boolean>) | undefined;
+
+export function registerSensitiveActionConfirmation(confirm: () => Promise<boolean>) {
+  confirmSensitiveAction = confirm;
+  return () => { if (confirmSensitiveAction === confirm) confirmSensitiveAction = undefined; };
+}
+
+export async function initialize(): Promise<{ csrfToken: string; deliveryMode: DeliveryMode; passkeysAvailable?: boolean }> {
+  const result = await request<{ csrfToken: string; deliveryMode: DeliveryMode; passkeysAvailable?: boolean }>('/api/auth/csrf');
   csrfToken = result.csrfToken;
   return result;
 }
 export async function request<T = void>(path: string, body?: unknown, methodOverride?: 'GET' | 'POST' | 'PATCH' | 'DELETE'): Promise<T> {
+  try {
+    return await send<T>(path, body, methodOverride);
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.code === 'REAUTH_REQUIRED' && path.startsWith('/api/organizations/') &&
+      (methodOverride ? methodOverride !== 'GET' : body !== undefined) && confirmSensitiveAction) {
+      if (await confirmSensitiveAction()) return send<T>(path, body, methodOverride);
+      throw new ApiError(403, 'REAUTH_CANCELLED');
+    }
+    throw cause;
+  }
+}
+
+async function send<T>(path: string, body?: unknown, methodOverride?: 'GET' | 'POST' | 'PATCH' | 'DELETE'): Promise<T> {
   const method = methodOverride || (body === undefined ? 'GET' : 'POST');
   const response = await fetch(path, {
     method, credentials: 'same-origin',
@@ -110,8 +130,13 @@ export function errorText(error: unknown): string {
   if (error instanceof ApiError) {
     const messages:Record<string,string>={EMPLOYEE_NOT_FOUND:'Không tìm thấy hồ sơ trong phạm vi được phép.',EMPLOYEE_CODE_EXISTS:'Mã nhân viên đã tồn tại trong tổ chức.',EMPLOYEE_ACCOUNT_EXISTS:'Tài khoản đã được liên kết với một hồ sơ.',INVALID_EMPLOYEE_ACCOUNT:'Tài khoản phải đang hoạt động trong cùng tổ chức.',ACCOUNT_ASSIGNMENT_MISMATCH:'Phân công của hồ sơ liên kết phải khớp với tài khoản hiện có.',INVALID_EMPLOYEE_DATES:'Kiểm tra ngày vào làm và ngày sinh. Ngày vào làm không được ở tương lai.',STALE_RECORD:'Dữ liệu đã thay đổi. Hãy tải lại hồ sơ trước khi lưu.',INVALID_HISTORY_DATE:'Ngày công tác phải từ ngày vào làm, không ở tương lai và không trước mốc đã ghi nhận.',ASSIGNMENT_UNCHANGED:'Phòng ban, chức danh và quản lý chưa có thay đổi.',CONTRACT_NUMBER_EXISTS:'Số hợp đồng đã tồn tại trong tổ chức.',CONTRACT_NOT_FOUND:'Không tìm thấy hợp đồng.',INVALID_CONTRACT_DATES:'Kiểm tra thời hạn, ngày ký và ngày chấm dứt hợp đồng.',CONTRACT_IMMUTABLE:'Nội dung hợp đồng đã được khóa. Hãy tạo hợp đồng mới để ghi nhận thay đổi.',INVALID_CONTRACT_TRANSITION:'Không thể chuyển sang trạng thái hợp đồng này.',ACTIVE_CONTRACT_EXISTS:'Nhân viên đã có một hợp đồng đang thực hiện.',CONTRACT_SIGNATURE_DATE_REQUIRED:'Cần ghi ngày ký hợp lệ trước khi hoàn tất hợp đồng.'};
     if(messages[error.code])return messages[error.code];
+    if (error.code === 'INVALID_PASSKEY') return 'Không thể xác minh passkey. Hãy thử lại hoặc dùng mật khẩu.';
+    if (error.code === 'PASSKEY_CHALLENGE_EXPIRED') return 'Yêu cầu xác minh đã hết hạn. Hãy thử lại.';
+    if (error.code === 'PASSKEY_LIMIT') return 'Tài khoản đã có 10 passkey. Hãy xóa một passkey trước khi thêm.';
+    if (error.code === 'PASSKEY_EXISTS') return 'Passkey này đã được đăng ký.';
     if (error.code === 'MFA_REQUIRED') return 'Hãy hoàn tất xác thực hai bước tại trang Bảo mật.';
     if (error.code === 'REAUTH_REQUIRED') return 'Hãy xác thực lại tại trang Bảo mật trước khi thực hiện thao tác này.';
+    if (error.code === 'REAUTH_CANCELLED') return 'Đã hủy xác minh. Thao tác chưa được thực hiện.';
     if (error.code === 'INVALID_FACTOR') return 'Mã không hợp lệ hoặc đã dùng. Chờ mã mới hoặc dùng mã khôi phục chưa sử dụng.';
     if (error.code === 'LAST_ADMIN_REQUIRED') return 'Tổ chức phải còn ít nhất một quản trị viên đang hoạt động.';
     if (error.code === 'SELF_CHANGE_FORBIDDEN') return 'Bạn không thể tự thay đổi vai trò hoặc khóa tài khoản của mình.';
