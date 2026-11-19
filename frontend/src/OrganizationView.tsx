@@ -1003,7 +1003,7 @@ export function OrganizationView({
   };
 
   return (
-    <div>
+    <div className="org-view">
       <div className="eyebrow">CƠ CẤU TỔ CHỨC · {profile.organization.name}</div>
       <h1 className="dash-page-title" style={{ position: 'static', width: 'auto', height: 'auto', clipPath: 'none' }}>
         {titles[tab] || 'Cơ cấu tổ chức'}

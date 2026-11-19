@@ -5,6 +5,7 @@ import { fail, type Authed, type Identity, type Role } from './types.js';
 
 import { authorizeMutation } from './authorization.js';
 import { detectReportingCycle } from './organization-structure.js';
+import { managementScope } from './management-scope.js';
 
 const uuid = z.string().uuid();
 const roleSchema = z.enum(['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE']);
@@ -149,8 +150,9 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
       params.push(identity.userId);
       conditions.push(`(m.role = 'EMPLOYEE' OR m.user_id = $${params.length})`);
     } else if (identity.role === 'MANAGER') {
-      params.push(identity.userId);
-      conditions.push(`(m.manager_user_id = $${params.length} OR m.user_id = $${params.length})`);
+      const scope = await managementScope(pool, identity);
+      params.push(scope!.users);
+      conditions.push(`m.user_id = ANY($${params.length}::uuid[])`);
     }
 
     if (q) {
@@ -213,9 +215,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
 
     if (targetUserId !== identity.userId) {
       if (identity.role === 'HR' && row.role !== 'EMPLOYEE') fail(404, 'USER_NOT_FOUND');
-      if (identity.role === 'MANAGER' && row.manager_user_id !== identity.userId) {
-        fail(404, 'USER_NOT_FOUND');
-      }
+      if (identity.role === 'MANAGER' && !(await managementScope(pool,identity))!.users.includes(targetUserId)) fail(404, 'USER_NOT_FOUND');
     }
 
     res.json({ user: mapUserRow(row) });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { DepartmentsPanel, OrgChartView, OrganizationPanel, OrganizationView, PositionsPanel } from './OrganizationView';
-import { request, type Profile, type OrgChartData } from './api';
+import { request, type Profile, type OrgChartData, type OrgChartNode } from './api';
 
 vi.mock('./api', async original => ({
   ...(await original<typeof import('./api')>()),
@@ -132,6 +132,20 @@ afterEach(() => {
 });
 
 describe('ORG-001 Organization Structure UI', () => {
+  it('ORG-002 renders a deep hierarchy and collapses the entire descendant branch', async () => {
+    let branch:OrgChartNode|undefined;
+    for(let level=15;level>=0;level--){
+      branch={id:'level-'+level,parentId:level?'level-'+(level-1):null,code:'L'+level,
+        name:'Department level '+level,description:null,manager:null,memberCount:0,members:[],children:branch?[branch]:[]};
+    }
+    mock.mockResolvedValue({...sampleOrgChart,departmentTree:[branch!],totalDepartments:16});
+    render(<OrgChartView profile={adminProfile} />);
+    expect(await screen.findByText('Department level 15')).toBeVisible();
+    fireEvent.click(screen.getAllByRole('button',{name:'Thu gọn ▲'})[0]);
+    expect(screen.queryByText('Department level 15')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Mở rộng (1) ▼'}));
+    expect(screen.getByText('Department level 15')).toBeVisible();
+  });
   it('renders the backend wire contract, nested manager and collapsible department tree', async () => {
     mock.mockResolvedValue(sampleOrgChart);
     render(<OrgChartView profile={adminProfile} />);

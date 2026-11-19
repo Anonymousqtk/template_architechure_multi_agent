@@ -4,6 +4,14 @@ import '@testing-library/jest-dom/vitest';
 import { DashboardShell } from './DashboardShell';
 import type { Profile } from './api';
 const profile:Profile={user:{id:'employee',email:'employee@example.test',fullName:'Test Employee'},organization:{id:'org',name:'Company',role:'EMPLOYEE'},permissions:{invite:false,grantHR:false},deliveryMode:'DEV_ONLY'};
+it('Managers can discover scoped chart, departments and positions without mutation privileges',()=>{
+ const manager:Profile={...profile,organization:{...profile.organization,role:'MANAGER'},permissions:{invite:false,grantHR:false,readUsers:true,manageOrg:false}};
+ render(<DashboardShell profile={manager} path="/admin/org-chart" profileView={false} busy={false} onLogout={()=>{}}>Chart</DashboardShell>);
+ expect(screen.getByRole('link',{name:'Sơ đồ tổ chức'})).toHaveAttribute('href','/admin/org-chart');
+ expect(screen.getByRole('link',{name:'Phòng ban'})).toBeVisible();
+ expect(screen.getByRole('link',{name:'Chức danh'})).toBeVisible();
+ expect(screen.queryByRole('link',{name:'Lời mời'})).not.toBeInTheDocument();
+});
 beforeEach(()=>{Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:function(this:HTMLDialogElement){this.setAttribute('open','');}});Object.defineProperty(HTMLDialogElement.prototype,'close',{configurable:true,value:function(this:HTMLDialogElement){this.removeAttribute('open');}});});afterEach(()=>{cleanup();vi.unstubAllGlobals();});
 it('mobile navigation restores body scrolling and opener focus on Escape',()=>{render(<DashboardShell profile={profile} path="/app" profileView={false} busy={false} onLogout={()=>{}}>Dashboard</DashboardShell>);const opener=screen.getByRole('button',{name:'Mở điều hướng'});opener.focus();fireEvent.click(opener);expect(document.body.style.overflow).toBe('hidden');const modal=screen.getByRole('dialog',{name:'Điều hướng'});fireEvent(modal,new Event('cancel',{cancelable:true}));expect(document.body.style.overflow).toBe('');expect(opener).toHaveFocus();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();});
 it('does not leave scroll locked if the shell unmounts with navigation open',()=>{const view=render(<DashboardShell profile={profile} path="/app" profileView={false} busy={false} onLogout={()=>{}}>Dashboard</DashboardShell>);fireEvent.click(screen.getByRole('button',{name:'Mở điều hướng'}));view.unmount();expect(document.body.style.overflow).toBe('');});

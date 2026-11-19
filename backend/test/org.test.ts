@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { createApp } from '../src/app.js';
 import { hashPassword } from '../src/security.js';
@@ -132,6 +133,171 @@ afterAll(async () => {
 });
 
 describe('ORG-001 Organization Structure, Departments, Positions & Hierarchy', () => {
+  it('ORG-002: recursive Manager scope restricts lists, details, users, chart and mutations', async () => {
+    const admin=await actor('admin@example.test');
+    const manager=await actor('manager@example.test');
+    const middleId=await createUser('middle@example.test',orgA,'MANAGER');
+    const outsiderId=await createUser('outsider@example.test',orgA,'EMPLOYEE');
+    const root=(await admin.post(`/api/organizations/${orgA}/departments`,{code:'ROOT',name:'Assigned',managerUserId:managerId})).body.id;
+    const child=(await admin.post(`/api/organizations/${orgA}/departments`,{code:'CHILD',name:'Child',parentId:root})).body.id;
+    const deep=(await admin.post(`/api/organizations/${orgA}/departments`,{code:'DEEP',name:'Deep',parentId:child})).body.id;
+    const outside=(await admin.post(`/api/organizations/${orgA}/departments`,{code:'OUT',name:'Private'})).body.id;
+    await pool.query('UPDATE memberships SET manager_user_id=$1 WHERE user_id=$2 AND organization_id=$3',[managerId,middleId,orgA]);
+    await pool.query('UPDATE memberships SET manager_user_id=$1 WHERE user_id=$2 AND organization_id=$3',[middleId,employeeId,orgA]);
+    await admin.post(`/api/organizations/${orgA}/users/${employeeId}/assignment`,{departmentId:deep,positionId:null});
+    const scopedMember=await createUser('dept-only@example.test',orgA,'EMPLOYEE');
+    await admin.post(`/api/organizations/${orgA}/users/${scopedMember}/assignment`,{departmentId:child,positionId:null});
+    const position=(await admin.post(`/api/organizations/${orgA}/positions`,{code:'WORK',title:'Administrator',departmentId:deep})).body.id;
+    const hiddenPosition=(await admin.post(`/api/organizations/${orgA}/positions`,{code:'HIDDEN',title:'Private',departmentId:outside})).body.id;
+    const prefix=`/api/organizations/${orgA}`;
+    const list=await manager.request(prefix+'/departments');
+    expect(list.body.items.map((d:{id:string})=>d.id).sort()).toEqual([root,child,deep].sort());
+    expect((await manager.request(prefix+'/departments/'+outside)).status).toBe(404);
+    expect((await manager.request(prefix+'/positions/'+hiddenPosition)).status).toBe(404);
+    expect((await manager.request(prefix+'/positions')).body.items.map((p:{id:string})=>p.id)).toEqual([position]);
+    const users=await manager.request(prefix+'/users');
+    expect(users.body.items.map((u:{id:string})=>u.id).sort()).toEqual([managerId,middleId,employeeId,scopedMember].sort());
+    expect((await manager.request(prefix+'/users/'+employeeId)).status).toBe(200);
+    expect((await manager.request(prefix+'/users/'+outsiderId)).status).toBe(404);
+    const chart=await manager.request(prefix+'/org-chart');
+    expect(chart.body.totalDepartments).toBe(3);
+    expect(chart.body.totalPositions).toBe(1);
+    expect(JSON.stringify(chart.body)).not.toContain(outsiderId);
+    expect(JSON.stringify(chart.body)).not.toContain('Private');
+    expect((await manager.patch(prefix+'/departments/'+outside,{managerUserId:managerId})).status).toBe(403);
+    expect((await manager.post(prefix+'/users/'+employeeId+'/manager',{managerUserId:managerId})).status).toBe(403);
+    const other=await actor('other-admin@example.test');
+    expect((await other.request(prefix+'/org-chart')).status).toBe(403);
+    await admin.post(prefix+'/users/'+employeeId+'/assignment',{departmentId:deep,positionId:position});
+    expect((await admin.request(prefix+'/users/'+employeeId)).body.user.role).toBe('EMPLOYEE');
+    // Moving a branch immediately removes it from the old Manager's scope.
+    expect((await admin.patch(prefix+'/departments/'+child,{parentId:outside})).status).toBe(204);
+    expect((await manager.request(prefix+'/departments/'+deep)).status).toBe(404);
+    expect((await manager.request(prefix+'/users/'+scopedMember)).status).toBe(404);
+    expect((await manager.request(prefix+'/users/'+employeeId)).status).toBe(200); // reporting grant remains
+  });
+
+  it('ORG-002: inactive units, safe moves and tenant parents fail closed', async () => {
+    const admin=await actor('admin@example.test');
+    const prefix=`/api/organizations/${orgA}`;
+    const root=(await admin.post(prefix+'/departments',{code:'R',name:'Root',managerUserId:managerId})).body.id;
+    const child=(await admin.post(prefix+'/departments',{code:'C',name:'Child',parentId:root})).body.id;
+    expect((await admin.patch(prefix+'/departments/'+root,{isActive:false})).status).toBe(409);
+    expect((await admin.patch(prefix+'/departments/'+root,{parentId:child})).status).toBe(400);
+    expect((await admin.patch(prefix+'/departments/'+child,{parentId:child})).status).toBe(400);
+    expect((await admin.patch(prefix,{parentOrganizationId:orgB})).status).toBe(400);
+    expect((await admin.patch(prefix+'/departments/'+child,{isActive:false})).status).toBe(204);
+    expect((await admin.post(prefix+'/departments',{code:'FAIL',name:'Invalid',parentId:child})).status).toBe(400);
+    const manager=await actor('manager@example.test');
+    expect((await manager.request(prefix+'/departments/'+child)).status).toBe(404);
+    expect((await manager.request(prefix+'/org-chart')).body.totalDepartments).toBe(1);
+    expect((await admin.patch(prefix+'/departments/'+root,{isActive:false})).status).toBe(204);
+    expect((await manager.request(prefix+'/departments')).body.total).toBe(0);
+    expect((await manager.request(prefix+'/org-chart')).body.totalDepartments).toBe(0);
+  });
+
+  it('ORG-002: database rejects tenant-mismatched links and indirect cycles', async () => {
+    const a=randomUUID(),b=randomUUID(),other=randomUUID(),position=randomUUID();
+    await pool.query('INSERT INTO departments(id,organization_id,code,name) VALUES($1,$2,\'A\',\'A\'),($3,$2,\'B\',\'B\'),($4,$5,\'OTHER\',\'OTHER\')',[a,orgA,b,other,orgB]);
+    await pool.query('INSERT INTO positions(id,organization_id,code,title) VALUES($1,$2,\'OTHER\',\'OTHER\')',[position,orgB]);
+    await expect(pool.query('UPDATE departments SET parent_id=$1 WHERE id=$2',[other,a])).rejects.toMatchObject({code:'23503'});
+    await expect(pool.query('UPDATE memberships SET department_id=$1 WHERE user_id=$2 AND organization_id=$3',[other,employeeId,orgA])).rejects.toMatchObject({code:'23503'});
+    await expect(pool.query('UPDATE memberships SET position_id=$1 WHERE user_id=$2 AND organization_id=$3',[position,employeeId,orgA])).rejects.toMatchObject({code:'23503'});
+    await expect(pool.query('UPDATE positions SET department_id=$1 WHERE id=$2',[a,position])).rejects.toMatchObject({code:'23503'});
+    const localPosition=randomUUID();
+    await pool.query('INSERT INTO positions(id,organization_id,department_id,code,title) VALUES($1,$2,$3,\'LOCAL\',\'Local\')',[localPosition,orgA,a]);
+    await expect(pool.query('UPDATE memberships SET position_id=$1 WHERE user_id=$2 AND organization_id=$3',[localPosition,employeeId,orgA])).rejects.toMatchObject({code:'23514'});
+    await pool.query('UPDATE memberships SET department_id=$1,position_id=$2 WHERE user_id=$3 AND organization_id=$4',[a,localPosition,employeeId,orgA]);
+    await expect(pool.query('UPDATE positions SET department_id=$1 WHERE id=$2',[b,localPosition])).rejects.toMatchObject({code:'23514'});
+    await pool.query('UPDATE departments SET parent_id=$1 WHERE id=$2',[a,b]);
+    await expect(pool.query('UPDATE departments SET parent_id=$1 WHERE id=$2',[b,a])).rejects.toMatchObject({code:'23514'});
+    await pool.query('UPDATE memberships SET manager_user_id=$1 WHERE user_id=$2 AND organization_id=$3',[managerId,employeeId,orgA]);
+    await expect(pool.query('UPDATE memberships SET manager_user_id=$1 WHERE user_id=$2 AND organization_id=$3',[employeeId,managerId,orgA])).rejects.toMatchObject({code:'23514'});
+  });
+
+  it('ORG-002: concurrent opposite parent moves cannot commit a cycle', async () => {
+    const admin=await actor('admin@example.test');
+    const prefix=`/api/organizations/${orgA}/departments`;
+    const a=(await admin.post(prefix,{code:'A',name:'A'})).body.id;
+    const b=(await admin.post(prefix,{code:'B',name:'B'})).body.id;
+    const responses=await Promise.all([admin.patch(prefix+'/'+a,{parentId:b}),admin.patch(prefix+'/'+b,{parentId:a})]);
+    expect(responses.map(r=>r.status).sort()).toEqual([204,400]);
+  });
+
+  it('ORG-002: chart personal data follows HR and Employee scopes', async () => {
+    const employee=await actor('employee@example.test');
+    const hr=await actor('hr@example.test');
+    const path=`/api/organizations/${orgA}/org-chart`;
+    const own=await employee.request(path);
+    expect(own.body.totalMembers).toBe(1);
+    expect(own.body.unassignedMembers.map((u:{userId:string})=>u.userId)).toEqual([employeeId]);
+    const personnel=await hr.request(path);
+    expect(personnel.body.totalMembers).toBe(2);
+    expect(JSON.stringify(personnel.body)).not.toContain('admin@example.test');
+    expect(JSON.stringify(personnel.body)).not.toContain('other-admin@example.test');
+  });
+
+  it('ORG-002: position moves preserve assignments and inactive managers cannot be assigned', async () => {
+    const admin=await actor('admin@example.test');
+    const prefix=`/api/organizations/${orgA}`;
+    const a=(await admin.post(prefix+'/departments',{code:'A',name:'A'})).body.id;
+    const b=(await admin.post(prefix+'/departments',{code:'B',name:'B'})).body.id;
+    const position=(await admin.post(prefix+'/positions',{code:'P',title:'Admin',departmentId:a})).body.id;
+    expect((await admin.post(prefix+'/users/'+employeeId+'/assignment',{departmentId:null,positionId:position})).status).toBe(400);
+    expect((await admin.post(prefix+'/users/'+employeeId+'/assignment',{departmentId:a,positionId:position})).status).toBe(204);
+    expect((await admin.patch(prefix+'/positions/'+position,{departmentId:b})).status).toBe(409);
+    await pool.query('UPDATE users SET is_active=false WHERE id=$1',[managerId]);
+    expect((await admin.patch(prefix+'/departments/'+a,{managerUserId:managerId})).status).toBe(400);
+    expect((await admin.post(prefix+'/departments',{code:'BAD',name:'BAD',managerUserId:managerId})).status).toBe(400);
+  });
+
+  it('ORG-002: concurrent opposite reporting assignments cannot commit a cycle', async () => {
+    const admin=await actor('admin@example.test');
+    const second=await createUser('second-manager@example.test',orgA,'MANAGER');
+    const prefix=`/api/organizations/${orgA}/users/`;
+    const responses=await Promise.all([
+      admin.post(prefix+managerId+'/manager',{managerUserId:second}),
+      admin.post(prefix+second+'/manager',{managerUserId:managerId}),
+    ]);
+    expect(responses.map(r=>r.status).sort()).toEqual([204,400]);
+  });
+
+  it('ORG-002: migration rejects corrupt legacy relationships atomically and preserves rows', async () => {
+    // This test is guarded by the disposable-database-only suite setup.
+    const database='org002_upgrade_'+randomUUID().replaceAll('-','');
+    const url=new URL(process.env.DATABASE_URL!);url.pathname='/'+database;
+    await pool.query(`CREATE DATABASE "${database}"`);
+    const upgrade=new Pool({connectionString:url.toString(),max:1});
+    try {
+      const dir=new URL('../../database/migrations/',import.meta.url);
+      for(const file of readdirSync(dir).filter(f=>f.endsWith('.sql')&&f<'006').sort())await upgrade.query(readFileSync(new URL(file,dir),'utf8'));
+      const org=randomUUID(),tenant=randomUUID(),a=randomUUID(),b=randomUUID(),outside=randomUUID();
+      await upgrade.query('INSERT INTO organizations(id,name) VALUES($1,\'Original\'),($2,\'Other\')',[org,tenant]);
+      const legacyUser=randomUUID();
+      await upgrade.query('INSERT INTO users(id,email,full_name,password_hash,email_verified_at) VALUES($1,\'legacy@example.test\',\'Legacy\',\'legacy-hash\',now())',[legacyUser]);
+      await upgrade.query('INSERT INTO memberships(id,user_id,organization_id,role) VALUES($1,$2,$3,\'EMPLOYEE\')',[randomUUID(),legacyUser,org]);
+      await upgrade.query('INSERT INTO departments(id,organization_id,code,name) VALUES($1,$2,\'A\',\'A\'),($3,$2,\'B\',\'B\'),($4,$5,\'X\',\'X\')',[a,org,b,outside,tenant]);
+      const migration=readFileSync(new URL('006_org_integrity.sql',dir),'utf8');
+      await upgrade.query('UPDATE departments SET parent_id=$1 WHERE id=$2',[outside,a]);
+      await expect(upgrade.query(migration)).rejects.toMatchObject({code:'23503'});
+      await upgrade.query('ROLLBACK');
+      expect((await upgrade.query('SELECT parent_id FROM departments WHERE id=$1',[a])).rows[0].parent_id).toBe(outside);
+      await upgrade.query('UPDATE departments SET parent_id=$1 WHERE id=$2',[b,a]);
+      await upgrade.query('UPDATE departments SET parent_id=$1 WHERE id=$2',[a,b]);
+      await expect(upgrade.query(migration)).rejects.toMatchObject({code:'P0001'});
+      await upgrade.query('ROLLBACK');
+      expect((await upgrade.query('SELECT count(*)::int AS n FROM departments')).rows[0].n).toBe(3);
+      expect((await upgrade.query('SELECT password_hash FROM users WHERE id=$1',[legacyUser])).rows[0].password_hash).toBe('legacy-hash');
+      // Operator-style repair is confined to this disposable fixture.
+      await upgrade.query('UPDATE departments SET parent_id=NULL WHERE id=$1',[b]);
+      await upgrade.query(migration);
+      expect((await upgrade.query('SELECT name FROM organizations WHERE id=$1',[org])).rows[0].name).toBe('Original');
+      expect((await upgrade.query('SELECT count(*)::int AS n FROM departments')).rows[0].n).toBe(3);
+    } finally {
+      await upgrade.end();
+      await pool.query(`DROP DATABASE "${database}"`);
+    }
+  }, 30000);
   it('ORG-01: Organization management respects tenant isolation and Admin-only updates', async () => {
     const admin = await actor('admin@example.test');
     const hr = await actor('hr@example.test');

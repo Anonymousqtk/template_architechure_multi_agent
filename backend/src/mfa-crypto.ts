@@ -23,11 +23,11 @@ export function verifyTotp(secret:string,code:string,last:number,now=Date.now())
 }
 function keyBytes(key:string) {const value=Buffer.from(key,'base64');if(value.length!==32)throw Error('MFA encryption key must be 32 bytes base64');return value;}
 export function seal(secret:string,userId:string,key:string) {
-  const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',keyBytes(key),iv);cipher.setAAD(Buffer.from(userId));
+  const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',keyBytes(key),iv,{authTagLength:16});cipher.setAAD(Buffer.from(userId));
   const data=Buffer.concat([cipher.update(secret,'utf8'),cipher.final()]);
   return [iv,data,cipher.getAuthTag()].map(x=>x.toString('base64url')).join('.');
 }
 export function unseal(value:string,userId:string,key:string) {
-  const [iv,data,tag]=value.split('.').map(x=>Buffer.from(x,'base64url'));const cipher=createDecipheriv('aes-256-gcm',keyBytes(key),iv);cipher.setAAD(Buffer.from(userId));cipher.setAuthTag(tag);
+  const [iv,data,tag]=value.split('.').map(x=>Buffer.from(x,'base64url'));const cipher=createDecipheriv('aes-256-gcm',keyBytes(key),iv,{authTagLength:16});cipher.setAAD(Buffer.from(userId));cipher.setAuthTag(tag);
   return Buffer.concat([cipher.update(data),cipher.final()]).toString('utf8');
 }

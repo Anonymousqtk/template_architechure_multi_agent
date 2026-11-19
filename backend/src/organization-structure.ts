@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { fail, type Authed, type Identity } from './types.js';
 import { authorizeMutation } from './authorization.js';
+import { managementScope } from './management-scope.js';
 
 const uuid = z.string().uuid();
 const codeRegex = /^[A-Za-z0-9_.-]+$/;
@@ -102,14 +103,6 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const org = result.rows[0];
     if (!org) fail(404, 'ORGANIZATION_NOT_FOUND');
 
-    let parentOrg: { id: string; name: string; code: string | null } | null = null;
-    if (org.parent_organization_id) {
-      const pRes = await pool.query<{ id: string; name: string; code: string | null }>(
-        'SELECT id, name, code FROM organizations WHERE id = $1',
-        [org.parent_organization_id],
-      );
-      parentOrg = pRes.rows[0] || null;
-    }
 
     res.json({
       organization: {
@@ -117,8 +110,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         name: org.name,
         code: org.code,
         description: org.description,
-        parentOrganizationId: org.parent_organization_id,
-        parentOrganization: parentOrg,
+        parentOrganizationId: null,
+        parentOrganization: null,
         isActive: org.is_active,
         createdAt: org.created_at.toISOString(),
       },
@@ -152,10 +145,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
       if (data.parentOrganizationId !== undefined && data.parentOrganizationId !== null) {
         if (data.parentOrganizationId === identity.orgId) fail(400, 'INVALID_PARENT');
-        const pCheck = await db.query('SELECT id FROM organizations WHERE id = $1 AND is_active', [
-          data.parentOrganizationId,
-        ]);
-        if (!pCheck.rowCount) fail(404, 'PARENT_ORGANIZATION_NOT_FOUND');
+        // organizations are tenant boundaries, not units within a tenant.
+        fail(400, 'INVALID_PARENT');
       }
 
       if (data.code !== undefined && data.code !== null) {
@@ -213,6 +204,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
     const conditions = ['d.organization_id = $1'];
     const params: unknown[] = [identity.orgId];
+    const scope = await managementScope(pool, identity);
+    if(scope){params.push(scope.departments);conditions.push(`d.id=ANY($${params.length}::uuid[])`);}
 
     if (isActive === 'true') conditions.push('d.is_active = true');
     else if (isActive === 'false') conditions.push('d.is_active = false');
@@ -263,7 +256,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
               COALESCE(c_count.total, 0)::int AS child_count
        FROM departments d
        LEFT JOIN departments p ON p.id = d.parent_id
-       LEFT JOIN users u ON u.id = d.manager_user_id
+       LEFT JOIN users u ON u.id = d.manager_user_id AND u.is_active AND u.email_verified_at IS NOT NULL AND EXISTS (SELECT 1 FROM memberships dm WHERE dm.organization_id=d.organization_id AND dm.user_id=u.id AND dm.is_active)
        LEFT JOIN (
          SELECT department_id, count(*)::int AS total
          FROM memberships
@@ -286,8 +279,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       items: rows.rows.map(r => ({
         id: r.id,
         organizationId: r.organization_id,
-        parentId: r.parent_id,
-        parentName: r.parent_name,
+        parentId: scope && !scope.departments.includes(r.parent_id || '') ? null : r.parent_id,
+        parentName: scope && !scope.departments.includes(r.parent_id || '') ? null : r.parent_name,
         code: r.code,
         name: r.name,
         description: r.description,
@@ -309,6 +302,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
   app.get(`${orgPrefix}/departments/:departmentId`, async (req: Authed, res) => {
     const identity = requireOrgIdentity(req);
     const deptId = z.string().uuid().parse(req.params.departmentId);
+    const scope = await managementScope(pool,identity);
+    if(scope && !scope.departments.includes(deptId)) fail(404,'DEPARTMENT_NOT_FOUND');
 
     const result = await pool.query<{
       id: string;
@@ -334,7 +329,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
               COALESCE(c_count.total, 0)::int AS child_count
        FROM departments d
        LEFT JOIN departments p ON p.id = d.parent_id
-       LEFT JOIN users u ON u.id = d.manager_user_id
+       LEFT JOIN users u ON u.id = d.manager_user_id AND u.is_active AND u.email_verified_at IS NOT NULL AND EXISTS (SELECT 1 FROM memberships dm WHERE dm.organization_id=d.organization_id AND dm.user_id=u.id AND dm.is_active)
        LEFT JOIN (
          SELECT department_id, count(*)::int AS total
          FROM memberships
@@ -357,8 +352,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       department: {
         id: row.id,
         organizationId: row.organization_id,
-        parentId: row.parent_id,
-        parentName: row.parent_name,
+        parentId: scope && !scope.departments.includes(row.parent_id || '') ? null : row.parent_id,
+        parentName: scope && !scope.departments.includes(row.parent_id || '') ? null : row.parent_name,
         code: row.code,
         name: row.name,
         description: row.description,
@@ -412,7 +407,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       // Check manager belongs to same org
       if (data.managerUserId) {
         const mRes = await db.query(
-          'SELECT id FROM memberships WHERE organization_id = $1 AND user_id = $2 AND is_active = true',
+          'SELECT m.id FROM memberships m JOIN users u ON u.id=m.user_id AND u.is_active AND u.email_verified_at IS NOT NULL WHERE m.organization_id = $1 AND m.user_id = $2 AND m.is_active = true',
           [identity.orgId, data.managerUserId],
         );
         if (!mRes.rowCount) fail(400, 'INVALID_MANAGER');
@@ -471,6 +466,12 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       );
       const dept = deptRes.rows[0];
       if (!dept) fail(404, 'DEPARTMENT_NOT_FOUND');
+      if(data.isActive===false){
+        const dependencies=await db.query(`SELECT 1 FROM departments WHERE organization_id=$1 AND parent_id=$2 AND is_active
+          UNION ALL SELECT 1 FROM memberships WHERE organization_id=$1 AND department_id=$2 AND is_active
+          UNION ALL SELECT 1 FROM positions WHERE organization_id=$1 AND department_id=$2 AND is_active LIMIT 1`,[identity.orgId,deptId]);
+        if(dependencies.rowCount)fail(409,'DEPARTMENT_IN_USE');
+      }
 
       let nextCode = dept.code;
       if (data.code !== undefined) {
@@ -505,7 +506,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         nextManagerId = data.managerUserId;
         if (nextManagerId !== null) {
           const mCheck = await db.query(
-            'SELECT id FROM memberships WHERE organization_id = $1 AND user_id = $2 AND is_active = true',
+            'SELECT m.id FROM memberships m JOIN users u ON u.id=m.user_id AND u.is_active AND u.email_verified_at IS NOT NULL WHERE m.organization_id = $1 AND m.user_id = $2 AND m.is_active = true',
             [identity.orgId, nextManagerId],
           );
           if (!mCheck.rowCount) fail(400, 'INVALID_MANAGER');
@@ -610,6 +611,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
     const conditions = ['p.organization_id = $1'];
     const params: unknown[] = [identity.orgId];
+    const scope = await managementScope(pool,identity);
+    if(scope){params.push(scope.departments);conditions.push(`p.department_id=ANY($${params.length}::uuid[]) AND p.is_active`);}
 
     if (isActive === 'true') conditions.push('p.is_active = true');
     else if (isActive === 'false') conditions.push('p.is_active = false');
@@ -685,6 +688,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
   app.get(`${orgPrefix}/positions/:positionId`, async (req: Authed, res) => {
     const identity = requireOrgIdentity(req);
     const posId = z.string().uuid().parse(req.params.positionId);
+    const scope = await managementScope(pool,identity);
+    if(scope){const check=await pool.query('SELECT id FROM positions WHERE organization_id=$1 AND id=$2 AND is_active AND department_id=ANY($3::uuid[])',[identity.orgId,posId,scope.departments]);if(!check.rowCount)fail(404,'POSITION_NOT_FOUND');}
 
     const result = await pool.query<{
       id: string;
@@ -841,6 +846,10 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         }
       }
 
+      if(data.departmentId!==undefined && nextDeptId!==null){
+        const assigned=await db.query('SELECT 1 FROM memberships WHERE organization_id=$1 AND position_id=$2 AND department_id IS DISTINCT FROM $3::uuid LIMIT 1',[identity.orgId,posId,nextDeptId]);
+        if(assigned.rowCount)fail(409,'POSITION_IN_USE');
+      }
       await db.query(
         `UPDATE positions
          SET code = $1,
@@ -947,7 +956,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         );
         if (!pCheck.rowCount) fail(400, 'INVALID_POSITION');
         const posDept = pCheck.rows[0].department_id;
-        if (posDept && data.departmentId && posDept !== data.departmentId) {
+        if (posDept && posDept !== data.departmentId) {
           fail(400, 'POSITION_DEPARTMENT_MISMATCH');
         }
       }
@@ -971,6 +980,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
   // =========================================================================
   app.get(`${orgPrefix}/org-chart`, async (req: Authed, res) => {
     const identity = requireOrgIdentity(req);
+    const scope = await managementScope(pool,identity);
 
     // Fetch organization info
     const orgRes = await pool.query<{ id: string; name: string; code: string | null; description: string | null }>(
@@ -996,10 +1006,10 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       `SELECT d.id, d.parent_id, d.code, d.name, d.description, d.manager_user_id,
               u.full_name AS manager_name, u.email AS manager_email, d.is_active, d.created_at
        FROM departments d
-       LEFT JOIN users u ON u.id = d.manager_user_id
-       WHERE d.organization_id = $1 AND d.is_active = true
+       LEFT JOIN users u ON u.id = d.manager_user_id AND u.is_active AND u.email_verified_at IS NOT NULL AND EXISTS (SELECT 1 FROM memberships dm WHERE dm.organization_id=d.organization_id AND dm.user_id=u.id AND dm.is_active)
+       WHERE d.organization_id = $1 AND d.is_active = true AND ($2::uuid[] IS NULL OR d.id=ANY($2))
        ORDER BY d.code ASC`,
-      [identity.orgId],
+      [identity.orgId,scope?.departments??null],
     );
 
     // Fetch active positions
@@ -1011,9 +1021,9 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     }>(
       `SELECT id, department_id, code, title
        FROM positions
-       WHERE organization_id = $1 AND is_active = true
+       WHERE organization_id = $1 AND is_active = true AND ($2::uuid[] IS NULL OR department_id=ANY($2))
        ORDER BY code ASC`,
-      [identity.orgId],
+      [identity.orgId,scope?.departments??null],
     );
 
     // Fetch members with position and department
@@ -1035,10 +1045,26 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
        LEFT JOIN users mgr ON mgr.id = m.manager_user_id
        LEFT JOIN positions pos ON pos.id = m.position_id
        WHERE m.organization_id = $1 AND m.is_active = true
+         AND ($2::uuid[] IS NULL OR m.user_id=ANY($2))
+         AND ($3::text <> 'HR' OR m.role='EMPLOYEE' OR m.user_id=$4)
+         AND ($3::text <> 'EMPLOYEE' OR m.user_id=$4)
        ORDER BY u.full_name ASC`,
-      [identity.orgId],
+      [identity.orgId,scope?.users??null,identity.role,identity.userId],
     );
 
+    if(scope){
+      deptRows.rows=deptRows.rows.filter(d=>scope.departments.includes(d.id));
+      posRows.rows=posRows.rows.filter(p=>p.department_id && scope.departments.includes(p.department_id));
+      memberRows.rows=memberRows.rows.filter(m=>scope.users.includes(m.user_id));
+      for(const d of deptRows.rows)if(d.parent_id&&!scope.departments.includes(d.parent_id))d.parent_id=null;
+    }
+    if(identity.role==='EMPLOYEE')memberRows.rows=memberRows.rows.filter(m=>m.user_id===identity.userId);
+    if(identity.role==='HR')memberRows.rows=memberRows.rows.filter(m=>m.role==='EMPLOYEE'||m.user_id===identity.userId);
+    // Members outside visible active departments remain visible as unassigned.
+    const visibleDepartments=new Set(deptRows.rows.map(d=>d.id));
+    for(const m of memberRows.rows)if(m.department_id&&!visibleDepartments.has(m.department_id))m.department_id=null;
+    const visibleUsers=new Set(memberRows.rows.map(m=>m.user_id));
+    if(identity.role!=='ADMIN')for(const m of memberRows.rows)if(m.manager_user_id&&!visibleUsers.has(m.manager_user_id)){m.manager_user_id=null;m.manager_name=null;}
     // Map members by department
     const membersByDept = new Map<string, Array<{
       userId: string;
@@ -1132,9 +1158,9 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       },
       departmentTree: tree,
       unassignedMembers,
-      totalDepartments: deptRows.rowCount,
-      totalPositions: posRows.rowCount,
-      totalMembers: memberRows.rowCount,
+      totalDepartments: deptRows.rows.length,
+      totalPositions: posRows.rows.length,
+      totalMembers: memberRows.rows.length,
     });
   });
 }
