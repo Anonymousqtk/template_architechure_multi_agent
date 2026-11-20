@@ -7,6 +7,7 @@ import { digest, hashPassword, token, verifyPassword } from '../src/security.js'
 import type { Mailer } from '../src/mail.js';
 import { newTotpSecret, totp, verifyTotp, seal, unseal } from '../src/mfa-crypto.js';
 import { authorizeMutation, permissionsFor } from '../src/authorization.js';
+import { deleteFile } from '../src/file-storage.js';
 
 // Destructive fixture cleanup is permitted only by the disposable-cluster runner.
 if (process.env.MIGRATION_TEST_BACKEND !== 'true' || !process.env.DATABASE_URL) {
@@ -119,6 +120,37 @@ describe('AUTH-001 real HTTP/PostgreSQL matrix', () => {
     const list = await client.request(`/api/organizations/${orgA}/invitations?page=1&limit=1`);
     expect(list.status).toBe(200); expect(list.body.items).toHaveLength(1);
     expect(list.body.items[0]).not.toHaveProperty('token_hash');
+  });
+  it('AUTH-02 invitation avatars are limited to active members of the invitation organization', async () => {
+    const admin = await actor();
+    const employee = await actor('employee@example.test');
+    const foreignId = await createUser('foreign@example.test', orgB, 'EMPLOYEE');
+    const foreign = await actor('foreign@example.test');
+    const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+    try {
+      expect((await employee.post('/api/auth/profile/avatar', {
+        fileName: 'employee.png', mimeType: 'image/png', contentBase64: png.toString('base64'),
+      })).status).toBe(200);
+      expect((await foreign.post('/api/auth/profile/avatar', {
+        fileName: 'foreign.png', mimeType: 'image/png', contentBase64: png.toString('base64'),
+      })).status).toBe(200);
+
+      const accepted = await invite('employee@example.test');
+      await pool.query('UPDATE invitations SET consumed_at=now() WHERE id=$1', [accepted.id]);
+      await invite('foreign@example.test');
+      const list = await admin.request(`/api/organizations/${orgA}/invitations?page=1&limit=10`);
+      const memberInvite = list.body.items.find((item: { email: string }) => item.email === 'employee@example.test');
+      const foreignInvite = list.body.items.find((item: { email: string }) => item.email === 'foreign@example.test');
+
+      expect(memberInvite.avatarUrl).toContain(`/api/organizations/${orgA}/users/${employeeId}/avatar`);
+      expect(memberInvite).not.toHaveProperty('avatarPath');
+      expect(foreignInvite.avatarUrl).toBeNull();
+    } finally {
+      for (const userId of [employeeId, foreignId]) {
+        const result = await pool.query<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id=$1', [userId]);
+        if (result.rows[0]?.avatar_url) await deleteFile(userId, result.rows[0].avatar_url);
+      }
+    }
   });
   it('AUTH-03 prevents HR granting ADMIN or HR; permits ADMIN granting HR', async () => {
     const hr = await actor('hr@example.test');
@@ -340,12 +372,43 @@ describe('AUTH-002 tenant RBAC and account administration', () => {
     const result=await admin.request(users()+'?q=EXAMPLE&role=EMPLOYEE&status=active&page=1&limit=1');
     expect(result.status).toBe(200);expect(result.body.total).toBe(1);expect(result.body.items).toHaveLength(1);
     expect(result.body.items[0]).toMatchObject({id:employeeId,role:'EMPLOYEE',isActive:true});
-    expect(Object.keys(result.body.items[0]).sort()).toEqual(['id','email','fullName','role','isActive','userIsActive','emailVerified','managerUserId','createdAt'].sort());
+    expect(Object.keys(result.body.items[0]).sort()).toEqual(['id','email','fullName','role','isActive','userIsActive','emailVerified','avatarUrl','managerUserId','createdAt'].sort());
     const detail=await admin.request(`${users()}/${employeeId}`);expect(detail.status).toBe(200);
     expect((await admin.request(users()+'?q=%25')).body.total).toBe(0);
     expect((await admin.request(users()+'?q='+encodeURIComponent("' OR 1=1 --"))).body.total).toBe(0);
     expect((await admin.request(users()+'?page=0')).status).toBe(400);
     expect((await admin.request(users()+'?role=ROOT')).status).toBe(400);
+  });
+  it('serves member avatars using the same organization and manager visibility checks', async () => {
+    const employee = await actor('employee@example.test');
+    const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+    try {
+      expect((await employee.post('/api/auth/profile/avatar', {
+        fileName: 'employee.png', mimeType: 'image/png', contentBase64: png.toString('base64'),
+      })).status).toBe(200);
+
+      const admin = await actor();
+      const list = await admin.request(users());
+      const account = list.body.items.find((item: { id: string }) => item.id === employeeId);
+      expect(account.avatarUrl).toContain(`/api/organizations/${orgA}/users/${employeeId}/avatar`);
+      const adminImage = await fetch(base + account.avatarUrl, { headers: { Cookie: [...admin.cookies.values()].join('; ') } });
+      expect(adminImage.status).toBe(200);
+      expect(adminImage.headers.get('content-type')).toBe('image/png');
+
+      const managerId = await createUser('manager@example.test', orgA, 'MANAGER');
+      const outsideId = await createUser('unassigned@example.test', orgA, 'EMPLOYEE');
+      await pool.query('UPDATE memberships SET manager_user_id=$1 WHERE user_id=$2', [managerId, employeeId]);
+      const manager = await actor('manager@example.test');
+      const visibleImage = await fetch(base + account.avatarUrl, { headers: { Cookie: [...manager.cookies.values()].join('; ') } });
+      const hiddenImage = await fetch(base + `${users()}/${outsideId}/avatar`, { headers: { Cookie: [...manager.cookies.values()].join('; ') } });
+      expect(visibleImage.status).toBe(200);
+      expect(hiddenImage.status).toBe(404);
+      expect((await employee.request(`${users()}/${adminId}/avatar`)).status).toBe(403);
+      expect((await admin.request(`/api/organizations/${orgB}/users/${employeeId}/avatar`)).status).toBe(403);
+    } finally {
+      const result = await pool.query<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id=$1', [employeeId]);
+      if (result.rows[0]?.avatar_url) await deleteFile(employeeId, result.rows[0].avatar_url);
+    }
   });
   it('RBAC-04 HR cannot grant ADMIN, modify privileged members, or read audit', async () => {
     const hr=await actor('hr@example.test');

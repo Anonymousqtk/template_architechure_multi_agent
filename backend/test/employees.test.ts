@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { createApp } from '../src/app.js';
 import { hashPassword } from '../src/security.js';
+import { deleteFile } from '../src/file-storage.js';
+import { extractFilesFromZip, generateEmployeeTemplate, parseXLSX } from '../src/excel-parser.js';
 if(process.env.MIGRATION_TEST_BACKEND!=='true'||!process.env.DATABASE_URL)throw Error('Disposable PostgreSQL required');
 const pool=new Pool({connectionString:process.env.DATABASE_URL});
 const origin='http://localhost:3000',password='Employee integration test password 7!';
@@ -13,7 +15,10 @@ class Client{
  async call(path:string,method='GET',body?:unknown){
   const r=await fetch(base+path,{method,headers:{Cookie:[...this.cookies.values()].join('; '),...(method==='GET'?{}:{Origin:origin,'Content-Type':'application/json','X-CSRF-Token':this.csrf})},...(body===undefined?{}:{body:JSON.stringify(body)})});
   for(const cookie of r.headers.getSetCookie()){const pair=cookie.split(';')[0];this.cookies.set(pair.split('=')[0],pair);}
-  const text=await r.text();return {status:r.status,body:text?JSON.parse(text):null};
+  const text=await r.text();
+  let resBody=null;
+  try{resBody=text?JSON.parse(text):null;}catch{resBody=null;}
+  return {status:r.status,body:resBody,raw:text};
  }
  async login(email:string){this.csrf=(await this.call('/api/auth/csrf')).body.csrfToken;expect((await this.call('/api/auth/login','POST',{email,password})).status).toBe(200);return this;}
 }
@@ -334,5 +339,280 @@ describe('EMP-001 profiles and EMP-002 contracts/history',()=>{
   const admin=await actor('admin'),id=(await create(admin)).body.id;
   await expect(pool.query('INSERT INTO employee_contracts(id,organization_id,employee_id,contract_number,contract_type,start_date) VALUES($1,$2,$3,\'X\',\'INDEFINITE\',CURRENT_DATE)',[randomUUID(),otherOrg,id])).rejects.toMatchObject({code:'23503'});
   await expect(pool.query('UPDATE employees SET organization_id=$1,department_id=$2 WHERE id=$3',[otherOrg,department,id])).rejects.toMatchObject({code:'23503'});
+ });
+
+ describe('EMP-003 employee profile, documents, work history, and batch import', () => {
+  it('resolves only the signed-in user employee profile', async () => {
+    const admin = await actor('admin'), employeeClient = await actor('employee');
+    const created = await create(admin, { userId });
+
+    const self = await employeeClient.call(path() + '/me');
+    expect(self.status).toBe(200);
+    expect(self.body.employee).toMatchObject({ id: created.body.id, userId, avatarUrl: null });
+    expect((await admin.call(path() + '/me')).status).toBe(404);
+  });
+
+  it('lets accounts without employee records upload and access only their own profile avatar', async () => {
+    const admin = await actor('admin'), employeeClient = await actor('employee');
+    const validPng = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+      Buffer.alloc(6 * 1024 * 1024),
+    ]);
+    try {
+      expect((await admin.call('/api/auth/profile/avatar')).body.avatarUrl).toBeNull();
+      expect((await admin.call('/api/auth/profile/avatar', 'POST', {
+        fileName: 'profile.png',
+        mimeType: 'image/png',
+        contentBase64: validPng.toString('base64'),
+      })).status).toBe(200);
+
+      const avatar = await admin.call('/api/auth/profile/avatar');
+      expect(avatar.body.avatarUrl).toContain('/api/auth/profile/avatar/content?');
+      expect((await admin.call(avatar.body.avatarUrl)).status).toBe(200);
+      expect((await employeeClient.call('/api/auth/profile/avatar')).body.avatarUrl).toBeNull();
+      expect((await employeeClient.call('/api/auth/profile/avatar/content')).status).toBe(404);
+    } finally {
+      const result = await pool.query<{ avatar_url: string | null }>(
+        'SELECT avatar_url FROM users WHERE id=$1',
+        [adminId],
+      );
+      if (result.rows[0]?.avatar_url) await deleteFile(adminId, result.rows[0].avatar_url);
+    }
+  });
+
+  it('handles avatar upload with magic bytes validation and serves avatar securely', async () => {
+    const admin = await actor('admin'), empClient = await actor('employee');
+    const id = (await create(admin, { userId })).body.id;
+
+    // 1. Invalid file content (fake text claiming to be PNG) -> 400
+    const badUpload = await admin.call(path() + '/' + id + '/avatar', 'POST', {
+      fileName: 'avatar.png',
+      mimeType: 'image/png',
+      contentBase64: Buffer.from('NOT_AN_IMAGE_DATA').toString('base64'),
+    });
+    expect(badUpload.status).toBe(400);
+
+    // 2. Valid PNG bytes
+    const validPng = Buffer.concat([Buffer.from([
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+      0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89,
+    ]), Buffer.alloc(20 * 1024)]);
+    const uploadRes = await admin.call(path() + '/' + id + '/avatar', 'POST', {
+      fileName: 'profile.png',
+      mimeType: 'image/png',
+      contentBase64: validPng.toString('base64'),
+    });
+    expect(uploadRes.status).toBe(200);
+    expect(uploadRes.body.avatarUrl).toContain('/employees/' + id + '/avatar');
+
+    // 3. Employee detail includes avatarUrl
+    const d = await detail(admin, id);
+    expect(d.avatarUrl).toBe(uploadRes.body.avatarUrl);
+
+    // 4. Download avatar
+    const avatarFetch = await admin.call(path() + '/' + id + '/avatar', 'GET');
+    expect(avatarFetch.status).toBe(200);
+
+    // 5. Employee self-update avatar
+    const selfUpload = await empClient.call(path() + '/' + id + '/avatar', 'POST', {
+      fileName: 'self.png',
+      mimeType: 'image/png',
+      contentBase64: validPng.toString('base64'),
+    });
+    expect(selfUpload.status).toBe(200);
+
+    // 6. Outsider cannot upload avatar
+    const outsider = await actor('outsider');
+    const forbiddenUpload = await outsider.call(path() + '/' + id + '/avatar', 'POST', {
+      fileName: 'hack.png',
+      mimeType: 'image/png',
+      contentBase64: validPng.toString('base64'),
+    });
+    expect(forbiddenUpload.status).toBe(403);
+  });
+
+  it('enriches work history with event types, titles, notes and blocks permanent record deletion', async () => {
+    const admin = await actor('admin');
+    const id = (await create(admin, { userId })).body.id;
+
+    // 1. Add appointment event
+    const apptRes = await admin.call(path() + '/' + id + '/work-history', 'POST', {
+      version: 1,
+      effectiveOn: today,
+      reason: 'Quyết định bổ nhiệm số 01/QĐ-BGD',
+      eventType: 'APPOINTMENT',
+      title: 'Kiến trúc sư trưởng hệ thống',
+      notes: 'Phê duyệt theo nghị quyết hội đồng quản trị',
+    });
+    expect(apptRes.status).toBe(204);
+
+    // 2. Add award event
+    const awardRes = await admin.call(path() + '/' + id + '/work-history', 'POST', {
+      version: 2,
+      effectiveOn: today,
+      reason: 'Khen thưởng quý 1',
+      eventType: 'AWARD',
+      title: 'Nhân viên xuất sắc tiêu biểu',
+      notes: 'Thành tích vượt bậc trong dự án HR',
+    });
+    expect(awardRes.status).toBe(204);
+
+    // 3. Fetch history list
+    const history = await admin.call(path() + '/' + id + '/work-history');
+    expect(history.status).toBe(200);
+    const items = history.body.items;
+    expect(items.length).toBeGreaterThanOrEqual(3);
+    const appt = items.find((i: { eventType: string }) => i.eventType === 'APPOINTMENT');
+    expect(appt).toBeDefined();
+    expect(appt.title).toBe('Kiến trúc sư trưởng hệ thống');
+    expect(appt.notes).toBe('Phê duyệt theo nghị quyết hội đồng quản trị');
+
+    const award = items.find((i: { eventType: string }) => i.eventType === 'AWARD');
+    expect(award).toBeDefined();
+    expect(award.title).toBe('Nhân viên xuất sắc tiêu biểu');
+
+    // 4. Verify trigger blocks deletion of work history records
+    await expect(pool.query('DELETE FROM employee_work_history WHERE employee_id=$1', [id]))
+      .rejects.toThrow(/Work history/);
+  });
+
+  it('supports employee document upload, listing, secure download, deletion, and prevents unauthorized access', async () => {
+    const admin = await actor('admin'), empClient = await actor('employee'), outsider = await actor('outsider');
+    const id = (await create(admin, { userId })).body.id;
+
+    // 1. Upload valid PDF document
+    const pdfContent = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF');
+    const uploadRes = await admin.call(path() + '/' + id + '/documents', 'POST', {
+      fileName: 'hop_dong_lao_dong.pdf',
+      mimeType: 'application/pdf',
+      documentType: 'LABOR_CONTRACT',
+      description: 'Bản quét hợp đồng đã ký có con dấu',
+      contentBase64: pdfContent.toString('base64'),
+    });
+    expect(uploadRes.status).toBe(201);
+    const docId = uploadRes.body.id;
+    expect(docId).toBeDefined();
+
+    // 2. Employee can list their own documents
+    const listRes = await empClient.call(path() + '/' + id + '/documents', 'GET');
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.items).toHaveLength(1);
+    expect(listRes.body.items[0].fileName).toBe('hop_dong_lao_dong.pdf');
+    expect(listRes.body.items[0].documentType).toBe('LABOR_CONTRACT');
+
+    // 3. Employee can download document
+    const dlRes = await empClient.call(path() + '/' + id + '/documents/' + docId + '/download', 'GET');
+    expect(dlRes.status).toBe(200);
+
+    // 4. Outsider cannot download document
+    const forbiddenDl = await outsider.call(path() + '/' + id + '/documents/' + docId + '/download', 'GET');
+    expect([403, 404]).toContain(forbiddenDl.status);
+
+    // 5. Delete document
+    const delRes = await admin.call(path() + '/' + id + '/documents/' + docId, 'DELETE', {});
+    expect(delRes.status).toBe(204);
+
+    // 6. Download deleted document returns 404
+    const afterDel = await admin.call(path() + '/' + id + '/documents/' + docId + '/download', 'GET');
+    expect(afterDel.status).toBe(404);
+  });
+
+  it('handles employee batch import template, preview with duplicate detection, and execution', async () => {
+    const admin = await actor('admin');
+    const existing = (await create(admin, { employeeCode: 'EMP-DUP01' })).body.id;
+    expect(existing).toBeDefined();
+
+    // 1. Download template
+    const templateResponse = await fetch(base + '/api/organizations/' + org + '/employees-import/template', {
+      headers: { Cookie: [...admin.cookies.values()].join('; ') },
+    });
+    expect(templateResponse.status).toBe(200);
+    expect(templateResponse.headers.get('content-type')).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(templateResponse.headers.get('content-disposition')).toContain('mau_nhap_nhan_vien.xlsx');
+    const template = Buffer.from(await templateResponse.arrayBuffer());
+    expect(template.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4B, 0x03, 0x04]));
+    const templateRows = parseXLSX(template);
+    expect(templateRows[0]).toContain('Mã nhân viên (bắt buộc)*');
+    expect(templateRows[0]).toHaveLength(9);
+    const workbookFiles = extractFilesFromZip(template);
+    expect(workbookFiles.get('xl/sharedStrings.xml')?.toString('utf8')).toContain('HƯỚNG DẪN NHẬP DANH SÁCH NHÂN VIÊN');
+
+    const emptyPreview = await admin.call('/api/organizations/' + org + '/employees-import/preview', 'POST', {
+      fileName: 'mau_nhap_nhan_vien.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      contentBase64: template.toString('base64'),
+    });
+    expect(emptyPreview.status).toBe(200);
+    expect(emptyPreview.body.totalRows).toBe(0);
+
+    const populatedTemplate = generateEmployeeTemplate([[
+      'EMP-XLSX01', 'Nguyễn Văn Excel', today, '1995-06-20', '0912345678',
+      'excel@example.test', 'Hà Nội', '', '',
+    ]]);
+    const xlsxPreview = await admin.call('/api/organizations/' + org + '/employees-import/preview', 'POST', {
+      fileName: 'mau_nhap_nhan_vien.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      contentBase64: populatedTemplate.toString('base64'),
+    });
+    expect(xlsxPreview.status).toBe(200);
+    expect(xlsxPreview.body.validCount).toBe(1);
+    expect(xlsxPreview.body.rows[0].data).toMatchObject({
+      employeeCode: 'EMP-XLSX01',
+      fullName: 'Nguyễn Văn Excel',
+      hireDate: today,
+      phone: '0912345678',
+    });
+    const xlsxExecution = await admin.call('/api/organizations/' + org + '/employees-import/execute', 'POST', {
+      rows: [xlsxPreview.body.rows[0].data],
+    });
+    expect(xlsxExecution.status).toBe(200);
+    expect(xlsxExecution.body.insertedCount).toBe(1);
+
+    // 2. CSV content with:
+    // Row 1: Valid new employee
+    // Row 2: Duplicate employee code
+    // Row 3: Missing required fullName
+    const csvContent = [
+      'Mã nhân viên,Họ và tên,Ngày vào làm,Ngày sinh,Số điện thoại,Email cá nhân,Địa chỉ',
+      'EMP-NEW01,Nguyễn Văn Mới,2024-01-15,1995-05-20,0912345678,moi@example.com,Hà Nội',
+      'EMP-DUP01,Trùng Mã,2024-01-15,1995-05-20,0912345679,trung@example.com,Hà Nội',
+      'EMP-BAD01,,2024-01-15,1995-05-20,0912345680,bad@example.com,Hà Nội',
+    ].join('\n');
+
+    const previewRes = await admin.call('/api/organizations/' + org + '/employees-import/preview', 'POST', {
+      fileName: 'import.csv',
+      mimeType: 'text/csv',
+      contentBase64: Buffer.from(csvContent, 'utf-8').toString('base64'),
+    });
+    expect(previewRes.status).toBe(200);
+    expect(previewRes.body.totalRows).toBe(3);
+    expect(previewRes.body.validCount).toBe(1);
+    expect(previewRes.body.duplicateCount).toBe(1);
+    expect(previewRes.body.errorCount).toBe(1);
+
+    // Verify row statuses
+    const rows = previewRes.body.rows;
+    expect(rows[0].status).toBe('VALID');
+    expect(rows[1].status).toBe('DUPLICATE');
+    expect(rows[1].errors.some(e => e.includes('đã tồn tại'))).toBe(true);
+    expect(rows[2].status).toBe('ERROR');
+    expect(rows[2].errors.some(e => e.includes('Họ và tên'))).toBe(true);
+
+    // 3. Execute import with valid row
+    const execRes = await admin.call('/api/organizations/' + org + '/employees-import/execute', 'POST', {
+      rows: [rows[0].data],
+    });
+    expect(execRes.status).toBe(200);
+    expect(execRes.body.insertedCount).toBe(1);
+    expect(execRes.body.failedCount).toBe(0);
+
+    // 4. Verify new employee exists in database
+    const checkRes = await admin.call(path() + '?q=EMP-NEW01', 'GET');
+    expect(checkRes.status).toBe(200);
+    expect(checkRes.body.items).toHaveLength(1);
+    expect(checkRes.body.items[0].fullName).toBe('Nguyễn Văn Mới');
+  });
  });
 });

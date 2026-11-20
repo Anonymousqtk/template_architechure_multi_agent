@@ -4,6 +4,7 @@ import { useEffect,useRef,useState } from 'react';
 import { createPortal } from 'react-dom';
 import { errorText,request,type Department,type Position,type Profile } from './api';
 import { roleLabels,statusLabel,type Account } from './account-types';
+import { Avatar } from './Avatar';
 
 type Props={id:string;profile:Profile;onClose:()=>void;onSaved:()=>void};
 export function AccountDetailDrawer({id,profile,onClose,onSaved}:Props) {
@@ -49,7 +50,7 @@ export function AccountDetailDrawer({id,profile,onClose,onSaved}:Props) {
     <div className="drawer-body" inert={closing} aria-busy={loading||busy}>
       {error&&<p role="alert" className="notice error">{error}</p>}{message&&<p role="status" className="notice success">{message}</p>}
       {loading&&<p role="status">Đang tải chi tiết…</p>}
-      {account&&<><div className={'drawer-profile-summary'+(editing?' is-editing':'')}><span className="drawer-profile-avatar" aria-hidden="true">{account.fullName.split(' ').filter(Boolean).slice(-2).map(part=>part[0]).join('').toUpperCase()}</span><div><h3>{account.fullName}</h3><p>{editing?account.email:roleLabels[account.role]}</p><span className={'drawer-account-badge'+(!account.isActive?' is-locked':'')}>{statusLabel(account)}</span></div></div>{!editing&&<dl className="drawer-detail-list"><div><dt>Email</dt><dd>{account.email}</dd></div><div><dt>Vai trò</dt><dd>{roleLabels[account.role]}</dd></div><div><dt>Phòng ban</dt><dd>{account.departmentName||'Chưa phân công'}</dd></div><div><dt>Chức danh</dt><dd>{account.positionTitle||'Chưa phân công'}</dd></div><div><dt>Trạng thái</dt><dd>{statusLabel(account)}</dd></div><div><dt>Email xác minh</dt><dd>{account.emailVerified?'Đã xác minh':'Chưa xác minh'}</dd></div><div><dt>Tham gia</dt><dd>{new Date(account.createdAt).toLocaleDateString('vi-VN')}</dd></div></dl>}
+      {account&&<><div className={'drawer-profile-summary'+(editing?' is-editing':'')}><Avatar src={account.avatarUrl} name={account.fullName} className="drawer-profile-avatar"/><div><h3>{account.fullName}</h3><p>{editing?account.email:roleLabels[account.role]}</p><span className={'drawer-account-badge'+(!account.isActive?' is-locked':'')}>{statusLabel(account)}</span></div></div>{!editing&&<dl className="drawer-detail-list"><div><dt>Email</dt><dd>{account.email}</dd></div><div><dt>Vai trò</dt><dd>{roleLabels[account.role]}</dd></div><div><dt>Phòng ban</dt><dd>{account.departmentName||'Chưa phân công'}</dd></div><div><dt>Chức danh</dt><dd>{account.positionTitle||'Chưa phân công'}</dd></div><div><dt>Trạng thái</dt><dd>{statusLabel(account)}</dd></div><div><dt>Email xác minh</dt><dd>{account.emailVerified?'Đã xác minh':'Chưa xác minh'}</dd></div><div><dt>Tham gia</dt><dd>{new Date(account.createdAt).toLocaleDateString('vi-VN')}</dd></div></dl>}
       {!editing&&(canAssign||canAssignOrg||canStatus)&&<button className="primary" onClick={()=>{setEditing(true);setError('');setMessage('');}}>Chỉnh sửa tài khoản</button>}
       {!canAssign&&!canAssignOrg&&!canStatus&&<p className="muted">Bạn chỉ có quyền xem tài khoản này.</p>}
       {editing&&<div ref={editor}><p>Lưu từng phần khi cần. Đổi vai trò hoặc khóa tài khoản sẽ thu hồi các phiên liên quan.</p>

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { errorText, request, type Profile } from './api';
+import { DashIcon } from './DashboardShell';
 import './org.css';
 
 type Unit = { id: string; name: string; code: string | null; description: string | null; isActive: boolean;
@@ -41,12 +42,43 @@ export function Units({ onSelected }: { onSelected: (profile: Profile) => void }
     },'Đã lưu đơn vị.');
   }
   return <section className="org-view" aria-labelledby="units-heading">
-    <h1 id="units-heading">Đơn vị</h1>
-    <p>Các công ty và tổ chức độc lập. Mỗi đơn vị có nhân viên, phòng ban và dữ liệu chấm công riêng.</p>
-    <div className="org-action-cell">
-      {listing?.canCreate&&<button type="button" className="primary" disabled={busy} onClick={()=>{setEditor('new');setError('');}}>Tạo đơn vị</button>}
-      {listing?.canArchive&&<label><input type="checkbox" checked={showArchived} onChange={event=>setShowArchived(event.target.checked)}/> Hiện đơn vị đã lưu trữ</label>}
+    <div className="org-header-row">
+      <div>
+        <h1 id="units-heading">Đơn vị</h1>
+        <p>Các công ty và tổ chức độc lập. Mỗi đơn vị có nhân viên, phòng ban và dữ liệu chấm công riêng.</p>
+      </div>
+      <div className="org-action-cell">
+        {listing?.canArchive&&<label className="org-archive-check"><input type="checkbox" checked={showArchived} onChange={event=>setShowArchived(event.target.checked)}/> Hiện đơn vị đã lưu trữ</label>}
+        {listing?.canCreate&&<button type="button" className="primary" disabled={busy} onClick={()=>{setEditor('new');setError('');}}>Tạo đơn vị</button>}
+      </div>
     </div>
+
+    {listing && (
+      <div className="org-stats-grid">
+        <div className="org-stat-card">
+          <div className="org-stat-icon"><DashIcon name="building" /></div>
+          <div>
+            <div className="org-stat-value">{listing.items.length}</div>
+            <div className="org-stat-label">Tổng số đơn vị</div>
+          </div>
+        </div>
+        <div className="org-stat-card">
+          <div className="org-stat-icon green"><DashIcon name="shield" /></div>
+          <div>
+            <div className="org-stat-value">{listing.items.filter(u=>u.isActive).length}</div>
+            <div className="org-stat-label">Đang hoạt động</div>
+          </div>
+        </div>
+        <div className="org-stat-card">
+          <div className="org-stat-icon blue"><DashIcon name="user" /></div>
+          <div>
+            <div className="org-stat-value" style={{fontSize:'16px',fontWeight:600}}>{listing.items.find(u=>u.current)?.name || 'Chưa chọn'}</div>
+            <div className="org-stat-label">Đơn vị hiện tại</div>
+          </div>
+        </div>
+      </div>
+    )}
+
     {error&&<p role="alert" className="notice error">{error}</p>}
     {message&&<p role="status" className="notice success">{message}</p>}
     {editor&&<form key={editor==='new'?'new':editor.id} onSubmit={event=>void submit(event)} className="org-form" aria-label={editor==='new'?'Tạo đơn vị':'Sửa đơn vị'}>
@@ -62,12 +94,12 @@ export function Units({ onSelected }: { onSelected: (profile: Profile) => void }
     </form>}
     {!listing&&!error&&<p role="status">Đang tải đơn vị…</p>}
     {listing&&<div className="table-wrap"><table>
-      <caption>Danh sách đơn vị</caption><thead><tr><th scope="col">Đơn vị</th><th scope="col">Vai trò của bạn</th><th scope="col">Trạng thái</th><th scope="col">Thao tác</th></tr></thead>
+      <caption>Danh sách đơn vị</caption><thead><tr><th scope="col">Đơn vị</th><th scope="col">Vai trò của bạn</th><th scope="col">Trạng thái</th><th scope="col" style={{textAlign:'right'}}>Thao tác</th></tr></thead>
       <tbody>{listing.items.filter(unit=>showArchived||unit.isActive).map(unit=><tr key={unit.id}>
-        <td><strong>{unit.name}</strong>{unit.code&&<p>{unit.code}</p>}{unit.description&&<p>{unit.description}</p>}</td>
-        <td>{({ADMIN:'Admin',HR:'Nhân sự',MANAGER:'Quản lý',EMPLOYEE:'Nhân viên'} as Record<string,string>)[unit.role??'']??'Quản trị hệ thống'}</td>
-        <td>{unit.current?'Đang làm việc':unit.isActive?'Hoạt động':'Đã lưu trữ'}</td>
-        <td><div className="org-action-cell">
+        <td><strong>{unit.name}</strong>{unit.code&&<p className="org-code-sub">{unit.code}</p>}{unit.description&&<p className="muted">{unit.description}</p>}</td>
+        <td><span className="badge">{({ADMIN:'Admin',HR:'Nhân sự',MANAGER:'Quản lý',EMPLOYEE:'Nhân viên'} as Record<string,string>)[unit.role??'']??'Quản trị hệ thống'}</span></td>
+        <td><span className={'badge ' + (unit.current ? 'emp-badge-linked' : unit.isActive ? 'emp-badge-active' : 'emp-badge-draft')}>{unit.current?'Đang làm việc':unit.isActive?'Hoạt động':'Đã lưu trữ'}</span></td>
+        <td><div className="org-action-cell" style={{justifyContent:'flex-end'}}>
           {unit.canSelect&&!unit.current&&<button type="button" className="primary" disabled={busy} onClick={()=>void select(unit)}>Chọn đơn vị</button>}
           {unit.canEdit&&<button type="button" className="secondary" disabled={busy} onClick={()=>{setEditor(unit);setError('');}}>Sửa</button>}
           {listing.canArchive&&!unit.current&&unit.isActive&&<button type="button" className="secondary" disabled={busy} onClick={()=>{

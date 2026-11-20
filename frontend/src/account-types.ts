@@ -7,6 +7,7 @@ export type Account = {
   userIsActive: boolean;
   emailVerified: boolean;
   managerUserId: string | null;
+  avatarUrl?: string | null;
   departmentId?: string | null;
   positionId?: string | null;
   departmentName?: string | null;

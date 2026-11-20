@@ -1,26 +1,27 @@
 /* Employees and Employee Drawer Styles */
-.emp-page{display:grid;gap:24px;}
-.emp-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;}
-.emp-heading h1{font-size:26px;margin:6px 0;}
-.emp-heading h2{margin:6px 0;}
-.emp-heading p{color:#686477;margin:6px 0;line-height:1.6;}
-.emp-page .primary{width:auto;min-height:40px;padding:9px 16px;}
+.emp-page{display:grid;gap:16px;}
+.emp-roster-section{display:flex;flex-direction:column;gap:14px;}
+.emp-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.emp-heading h1{font-size:24px;margin:2px 0;letter-spacing:-.02em;}
+.emp-heading h2{margin:4px 0;}
+.emp-heading p{color:#686477;margin:4px 0;line-height:1.5;font-size:13.5px;}
+.emp-page .primary{width:auto;min-height:38px;padding:8px 16px;}
 .emp-page .secondary{min-height:38px;padding:8px 14px;}
 .emp-page .field{margin-bottom:0;}
-.emp-page .field input,.emp-page .field select,.emp-page textarea{min-height:42px;padding:9px 12px;font:inherit;}
+.emp-page .field input,.emp-page .field select,.emp-page textarea{min-height:38px;padding:8px 12px;font:inherit;}
 .emp-page textarea{width:100%;border:1px solid #dce2ee;border-radius:8px;resize:vertical;}
-.emp-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;}
+.emp-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;}
 .emp-span{grid-column:1/-1;}
-.emp-editor{padding:20px;border:1px solid #e7e3f5;border-radius:10px;margin:16px 0;background:#faf9ff;}
+.emp-editor{padding:20px 24px;border:1px solid #e7e3f5;border-radius:10px;margin:14px 0;background:#ffffff;box-shadow:0 1px 3px rgba(47,43,61,.03);}
 .emp-editor h2,.emp-editor h3,.emp-editor h4{margin-top:0;}
 .emp-choice{display:grid;gap:10px;min-width:0;}
 .emp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px;}
-.emp-filters{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
-.emp-filters .field:first-child{flex:1;min-width:180px;}
-.emp-page td small{display:block;margin-top:6px;color:#686477;}
+.emp-filters{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:14px;background:#ffffff;padding:14px 18px;border:1px solid #eeedf2;border-radius:10px;box-shadow:0 1px 3px rgba(47,43,61,.03);}
+.emp-filters .field:first-child{flex:1 1 240px;min-width:200px;}
+.emp-page td small{display:block;margin-top:4px;color:#686477;}
 .emp-page table{min-width:650px;}
 .emp-page th{text-align:left;}
-.emp-page .table-wrap{overflow:auto;max-width:100%;}
+.emp-page .table-wrap{overflow:auto;max-width:100%;margin-top:0;}
 .emp-pagination{display:flex;justify-content:flex-end;align-items:center;gap:14px;flex-wrap:wrap;margin-top:18px;font-size:13px;}
 .emp-page .notice{display:flex;align-items:center;justify-content:space-between;gap:16px;line-height:1.6;}
 .emp-page :focus-visible{outline:3px solid #7367f0;outline-offset:3px;}
@@ -99,3 +100,55 @@
   .emp-summary-header{flex-direction:column;text-align:center;}
   .emp-badges-row{justify-content:center;}
 }
+
+/* Avatar in Table and Drawer */
+.emp-heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.emp-name-cell{display:flex;align-items:center;gap:12px;}
+.emp-avatar-thumb{width:38px;height:38px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#eeeaff;display:flex;align-items:center;justify-content:center;border:1px solid #e2dcfa;}
+.emp-avatar-img{width:100%;height:100%;object-fit:cover;}
+.emp-avatar-initials{font-size:13px;font-weight:600;color:#5145bd;}
+.emp-name-meta{display:flex;flex-direction:column;min-width:0;}
+
+.drawer-profile-avatar-wrapper{position:relative;width:56px;height:56px;flex-shrink:0;}
+.drawer-profile-avatar-img{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid #7367f0;}
+.drawer-avatar-upload-btn{position:absolute;bottom:-4px;right:-4px;width:24px;height:24px;background:#7367f0;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:white;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,.15);transition:transform .15s;}
+.drawer-avatar-upload-btn:hover{transform:scale(1.1);background:#6356e6;}
+
+/* Documents Tab in Drawer */
+.emp-docs-list{display:grid;gap:12px;margin-top:10px;}
+.emp-doc-card{padding:14px 16px;border:1px solid #eeedf2;border-radius:8px;background:white;display:flex;align-items:center;justify-content:space-between;gap:14px;transition:box-shadow .15s;}
+.emp-doc-card:hover{box-shadow:0 2px 8px rgba(47,43,61,.06);}
+.emp-doc-info{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;}
+.emp-doc-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.emp-doc-name{font-size:14px;font-weight:600;color:#444050;overflow-wrap:anywhere;}
+.emp-doc-meta{font-size:12.5px;color:#8b8698;}
+.emp-doc-desc{font-size:13px;color:#5d596c;margin:2px 0 0;}
+.emp-doc-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.emp-doc-actions .secondary{padding:6px 10px;min-height:32px;font-size:12.5px;}
+.emp-doc-actions .danger{padding:6px 10px;min-height:32px;font-size:12.5px;background:#fff0f1;color:#c53d45;border:1px solid #ffd0d3;border-radius:6px;cursor:pointer;}
+.emp-doc-actions .danger:hover{background:#ffe3e5;}
+
+.emp-doc-upload-box{padding:16px 18px;border:1px dashed #7367f0;border-radius:10px;background:#fbfaff;margin-bottom:14px;}
+.emp-doc-upload-box h4{margin:0 0 12px;font-size:15px;color:#444050;}
+
+/* Excel Import Modal & Preview */
+.emp-import-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;}
+.emp-import-modal{background:white;border-radius:12px;max-width:960px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 12px 36px rgba(0,0,0,.15);overflow:hidden;}
+.emp-import-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid #eeedf2;}
+.emp-import-header h3{margin:0;font-size:18px;font-weight:600;color:#444050;}
+.emp-import-header .close-btn{background:none;border:none;font-size:20px;cursor:pointer;color:#8b8698;line-height:1;}
+.emp-import-body{padding:20px 24px;overflow-y:auto;display:flex;flex-direction:column;gap:18px;}
+.emp-import-template-box{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;background:#f8f9ff;border:1px solid #e4e6fb;border-radius:8px;}
+.emp-import-dropzone{border:2px dashed #d5d1ea;border-radius:10px;padding:28px;text-align:center;background:#fafbfc;cursor:pointer;transition:border-color .15s;}
+.emp-import-dropzone:hover{border-color:#7367f0;}
+.emp-import-stats{display:flex;gap:16px;flex-wrap:wrap;}
+.emp-import-stat{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;}
+.emp-import-stat.total{background:#f3f2f7;color:#5d596c;}
+.emp-import-stat.valid{background:#e8faf0;color:#228f55;}
+.emp-import-stat.dup{background:#fff4e5;color:#b26a00;}
+.emp-import-stat.err{background:#fff0f1;color:#c53d45;}
+.emp-import-table{width:100%;border-collapse:collapse;font-size:13px;}
+.emp-import-table th,.emp-import-table td{padding:10px 12px;border-bottom:1px solid #eeedf2;text-align:left;}
+.emp-import-table th{background:#f8f7fa;font-weight:600;color:#5d596c;}
+.emp-import-footer{padding:16px 24px;border-top:1px solid #eeedf2;display:flex;justify-content:flex-end;gap:12px;background:#fafbfc;}
+

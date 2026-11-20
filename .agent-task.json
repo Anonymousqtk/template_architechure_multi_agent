@@ -1,1 +1,20 @@
-{"id":"UI-002","summary":"Group catalog navigation and compact workspace layout; preserve ATT-002 and ORG-003 changes","allowed_scopes":["frontend","backend","database","tests","governance"],"risk":"high","security_review_required":true,"acceptance":["Group units and reference catalogs under Danh mục with semantic icons","Keep operational attendance and leave separate from catalog configuration","Preserve role visibility, routes and active navigation on desktop/mobile","Unify content spacing, forms and responsive control sizes","Run affected frontend checks and verify responsive layout"]}
+{
+  "id": "EMP-003",
+  "summary": "Employee Profile Enhancement: Avatar upload, Documents management, Work history & appointments, and Excel batch import with duplicate validation",
+  "allowed_scopes": ["frontend", "backend", "database", "tests", "governance"],
+  "risk": "high",
+  "security_review_required": true,
+  "acceptance": [
+    "Secure file upload service for JPG/PNG avatars, PDF/Excel documents with MIME validation, size limits, and tenant isolation",
+    "Avatar display in employee roster with upload capability for HR/Admin and self-service for employees",
+    "Employee work history timeline expanded to support appointment, promotion, transfer, and awards/achievements",
+    "Employee documents tab in detail drawer supporting upload, listing, metadata, and secure authenticated download",
+    "Excel/CSV bulk employee import with downloadable sample template, preview, format validation, duplicate detection, and batch execution report",
+    "Strict tenant isolation, RBAC enforcement, audit logging, and automated integration tests",
+    "Every signed-in account, including users without an employee record, can upload and access only its own JPG/PNG profile avatar up to 10 MB",
+    "Account, member, and invitation avatars open in an accessible zoomable image viewer; list rows use initials when no account avatar exists",
+    "Employee roster avatars and avatar-bearing account/employee detail views use the same accessible zoomable image viewer",
+    "Employee import offers a downloadable XLSX template with column guidance, and the parser accepts the downloaded template format",
+    "The shared avatar viewer uses the browser modal top layer and appears above native employee/account detail dialogs"
+  ]
+}

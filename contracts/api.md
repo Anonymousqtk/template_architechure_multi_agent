@@ -7,12 +7,15 @@ API prefix: `/api/auth` and `/api/organizations/:organizationId/invitations`. JS
 | POST | `/api/auth/login` | Public, rate-limited | `{email,password}` → session cookie and safe user profile |
 | POST | `/api/auth/logout` | Session | Invalidate session; clear cookie |
 | GET | `/api/auth/me` | Session | Identity, active organization and permissions |
+| GET | `/api/auth/profile/avatar` | Session | Current account avatar URL or `null`; independent of employee linkage |
+| POST | `/api/auth/profile/avatar` | Session + CSRF (and MFA when required) | `{fileName,mimeType,contentBase64}` → save the current user's JPG/PNG avatar (max 10MB) |
+| GET | `/api/auth/profile/avatar/content` | Session | Stream only the signed-in user's private avatar |
 | POST | `/api/auth/forgot-password` | Public, rate-limited | `{email}` → `202 {message:"If the account exists, instructions will be sent."}` |
 | POST | `/api/auth/reset-password` | Public, rate-limited | `{token,newPassword}` → 204, invalidate other sessions |
 | GET | `/api/auth/invitations/validate?token=...` | Public, rate-limited | Return only safe status: valid/invalid/expired (no email enumeration) |
 | POST | `/api/auth/invitations/accept` | Token possession | `{token,fullName,password}` for new account; existing-account acceptance must require verified matching user session |
 | POST | `/api/organizations/:organizationId/invitations` | HR/Admin in same org | `{email,role}` → 202; one-time link via email adapter |
-| GET | `/api/organizations/:organizationId/invitations` | HR/Admin in same org | Paginated invitations without token/hash |
+| GET | `/api/organizations/:organizationId/invitations` | HR/Admin in same org | Paginated invitations without token/hash; includes an avatar URL only when the invitee is an active member of that organization |
 | POST | `/api/organizations/:organizationId/invitations/:id/revoke` | HR/Admin in same org | Revoke pending invitation |
 | POST | `/api/organizations/:organizationId/invitations/:id/resend` | HR/Admin in same org | Reissue token, invalidating previous |
 
@@ -73,6 +76,7 @@ another organization is returned. No new endpoint or Employee profile is added.
 
 Existing GET endpoints: `/departments`, `/departments/:departmentId`, `/positions`,
 `/positions/:positionId`, `/users`, `/users/:userId` and `/org-chart`.
+`GET /api/organizations/:organizationId/users/:userId/avatar` returns a private avatar only when the requester can view that member through the same organization and role/manager scope as the user-detail endpoint. Member-list avatar URLs follow that route.
 Manager department scope is the union of active departments explicitly assigned
 via `manager_user_id` and their active descendants. Position scope is active
 positions bound to those departments; unbound positions do not grant access.
@@ -138,3 +142,62 @@ All `/api/units` operations require a valid active session; writes use the exist
 - `POST /api/units/:id/select`: `{}` body. Requires an active target membership even for system administrators. Revokes the previous session and issues a new random HttpOnly cookie with only the target role from the database. Preserves the previous absolute expiry and reauthentication/MFA state; entering a privileged membership without completed MFA creates a restricted session capped at five minutes. Returns 204; client fetches `/api/auth/me` and clears tenant-specific screens. Audits `ORGANIZATION_SELECTED`.
 
 Errors also include `UNIT_ADMIN_UNAVAILABLE`, `FORBIDDEN`, `MFA_REQUIRED`, `REAUTH_REQUIRED`, and existing authentication/input errors. Selecting a unit never changes membership or grants ADMIN. No operation attaches independent organizations in a hierarchy. Hard deletion and global access to employee/attendance records are not provided.
+
+## PAY-001 — Payroll, Salary Components & Allowance Management
+
+All payroll endpoints operate under `/api/organizations/:organizationId/payroll`. Tenant isolation is strictly enforced via `organization_id` on all tables, operations, and foreign keys. All monetary calculations use fixed-point decimal arithmetic (PostgreSQL `numeric(15, 2)` and exact integer cent mathematics) to prevent any floating-point inaccuracies. No speculative tax or insurance rates are assumed without approved policy.
+
+| Method | Relative path | Access | Operation |
+|---|---|---|---|
+| GET | `/catalog` | Admin, HR | List active salary components for payroll configuration. |
+| GET | `/components` | Admin, HR | Paginated salary components with search (`q`) and type filter (`type`). |
+| POST | `/components` | Admin, HR | Create salary component (`code`, `name`, `type`, `calculationType`, `isTaxable`, `isStatutory`, `defaultAmount`, `active`, `description`). |
+| PUT | `/components/:id` | Admin, HR | Update component attributes. Code is immutable. |
+| GET | `/employees/:employeeId/salary-profile` | Admin, HR, Manager (in scope), Employee (self) | Fetch active employee salary profile, gross/net mode, base salary, and assigned recurring components. |
+| PUT | `/employees/:employeeId/salary-profile` | Admin, HR (reauth) | Create/update employee salary profile and recurring allowance/deduction components. Sensitive values are never logged to console or audit metadata. |
+| GET | `/periods` | Admin, HR, Manager | Paginated payroll periods with status filter (`DRAFT`, `UNDER_REVIEW`, `APPROVED`, `CLOSED`). |
+| POST | `/periods` | Admin, HR | Create a new payroll period in `DRAFT` status (`code`, `name`, `startDate`, `endDate`, `standardWorkingDays`, `paymentDate`, `notes`). |
+| GET | `/periods/:id` | Admin, HR, Manager | Retrieve period detail and aggregate summary (slips count, total gross, total net, employee count). |
+| POST | `/periods/:id/calculate` | Admin, HR (reauth) | Idempotent draft calculation integrating approved attendance punches, approved leaves, and recurring components. Blocked on `CLOSED` periods (409 `PAYROLL_PERIOD_CLOSED`). |
+| PATCH | `/periods/:id/status` | Admin, HR (reauth) | Lifecycle transition: `DRAFT` → `UNDER_REVIEW` → `APPROVED` → `CLOSED`. Setting `CLOSED` permanently locks the period and its slips via database trigger and application check. |
+| GET | `/periods/:id/slips` | Admin, HR, Manager (in scope), Employee (self) | Paginated list of payslips within the specified period. Filtered by role and management scope. |
+| GET | `/slips/:id` | Admin, HR, Manager (in scope), Employee (self) | Itemized payslip detail with breakdown lines (base salary, allowances, bonuses, deductions, overtime). |
+| GET | `/my-slips` | Authenticated employee | Self-service payslip history for the logged-in user across all accessible periods. |
+
+Migration `013_payroll_management.sql` is additive and creates `salary_components`, `employee_salary_profiles`, `employee_salary_profile_components`, `payroll_periods`, `payroll_slips`, `payroll_slip_items`, and the `guard_closed_payroll_period` trigger.
+
+## EMP-003 — Employee Profile Enhancements, Documents & Batch Import
+
+All operations operate under `/api/organizations/:organizationId`. Tenant isolation is strictly enforced via `organization_id` on all tables, operations, and foreign keys. File storage enforces magic-byte inspection (JPEG, PNG, PDF, XLSX, CSV), path sanitization, tenant directory scoping, and role-based authorization. Sensitive personal documents and uploaded files are never publicly accessible. Work history records are permanent and immutable (cannot be deleted).
+
+### Avatar Management
+Personal account avatars are available to every signed-in account, including administrators with no employee profile. JPG/PNG uploads are limited to 10MB, stored under the user ID, and audited as `USER_PROFILE_AVATAR_UPDATED`. The self-service content route is owner-only; organization member-avatar routes apply the existing member visibility rules. Invitation rows include avatar URLs only for active members of that same organization. Migration `015_user_profile_avatar.sql` adds the nullable `users.avatar_url` path.
+
+| Method | Relative path | Access | Operation |
+|---|---|---|---|
+| GET | `/employees/me` | Authenticated user | Resolve the current user's linked employee profile and avatar URL in the selected organization. Returns 404 when no employee profile is linked. |
+| POST | `/employees/:employeeId/avatar` | Admin, HR, Employee (self) | Upload avatar (JPEG/PNG, max 5MB). Content passed via base64 `contentBase64`. Magic bytes inspected. |
+| GET | `/employees/:employeeId/avatar` | Admin, HR, Manager (in scope), Employee (self) | Stream employee avatar image with strict tenant isolation. |
+
+### Enriched Work History
+| Method | Relative path | Access | Operation |
+|---|---|---|---|
+| GET | `/employees/:employeeId/work-history` | Admin, HR, Manager (in scope), Employee (self) | Retrieve paginated work history timeline with `eventType` (`ASSIGNMENT_CHANGED`, `TRANSFER`, `APPOINTMENT`, `PROMOTION`, `AWARD`, `DISCIPLINE`, etc.), `title`, and `notes`. |
+| POST | `/employees/:employeeId/work-history` | Admin, HR | Record work history event, appointment, promotion, transfer, or award. Deletions are forbidden by database trigger `guard_work_history_delete`. |
+
+### Employee Documents
+| Method | Relative path | Access | Operation |
+|---|---|---|---|
+| GET | `/employees/:employeeId/documents` | Admin, HR, Manager (in scope), Employee (self) | List attached employee documents (`id`, `fileName`, `fileSize`, `mimeType`, `documentType`, `description`, `createdAt`). |
+| POST | `/employees/:employeeId/documents` | Admin, HR, Employee (self) | Upload employee document (PDF, JPEG, PNG, XLSX, CSV, max 10MB). Magic bytes validated. |
+| GET | `/employees/:employeeId/documents/:documentId/download` | Admin, HR, Manager (in scope), Employee (self) | Authenticated, secure stream download of employee document. |
+| DELETE | `/employees/:employeeId/documents/:documentId` | Admin, HR | Delete attached document and purge physical disk storage. |
+
+### Batch Employee Import (Excel / CSV)
+| Method | Relative path | Access | Operation |
+|---|---|---|---|
+| GET | `/employees-import/template` | Admin, HR | Download XLSX template (`mau_nhap_nhan_vien.xlsx`) with a data sheet and Vietnamese column guide; the existing CSV import remains supported. |
+| POST | `/employees-import/preview` | Admin, HR | Parse uploaded CSV/XLSX file, validate required fields and dates, check for duplicate employee codes and emails within tenant, return row-level preview. |
+| POST | `/employees-import/execute` | Admin, HR | Atomically batch-insert validated employee rows, creating employee records, initial work history snapshots, and audit events. |
+
+Migration `014_employee_profile_documents_import.sql` adds `avatar_url` to `employees`, adds `event_type`, `title`, and `notes` to `employee_work_history`, adds the `guard_work_history_delete` trigger, and creates the `employee_documents` table with strict MIME type constraints.

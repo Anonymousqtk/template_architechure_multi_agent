@@ -129,6 +129,70 @@ BEGIN
     DELETE FROM employee_work_history WHERE employee_id='00000000-0000-0000-0000-000000000040';
     RAISE EXCEPTION 'work history immutability trigger absent';
   EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- PAY-001: Salary component creation and constraints
+  INSERT INTO salary_components(id,organization_id,code,name,type,default_amount)
+  VALUES ('00000000-0000-0000-0000-000000000060','00000000-0000-0000-0000-000000000001','BASE','Lương cơ bản','BASE_SALARY',10000000.00);
+  -- Duplicate component code in same tenant must fail
+  BEGIN
+    INSERT INTO salary_components(id,organization_id,code,name,type,default_amount)
+    VALUES ('00000000-0000-0000-0000-000000000061','00000000-0000-0000-0000-000000000001','base','Lương trùng','BASE_SALARY',5000000.00);
+    RAISE EXCEPTION 'duplicate component code constraint absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+  -- Negative amount check
+  BEGIN
+    INSERT INTO salary_components(id,organization_id,code,name,type,default_amount)
+    VALUES ('00000000-0000-0000-0000-000000000062','00000000-0000-0000-0000-000000000001','NEG','Âm','ALLOWANCE',-100.00);
+    RAISE EXCEPTION 'negative component amount check absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- Employee salary profile with effective dates
+  INSERT INTO employee_salary_profiles(id,organization_id,employee_id,salary_mode,base_salary,effective_from)
+  VALUES ('00000000-0000-0000-0000-000000000070','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000040','GROSS',15000000.00,'2026-01-01');
+  -- Invalid effective_to < effective_from
+  BEGIN
+    INSERT INTO employee_salary_profiles(id,organization_id,employee_id,salary_mode,base_salary,effective_from,effective_to)
+    VALUES ('00000000-0000-0000-0000-000000000071','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000040','GROSS',15000000.00,'2026-01-01','2025-01-01');
+    RAISE EXCEPTION 'salary profile effective date check absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- Payroll period lifecycle & slip immutability
+  INSERT INTO payroll_periods(id,organization_id,code,name,start_date,end_date,standard_working_days,status)
+  VALUES ('00000000-0000-0000-0000-000000000080','00000000-0000-0000-0000-000000000001','KY-2026-01','Kỳ lương Tháng 1/2026','2026-01-01','2026-01-31',22.00,'DRAFT');
+  -- Slip creation
+  INSERT INTO payroll_slips(id,organization_id,period_id,employee_id,base_salary,prorated_base_salary,gross_pay,net_pay)
+  VALUES ('00000000-0000-0000-0000-000000000090','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000080','00000000-0000-0000-0000-000000000040',15000000.00,15000000.00,15000000.00,15000000.00);
+  -- Duplicate slip in same period must fail
+  BEGIN
+    INSERT INTO payroll_slips(id,organization_id,period_id,employee_id,base_salary,prorated_base_salary,gross_pay,net_pay)
+    VALUES ('00000000-0000-0000-0000-000000000091','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000080','00000000-0000-0000-0000-000000000040',15000000.00,15000000.00,15000000.00,15000000.00);
+    RAISE EXCEPTION 'duplicate slip in period constraint absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  -- Close period
+  UPDATE payroll_periods SET status='CLOSED' WHERE id='00000000-0000-0000-0000-000000000080';
+  -- Modifying slip in closed period must fail
+  BEGIN
+    UPDATE payroll_slips SET net_pay=16000000.00 WHERE id='00000000-0000-0000-0000-000000000090';
+    RAISE EXCEPTION 'closed period slip immutability absent';
+  EXCEPTION WHEN raise_exception THEN NULL; END;
+
+  -- EMP-003: Document constraints and immutable work history
+  BEGIN
+    INSERT INTO employee_documents(id,organization_id,employee_id,file_name,file_path,file_size,mime_type)
+    VALUES ('00000000-0000-0000-0000-000000000095','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000040','danger.exe','uploads/danger.exe',1000,'application/x-msdownload');
+    RAISE EXCEPTION 'invalid document MIME constraint absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- Valid document insertion
+  INSERT INTO employee_documents(id,organization_id,employee_id,file_name,file_path,file_size,mime_type,document_type)
+  VALUES ('00000000-0000-0000-0000-000000000096','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000040','cv.pdf','uploads/cv.pdf',2048,'application/pdf','RESUME');
+
+  -- Work history cannot be deleted
+  BEGIN
+    DELETE FROM employee_work_history WHERE employee_id='00000000-0000-0000-0000-000000000040';
+    RAISE EXCEPTION 'immutable work history guard absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
 END $$;
 ROLLBACK;
 DO $$ BEGIN

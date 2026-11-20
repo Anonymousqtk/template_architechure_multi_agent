@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Employees } from './Employees';
 import { request, type Profile } from './api';
@@ -76,6 +76,7 @@ const sampleEmployee: Employee = {
   phone: '0901234567',
   personalEmail: 'nguyenvana@gmail.com',
   address: '123 Đường ABC, Hà Nội',
+  avatarUrl: '/api/organizations/org-test/employees/emp-1/avatar?v=version',
 };
 
 const sampleContracts: EmployeeContract[] = [
@@ -175,6 +176,37 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
     });
   });
 
+  it('shows the XLSX template guidance and uploads an XLSX workbook for preview', async () => {
+    mock.mockImplementation(async path => {
+      if (path.includes('/employees-import/preview')) {
+        return { totalRows: 0, validCount: 0, duplicateCount: 0, errorCount: 0, rows: [] };
+      }
+      if (path.includes('/employees?')) return { items: [sampleEmployee], total: 1, page: 1, limit: 20 };
+      return {};
+    });
+    const { container } = render(<Employees profile={adminProfile} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Nhập từ Excel/ }));
+    expect(await screen.findByText('File mẫu Excel (.XLSX)')).toBeVisible();
+    expect(screen.getByText(/sheet hướng dẫn; nhập dữ liệu từ dòng 2 trong sheet Danh sách nhân viên/)).toBeVisible();
+    expect(screen.getByRole('button', { name: /Tải file Excel mẫu/ })).toBeVisible();
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input?.accept).toContain('.xlsx');
+    const file = new File([new Uint8Array([0x50, 0x4B, 0x03, 0x04])], 'mau_nhap_nhan_vien.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    fireEvent.change(input!, { target: { files: [file] } });
+    await waitFor(() => expect(mock).toHaveBeenCalledWith(
+      expect.stringContaining('/employees-import/preview'),
+      expect.objectContaining({
+        fileName: 'mau_nhap_nhan_vien.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      'POST'
+    ));
+    expect(await screen.findByText('mau_nhap_nhan_vien.xlsx')).toBeVisible();
+  });
+
   it('opens employee detail view and displays full profile information for Admin', async () => {
     render(<Employees profile={adminProfile} />);
     await screen.findByText('EMP-001');
@@ -185,6 +217,29 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
     expect(screen.getByText('nguyenvana@gmail.com')).toBeVisible();
     expect(screen.getByText('123 Đường ABC, Hà Nội')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Chỉnh sửa hồ sơ' })).toBeVisible();
+  });
+
+  it('opens employee avatars from the roster and detail drawer in the zoom viewer', async () => {
+    render(<Employees profile={adminProfile} />);
+    const rosterAvatar = await screen.findByRole('button', { name: 'Xem ảnh đại diện của Nguyen Van A' });
+    fireEvent.click(rosterAvatar);
+    const rosterViewer = await screen.findByRole('dialog', { name: 'Ảnh đại diện của Nguyen Van A' });
+    expect(rosterViewer.tagName).toBe('DIALOG');
+    expect(rosterViewer).toBeVisible();
+    fireEvent(rosterViewer, new Event('cancel', { bubbles: false, cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Ảnh đại diện của Nguyen Van A' })).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xem hồ sơ Nguyen Van A' }));
+    await screen.findByText('Thông tin hồ sơ');
+    const employeeDrawer = screen.getByRole('dialog');
+    const detailAvatar = within(employeeDrawer).getByRole('button', { name: 'Xem ảnh đại diện của Nguyen Van A' });
+    fireEvent.click(detailAvatar);
+    const detailViewer = await screen.findByRole('dialog', { name: 'Ảnh đại diện của Nguyen Van A' });
+    expect(detailViewer.tagName).toBe('DIALOG');
+    expect(detailViewer).toBeVisible();
+    fireEvent(detailViewer, new Event('cancel', { bubbles: false, cancelable: true }));
+    await waitFor(() => expect(detailViewer).not.toBeInTheDocument());
+    expect(employeeDrawer).toBeVisible();
   });
 
   it('renders employee self view with "Hồ sơ của tôi" and omits create/edit actions', async () => {
@@ -202,7 +257,7 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
     expect(await screen.findByRole('heading', { name: 'Hồ sơ của tôi' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Thêm nhân viên' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xem hồ sơ Nguyen Van A' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem hồ sơ Nguyen Van A' }));
     await screen.findByText('Thông tin hồ sơ');
     expect(screen.queryByRole('button', { name: 'Chỉnh sửa hồ sơ' })).not.toBeInTheDocument();
   });

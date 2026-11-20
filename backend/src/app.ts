@@ -16,6 +16,8 @@ import { registerOrgStructureRoutes } from './organization-structure.js';
 import { registerUnitRoutes } from './units.js';
 import { registerEmployeeRoutes } from './employees.js';
 import { registerAttendanceRoutes } from './attendance.js';
+import { registerPayrollRoutes } from './payroll.js';
+import { organizationUserAvatarUrl, registerProfileAvatarRoutes } from './profile-avatar.js';
 import { serviceErrorCode } from './service-errors.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
@@ -49,7 +51,15 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
   app.disable('x-powered-by');
   app.use(helmet({referrerPolicy:{policy:'no-referrer'},contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],imgSrc:["'self'"],connectSrc:["'self'"],formAction:["'self'"],frameAncestors:["'none'"]}}}));
   app.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
-  app.use(express.json({limit:'16kb'}),cookieParser());
+  const jsonParser=express.json({limit:'16kb'});
+  const avatarJsonParser=express.json({limit:'7mb'});
+  const profileAvatarJsonParser=express.json({limit:'14mb'});
+  const avatarUploadPath=/^\/api\/organizations\/[^/]+\/employees\/[^/]+\/avatar$/i;
+  const profileAvatarUploadPath=/^\/api\/auth\/profile\/avatar$/i;
+  app.use((req,res,next)=>{
+    if(req.method==='POST'&&(avatarUploadPath.test(req.path)||profileAvatarUploadPath.test(req.path))) return next();
+    jsonParser(req,res,next);
+  },cookieParser());
 
   async function transaction<T>(fn: (db: PoolClient)=>Promise<T>): Promise<T> {
     const db = await pool.connect();
@@ -118,6 +128,11 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     if(identity && config.requireMfa!==false && (['ADMIN','HR'].includes(identity.role)||identity.mfaEnabled) && !identity.mfaVerified && !limitedPaths.has(req.originalUrl.split('?')[0])) {
       res.status(403).json({code:'MFA_REQUIRED'});return;
     }
+    next();
+  });
+  app.use((req:Authed,res,next)=>{
+    if(req.method==='POST'&&req.identity&&profileAvatarUploadPath.test(req.path)) return profileAvatarJsonParser(req,res,next);
+    if(req.method==='POST'&&req.identity&&avatarUploadPath.test(req.path)) return avatarJsonParser(req,res,next);
     next();
   });
   const requireIdentity=(req: Authed): Identity=>req.identity||fail(401,'AUTHENTICATION_REQUIRED');
@@ -260,8 +275,22 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     const identity=requireManager(req);
     const page=z.coerce.number().int().min(1).max(100000).default(1).parse(req.query.page);
     const limit=z.coerce.number().int().min(1).max(100).default(20).parse(req.query.limit);
-    const result=await pool.query(`SELECT id,email,role,expires_at AS "expiresAt",consumed_at AS "consumedAt",revoked_at AS "revokedAt",delivery_status AS "deliveryStatus" FROM invitations WHERE organization_id=$1 ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`,[identity.orgId,limit,(page-1)*limit]);
-    res.json({items:result.rows,page,limit,deliveryMode:mailer.mode});
+    const result=await pool.query<{
+      id:string;email:string;role:string;expiresAt:Date|string;consumedAt:Date|string|null;revokedAt:Date|string|null;
+      deliveryStatus:string;avatarUserId:string|null;avatarPath:string|null;
+    }>(`SELECT i.id,i.email,i.role,i.expires_at AS "expiresAt",i.consumed_at AS "consumedAt",
+      i.revoked_at AS "revokedAt",i.delivery_status AS "deliveryStatus",
+      CASE WHEN m.user_id IS NOT NULL AND u.is_active AND u.avatar_url IS NOT NULL THEN u.id END AS "avatarUserId",
+      CASE WHEN m.user_id IS NOT NULL AND u.is_active THEN u.avatar_url END AS "avatarPath"
+      FROM invitations i
+      LEFT JOIN users u ON u.email=i.email
+      LEFT JOIN memberships m ON m.user_id=u.id AND m.organization_id=i.organization_id AND m.is_active
+      WHERE i.organization_id=$1 ORDER BY i.created_at DESC,i.id LIMIT $2 OFFSET $3`,[identity.orgId,limit,(page-1)*limit]);
+    const items=result.rows.map(({avatarUserId,avatarPath,...invitation})=>({
+      ...invitation,
+      avatarUrl:avatarUserId&&avatarPath?organizationUserAvatarUrl(identity.orgId,avatarUserId,avatarPath):null,
+    }));
+    res.json({items,page,limit,deliveryMode:mailer.mode});
   });
   async function deliver(id: string, to: string, raw: string, identity: Identity) {
     let status: 'SENT'|'DEV_ONLY'|'FAILED';
@@ -313,6 +342,7 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     });
     await deliver(id,to,raw,identity);res.status(202).json({message:'Invitation request processed.',deliveryMode:mailer.mode});
   });
+  registerProfileAvatarRoutes(app, {pool,transaction,audit,requireIdentity});
   registerSecurityRoutes(app, {pool,config,transaction,audit,requireIdentity,throttle});
   registerPasskeyRoutes(app, {pool,config,transaction,audit,requireIdentity,profile,
     throttle:(req,keys,limit)=>throttle(req,keys,limit,'passkey')});
@@ -321,6 +351,7 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
   registerUnitRoutes(app, { pool, transaction, audit, requireIdentity, config });
   registerEmployeeRoutes(app, { pool, transaction, audit, requireIdentity });
   registerAttendanceRoutes(app, { pool, transaction, audit, requireIdentity });
+  registerPayrollRoutes(app, { pool, transaction, audit, requireIdentity });
   app.use('/api',(_req,res)=>res.status(404).json({code:'NOT_FOUND'}));
   app.use(async(error: unknown,_req: Authed,res: Response,_next: NextFunction)=>{
     void _next;
@@ -333,6 +364,7 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     }
     if(error instanceof z.ZodError) {res.status(400).json({code:'INVALID_INPUT'});return;}
     if(error instanceof HttpError) {if(error.status===429) res.setHeader('Retry-After','900');res.status(error.status).json({code:error.code});return;}
+    if(error && typeof error==='object' && 'type' in error && error.type==='entity.too.large') {res.status(413).json({code:'FILE_TOO_LARGE'});return;}
     if(error instanceof SyntaxError) {res.status(400).json({code:'INVALID_JSON'});return;}
     // Never serialize database, SMTP, request, password or URL/token errors.
     const serviceCode=serviceErrorCode(error);

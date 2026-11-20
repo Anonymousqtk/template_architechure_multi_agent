@@ -21,6 +21,14 @@ async function mount(path: string) {
 }
 beforeEach(() => {
   signedIn = null; calls.length = 0; handle = () => undefined;
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+    configurable: true,
+    value: function (this: HTMLDialogElement) { this.setAttribute('open', ''); },
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+    configurable: true,
+    value: function (this: HTMLDialogElement) { this.removeAttribute('open'); },
+  });
   vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
     calls.push({ path, init });
     const custom = handle(path, init); if (custom) return custom;
@@ -115,6 +123,27 @@ describe('authentication screens', () => {
     fireEvent.change(email, { target: { value: 'new@example.test' } }); fireEvent.submit(container.querySelector('form')!);
     await waitFor(() => expect(calls.some(call => call.path === '/api/organizations/org-1/invitations' && call.init?.method === 'POST')).toBe(true));
     expect(JSON.parse(String(calls.find(call => call.path === '/api/organizations/org-1/invitations' && call.init?.method === 'POST')!.init?.body))).toEqual({ email: 'new@example.test', role: 'EMPLOYEE' });
+  });
+  it('shows a matching invitation avatar and opens the zoom viewer', async () => {
+    signedIn = profile;
+    const avatarUrl = '/api/organizations/org-1/users/joined/avatar?v=version';
+    handle = path => path.includes('/invitations?page=') ? json({
+      items: [{
+        id: 'invite-1', email: 'joined@example.test', role: 'EMPLOYEE',
+        expiresAt: '2026-12-01T00:00:00.000Z', consumedAt: '2026-11-19T00:00:00.000Z',
+        revokedAt: null, deliveryStatus: 'SENT', avatarUrl,
+      }],
+      page: 1, limit: 10,
+    }) : undefined;
+    await mount('/admin/invitations');
+    const avatar = await screen.findByRole('button', { name: 'Xem ảnh đại diện của joined@example.test' });
+    expect(avatar.querySelector('img')).toHaveAttribute('src', avatarUrl);
+    fireEvent.click(avatar);
+    const viewer = await screen.findByRole('dialog', { name: 'Ảnh đại diện của joined@example.test' });
+    expect(viewer.tagName).toBe('DIALOG');
+    expect(viewer).toBeVisible();
+    fireEvent(viewer, new Event('cancel', { bubbles: false, cancelable: true }));
+    await waitFor(() => expect(viewer).not.toBeInTheDocument());
   });
   it('signed-in user can discover security/session management from account navigation',async()=>{
     signedIn=profile;

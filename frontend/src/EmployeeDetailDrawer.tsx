@@ -2,14 +2,18 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useSlideClose } from './useSlideClose';
 import { request, errorText, type Profile } from './api';
+import { Avatar } from './Avatar';
 import {
   type Employee,
   type EmployeeContract,
   type WorkHistory,
+  type DocumentItem,
   type EmployeePage,
   employmentLabels,
   contractLabels,
   contractTypeLabels,
+  workEventLabels,
+  documentTypeLabels,
 } from './employee-types';
 import { SearchChoice } from './Employees';
 import './drawers.css';
@@ -17,6 +21,12 @@ import './employees.css';
 
 const dateLabel = (value: string | null | undefined) =>
   value ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC' }).format(new Date(value + 'T00:00:00Z')) : '—';
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+};
 
 const historyLabels: Record<string, string> = {
   PROFILE_CREATED: 'Tạo hồ sơ',
@@ -43,9 +53,13 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
   const [success, setSuccess] = useState('');
   const [today, setToday] = useState('');
 
-  const [tab, setTab] = useState<'profile' | 'contracts' | 'history'>('profile');
+  const [tab, setTab] = useState<'profile' | 'contracts' | 'history' | 'documents'>('profile');
   const [contracts, setContracts] = useState<EmployeePage<EmployeeContract> | null>(null);
   const [history, setHistory] = useState<EmployeePage<WorkHistory> | null>(null);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [docUploading, setDocUploading] = useState(false);
+  const [docType, setDocType] = useState<DocumentItem['documentType']>('OTHER');
+  const [docDesc, setDocDesc] = useState('');
   const [contractPage, setContractPage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
   const [sectionLoading, setSectionLoading] = useState(false);
@@ -67,6 +81,9 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
 
   const canEdit = Boolean(detail?.canEdit);
   const canContracts = Boolean(
+    detail && (['ADMIN', 'HR'].includes(profile.organization.role) || detail.userId === profile.user.id)
+  );
+  const canUploadAvatar = Boolean(
     detail && (['ADMIN', 'HR'].includes(profile.organization.role) || detail.userId === profile.user.id)
   );
 
@@ -113,9 +130,33 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     loadDetail();
   }, [url, id]);
 
+  const loadDocuments = () => {
+    if (!detail) return;
+    let active = true;
+    setSectionLoading(true);
+    setSectionError('');
+    request<{ items: DocumentItem[] }>(url + '/' + detail.id + '/documents')
+      .then(r => {
+        if (active) setDocuments(r.items);
+      })
+      .catch(e => {
+        if (active) setSectionError(errorText(e));
+      })
+      .finally(() => {
+        if (active) setSectionLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  };
+
   useEffect(() => {
     if (!detail || tab === 'profile') return;
     if (tab === 'contracts' && !canContracts) return;
+    if (tab === 'documents') {
+      loadDocuments();
+      return;
+    }
     let active = true;
     setSectionLoading(true);
     setSectionError('');
@@ -215,6 +256,137 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     );
   }
 
+  function handleAvatarSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !detail) return;
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      setError('Chỉ chấp nhận file ảnh JPG hoặc PNG.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Dung lượng ảnh không được vượt quá 5MB.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = (reader.result as string).split(',')[1];
+        await request(
+          url + '/' + detail.id + '/avatar',
+          {
+            fileName: file.name,
+            mimeType: file.type,
+            contentBase64: base64,
+          },
+          'POST'
+        );
+        setSuccess('Đã cập nhật ảnh đại diện thành công.');
+        loadDetail();
+        onSaved();
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleDocumentUpload(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!detail) return;
+    const form = e.currentTarget;
+    const fileInput = form.elements.namedItem('docFile') as HTMLInputElement;
+    const file = fileInput?.files?.[0];
+    if (!file) {
+      setError('Vui lòng chọn tập tin cần tải lên.');
+      return;
+    }
+    const allowed = [
+      'image/jpeg',
+      'image/png',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv',
+    ];
+    if (!allowed.includes(file.type) && !file.name.endsWith('.csv') && !file.name.endsWith('.xlsx')) {
+      setError('Định dạng tập tin không được hỗ trợ. Chấp nhận PDF, JPG, PNG, XLSX, CSV.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Dung lượng tập tin vượt quá giới hạn 10MB.');
+      return;
+    }
+    setDocUploading(true);
+    setError('');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = (reader.result as string).split(',')[1];
+        await request(
+          url + '/' + detail.id + '/documents',
+          {
+            fileName: file.name,
+            mimeType: file.type || (file.name.endsWith('.csv') ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+            documentType: docType,
+            description: docDesc || null,
+            contentBase64: base64,
+          },
+          'POST'
+        );
+        setSuccess('Đã tải lên tài liệu thành công.');
+        form.reset();
+        setDocDesc('');
+        setDocType('OTHER');
+        loadDocuments();
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setDocUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleDownloadDoc(doc: DocumentItem) {
+    if (!detail) return;
+    try {
+      const res = await fetch(url + '/' + detail.id + '/documents/' + doc.id + '/download', {
+        credentials: 'same-origin',
+      });
+      if (!res.ok) throw new Error('Không thể tải tập tin');
+      const blob = await res.blob();
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = u;
+      a.download = doc.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(u);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function handleDeleteDoc(doc: DocumentItem) {
+    if (!detail) return;
+    if (!window.confirm(`Bạn có chắc muốn xóa tài liệu "${doc.fileName}"?`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await request(url + '/' + detail.id + '/documents/' + doc.id, {}, 'DELETE');
+      setSuccess('Đã xóa tài liệu.');
+      loadDocuments();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function submitTransfer(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!detail) return;
@@ -225,11 +397,14 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
           version: detail.version,
           effectiveOn: String(f.get('effectiveOn')),
           reason: String(f.get('reason')),
+          eventType: String(f.get('eventType') || 'TRANSFER'),
+          title: nullable(f, 'title'),
+          notes: nullable(f, 'notes'),
           departmentId: dept || null,
           positionId: position || null,
           managerUserId: manager || null,
         }),
-      'Đã ghi nhận điều chuyển công tác.'
+      'Đã ghi nhận mốc công tác.'
     );
   }
 
@@ -244,16 +419,6 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
         ),
       'Đã cập nhật trạng thái hợp đồng.'
     );
-  }
-
-  function initials(name: string) {
-    return name
-      .split(' ')
-      .filter(Boolean)
-      .slice(-2)
-      .map(part => part[0])
-      .join('')
-      .toUpperCase();
   }
 
   function drawerPagination(current: number, total: number, set: (p: number) => void) {
@@ -319,9 +484,21 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
         {detail && (
           <>
             <div className="emp-summary-header">
-              <span className="drawer-profile-avatar" aria-hidden="true">
-                {initials(detail.fullName)}
-              </span>
+              <div className="drawer-profile-avatar-wrapper">
+                <Avatar src={detail.avatarUrl} name={detail.fullName} className="drawer-profile-avatar-img" />
+                {canUploadAvatar && (
+                  <label className="drawer-avatar-upload-btn" title="Cập nhật ảnh đại diện">
+                    <span>📷</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      onChange={handleAvatarSelect}
+                      style={{ display: 'none' }}
+                      disabled={busy}
+                    />
+                  </label>
+                )}
+              </div>
               <div className="emp-summary-info">
                 <h3>{detail.fullName}</h3>
                 <p className="emp-summary-subtitle">
@@ -379,6 +556,17 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                 }}
               >
                 Lịch sử công tác
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'documents'}
+                className={'emp-drawer-tab' + (tab === 'documents' ? ' is-active' : '')}
+                onClick={() => {
+                  setTab('documents');
+                }}
+              >
+                Tài liệu đính kèm
               </button>
             </nav>
 
@@ -778,8 +966,22 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
 
                 {transferring && (
                   <form className="emp-card emp-editor" onSubmit={submitTransfer}>
-                    <h4>Điều chuyển công tác mới</h4>
+                    <h4>Ghi nhận điều chuyển / bổ nhiệm / khen thưởng</h4>
                     <fieldset disabled={busy} className="emp-form-stack">
+                      <label className="field">
+                        <span>Loại sự kiện công tác</span>
+                        <select name="eventType" defaultValue="TRANSFER">
+                          {Object.entries(workEventLabels).map(([val, lbl]) => (
+                            <option key={val} value={val}>
+                              {lbl}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Tiêu đề quyết định / sự kiện (tùy chọn)</span>
+                        <input name="title" maxLength={200} placeholder="VD: Quyết định bổ nhiệm số 05/QĐ-BGD" />
+                      </label>
                       <label className="field">
                         <span>Ngày hiệu lực</span>
                         <input
@@ -793,12 +995,16 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                       </label>
                       <label className="field">
                         <span>Lý do điều chuyển</span>
-                        <input name="reason" maxLength={500} required />
+                        <input name="reason" maxLength={500} required placeholder="Căn cứ nhu cầu công tác..." />
+                      </label>
+                      <label className="field">
+                        <span>Ghi chú bổ sung (tùy chọn)</span>
+                        <input name="notes" maxLength={1000} placeholder="Chi tiết nghị quyết hoặc ghi chú" />
                       </label>
                       <SearchChoice
                         base={base}
                         resource="departments"
-                        label="Phòng ban mới"
+                        label="Phòng ban"
                         value={dept}
                         initialLabel={detail.departmentName}
                         onChange={id => {
@@ -809,7 +1015,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                       <SearchChoice
                         base={base}
                         resource="positions"
-                        label="Chức danh mới"
+                        label="Chức danh"
                         value={position}
                         initialLabel={detail.positionTitle}
                         departmentId={dept}
@@ -820,7 +1026,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                           base={base}
                           resource="users"
                           role="MANAGER"
-                          label="Quản lý mới"
+                          label="Quản lý trực tiếp"
                           value={manager}
                           initialLabel={detail.managerName}
                           onChange={setManager}
@@ -846,11 +1052,17 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                       <li key={h.id} className="emp-timeline-item">
                         <time className="emp-timeline-time">{dateLabel(h.effectiveOn)}</time>
                         <div className="emp-timeline-content">
-                          <span className="emp-timeline-badge">{historyLabels[h.reason] || h.reason}</span>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span className="emp-timeline-badge">
+                              {(h.eventType && workEventLabels[h.eventType]) || historyLabels[h.reason] || h.reason}
+                            </span>
+                            {h.title && <strong>{h.title}</strong>}
+                          </div>
                           <p className="emp-timeline-desc">
                             <strong>{h.departmentName || 'Chưa phân công phòng ban'}</strong> · {h.positionTitle || 'Chưa có chức danh'}
                           </p>
-                          <small className="muted">Quản lý trực tiếp: {h.managerName || 'Chưa phân công'}</small>
+                          <small className="muted">Lý do: {h.reason} · Quản lý trực tiếp: {h.managerName || 'Chưa phân công'}</small>
+                          {h.notes && <small style={{ color: '#686477' }}>Ghi chú: {h.notes}</small>}
                         </div>
                       </li>
                     ))}
@@ -859,6 +1071,109 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                   )}
                 </ol>
                 {history && drawerPagination(historyPage, history.total, setHistoryPage)}
+              </div>
+            )}
+
+            {tab === 'documents' && (
+              <div className="emp-tab-panel">
+                <div className="emp-card-header">
+                  <h4>Tài liệu hồ sơ đính kèm</h4>
+                  <small className="muted">Lưu trữ an toàn, phân quyền theo vai trò</small>
+                </div>
+
+                {canUploadAvatar && (
+                  <form className="emp-doc-upload-box" onSubmit={handleDocumentUpload}>
+                    <h4>Tải lên tài liệu mới</h4>
+                    <div className="emp-form-grid">
+                      <label className="field">
+                        <span>Chọn tập tin</span>
+                        <input
+                          name="docFile"
+                          type="file"
+                          accept="image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,.xlsx,.csv"
+                          required
+                          disabled={docUploading || busy}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Phân loại tài liệu</span>
+                        <select
+                          value={docType}
+                          onChange={e => setDocType(e.target.value as DocumentItem['documentType'])}
+                          disabled={docUploading || busy}
+                        >
+                          {Object.entries(documentTypeLabels).map(([val, lbl]) => (
+                            <option key={val} value={val}>
+                              {lbl}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field emp-span">
+                        <span>Mô tả tài liệu (tùy chọn)</span>
+                        <input
+                          value={docDesc}
+                          onChange={e => setDocDesc(e.target.value)}
+                          placeholder="Nhập ghi chú hoặc mô tả tài liệu"
+                          maxLength={500}
+                          disabled={docUploading || busy}
+                        />
+                      </label>
+                    </div>
+                    <div className="emp-actions" style={{ marginTop: '12px' }}>
+                      <button className="primary" type="submit" disabled={docUploading || busy}>
+                        {docUploading ? 'Đang tải lên…' : 'Tải lên tài liệu'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {sectionLoading && <p role="status">Đang tải danh sách tài liệu…</p>}
+                {sectionError && <p role="alert" className="notice error">{sectionError}</p>}
+
+                <div className="emp-docs-list">
+                  {!sectionLoading &&
+                    documents.map(d => (
+                      <article key={d.id} className="emp-doc-card">
+                        <div className="emp-doc-info">
+                          <div className="emp-doc-header">
+                            <span className="emp-badge emp-badge-linked">
+                              {documentTypeLabels[d.documentType] || d.documentType}
+                            </span>
+                            <span className="emp-doc-name">{d.fileName}</span>
+                          </div>
+                          <div className="emp-doc-meta">
+                            <span>Kích thước: {formatFileSize(d.fileSize)}</span> ·{' '}
+                            <span>Ngày tải lên: {dateLabel(d.createdAt.slice(0, 10))}</span>
+                          </div>
+                          {d.description && <p className="emp-doc-desc">{d.description}</p>}
+                        </div>
+                        <div className="emp-doc-actions">
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => handleDownloadDoc(d)}
+                            disabled={busy}
+                          >
+                            ⬇ Tải về
+                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => handleDeleteDoc(d)}
+                              disabled={busy}
+                            >
+                              Xóa
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  {!sectionLoading && !sectionError && documents.length === 0 && (
+                    <p className="muted">Chưa có tài liệu đính kèm nào.</p>
+                  )}
+                </div>
               </div>
             )}
           </>

@@ -6,6 +6,8 @@ import { fail, type Authed, type Identity, type Role } from './types.js';
 import { authorizeMutation } from './authorization.js';
 import { detectReportingCycle } from './organization-structure.js';
 import { managementScope } from './management-scope.js';
+import { detectMimeFromBytes, readFile } from './file-storage.js';
+import { organizationUserAvatarUrl } from './profile-avatar.js';
 
 const uuid = z.string().uuid();
 const roleSchema = z.enum(['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE']);
@@ -18,6 +20,7 @@ export interface UserDto {
   isActive: boolean;
   userIsActive: boolean;
   emailVerified: boolean;
+  avatarUrl: string | null;
   managerUserId: string | null;
   departmentId?: string | null;
   positionId?: string | null;
@@ -48,6 +51,7 @@ function mapUserRow(row: {
   id: string;
   email: string;
   full_name: string;
+  avatar_url: string | null;
   role: Role;
   is_active: boolean;
   user_is_active: boolean;
@@ -58,7 +62,7 @@ function mapUserRow(row: {
   department_name?: string | null;
   position_title?: string | null;
   created_at: Date | string;
-}): UserDto {
+}, organizationId: string): UserDto {
   const dto: UserDto = {
     id: row.id,
     email: row.email,
@@ -67,6 +71,7 @@ function mapUserRow(row: {
     isActive: row.is_active,
     userIsActive: row.user_is_active,
     emailVerified: row.email_verified_at !== null,
+    avatarUrl: organizationUserAvatarUrl(organizationId, row.id, row.avatar_url),
     managerUserId: row.manager_user_id,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
   };
@@ -96,6 +101,34 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
     const parsed = uuid.safeParse(req.params.userId);
     if (!parsed.success) return fail(400, 'INVALID_INPUT');
     return parsed.data;
+  }
+
+  async function visibleUser(identity: Identity, targetUserId: string) {
+    if (identity.role === 'EMPLOYEE' && targetUserId !== identity.userId) fail(403, 'FORBIDDEN');
+    if (!['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'].includes(identity.role)) fail(403, 'FORBIDDEN');
+
+    const result = await pool.query(
+      `SELECT u.id, u.email, u.full_name, u.avatar_url, m.role, m.is_active, u.is_active AS user_is_active,
+              u.email_verified_at, m.manager_user_id, m.department_id, m.position_id,
+              dept.name AS department_name, pos.title AS position_title, m.created_at
+       FROM memberships m
+       JOIN users u ON u.id = m.user_id
+       LEFT JOIN departments dept ON dept.id = m.department_id
+       LEFT JOIN positions pos ON pos.id = m.position_id
+       WHERE m.organization_id = $1 AND m.user_id = $2`,
+      [identity.orgId, targetUserId],
+    );
+    const row = result.rows[0];
+    if (!row) fail(404, 'USER_NOT_FOUND');
+
+    if (targetUserId !== identity.userId) {
+      if (identity.role === 'HR' && row.role !== 'EMPLOYEE') fail(404, 'USER_NOT_FOUND');
+      if (identity.role === 'MANAGER' && !(await managementScope(pool, identity))!.users.includes(targetUserId)) {
+        fail(404, 'USER_NOT_FOUND');
+      }
+    }
+
+    return row;
   }
 
   async function ensureAnotherActiveAdminExists(db: PoolClient, orgId: string, excludedUserId: string) {
@@ -176,7 +209,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
 
     const listParams = [...params, limit, (page - 1) * limit];
     const rows = await pool.query(
-      `SELECT u.id, u.email, u.full_name, m.role, m.is_active, u.is_active AS user_is_active,
+      `SELECT u.id, u.email, u.full_name, u.avatar_url, m.role, m.is_active, u.is_active AS user_is_active,
               u.email_verified_at, m.manager_user_id, m.department_id, m.position_id,
               dept.name AS department_name, pos.title AS position_title, m.created_at
        FROM memberships m
@@ -189,36 +222,34 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
       listParams,
     );
 
-    res.json({ items: rows.rows.map(mapUserRow), page, limit, total });
+    res.json({ items: rows.rows.map(row => mapUserRow(row, identity.orgId)), page, limit, total });
   });
 
   app.get(`${orgPrefix}/users/:userId`, async (req: Authed, res) => {
     const identity = requireOrgIdentity(req);
     const targetUserId = parseUserId(req);
+    const row = await visibleUser(identity, targetUserId);
+    res.json({ user: mapUserRow(row, identity.orgId) });
+  });
 
-    if (identity.role === 'EMPLOYEE' && targetUserId !== identity.userId) fail(403, 'FORBIDDEN');
-    if (!['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'].includes(identity.role)) fail(403, 'FORBIDDEN');
-
-    const result = await pool.query(
-      `SELECT u.id, u.email, u.full_name, m.role, m.is_active, u.is_active AS user_is_active,
-              u.email_verified_at, m.manager_user_id, m.department_id, m.position_id,
-              dept.name AS department_name, pos.title AS position_title, m.created_at
-       FROM memberships m
-       JOIN users u ON u.id = m.user_id
-       LEFT JOIN departments dept ON dept.id = m.department_id
-       LEFT JOIN positions pos ON pos.id = m.position_id
-       WHERE m.organization_id = $1 AND m.user_id = $2`,
-      [identity.orgId, targetUserId],
-    );
-    const row = result.rows[0];
-    if (!row) fail(404, 'USER_NOT_FOUND');
-
-    if (targetUserId !== identity.userId) {
-      if (identity.role === 'HR' && row.role !== 'EMPLOYEE') fail(404, 'USER_NOT_FOUND');
-      if (identity.role === 'MANAGER' && !(await managementScope(pool,identity))!.users.includes(targetUserId)) fail(404, 'USER_NOT_FOUND');
+  app.get(`${orgPrefix}/users/:userId/avatar`, async (req: Authed, res) => {
+    const identity = requireOrgIdentity(req);
+    const targetUserId = parseUserId(req);
+    const row = await visibleUser(identity, targetUserId);
+    if (!row.avatar_url) {
+      fail(404, 'AVATAR_NOT_FOUND');
+      return;
     }
 
-    res.json({ user: mapUserRow(row) });
+    const { buffer } = await readFile(targetUserId, row.avatar_url);
+    const mimeType = detectMimeFromBytes(buffer);
+    if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
+      fail(500, 'INVALID_AVATAR_FILE');
+      return;
+    }
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(buffer);
   });
 
   app.post(`${orgPrefix}/users/:userId/status`, async (req: Authed, res) => {

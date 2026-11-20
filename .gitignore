@@ -5,6 +5,8 @@ node_modules/
 coverage/
 dist/
 build/
+backend/data/
+data/
 __pycache__/
 *.pyc
 

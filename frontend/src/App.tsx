@@ -10,7 +10,9 @@ import { UsersPanel, AuditPanel } from './Users';
 import { OrganizationView } from './OrganizationView';
 import { Employees } from './Employees';
 import { Attendance } from './Attendance';
+import { Payroll } from './Payroll';
 import { Units } from './Units';
+import { Avatar } from './Avatar';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, errorText, initialize, request, type DeliveryMode, type Invitation, type Profile } from './api';
 import './workspace.css';
@@ -167,7 +169,7 @@ function Invitations({ profile }: { profile: Profile }) {
     <div className="table-wrap"><table><caption>Danh sách lời mời · Trang {page}</caption><thead><tr><th>Email / vai trò</th><th>Trạng thái</th><th>Gửi thư</th><th>Thao tác</th></tr></thead><tbody>{items.map(item => {
       const pending = !item.consumedAt && !item.revokedAt;
       const status = item.consumedAt ? 'Đã tham gia' : item.revokedAt ? 'Đã thu hồi' : new Date(item.expiresAt).getTime() <= Date.now() ? 'Hết hạn' : 'Đang chờ';
-      return <tr key={item.id}><td><strong>{item.email}</strong><small>{roleName[item.role] || item.role}</small></td><td><span className="badge">{status}</span><small>Hạn: {new Date(item.expiresAt).toLocaleString('vi-VN')}</small></td><td>{item.deliveryStatus === 'SENT' ? 'Đã gửi' : item.deliveryStatus === 'FAILED' ? 'Gửi thất bại' : 'DEV_ONLY'}</td><td>{pending && <div className="row-actions"><button disabled={busy} onClick={() => void action(`${base}/${item.id}/resend`, {})}>Gửi lại</button><button disabled={busy} onClick={() => void action(`${base}/${item.id}/revoke`, {})}>Thu hồi</button></div>}</td></tr>;
+      return <tr key={item.id}><td><div className="invitation-list-identity"><Avatar src={item.avatarUrl} name={item.email} className="invitation-list-avatar"/><div><strong>{item.email}</strong><small>{roleName[item.role] || item.role}</small></div></div></td><td><span className="badge">{status}</span><small>Hạn: {new Date(item.expiresAt).toLocaleString('vi-VN')}</small></td><td>{item.deliveryStatus === 'SENT' ? 'Đã gửi' : item.deliveryStatus === 'FAILED' ? 'Gửi thất bại' : 'DEV_ONLY'}</td><td>{pending && <div className="row-actions"><button disabled={busy} onClick={() => void action(`${base}/${item.id}/resend`, {})}>Gửi lại</button><button disabled={busy} onClick={() => void action(`${base}/${item.id}/revoke`, {})}>Thu hồi</button></div>}</td></tr>;
     })}{items.length === 0 && <tr><td colSpan={4}>{busy ? 'Đang tải…' : 'Chưa có lời mời ở trang này.'}</td></tr>}</tbody></table></div>
     <nav className="pagination" aria-label="Phân trang lời mời"><button disabled={page === 1 || busy} onClick={() => setPage(p => p - 1)}>← Trước</button><span>Trang {page}</span><button disabled={items.length < 10 || busy} onClick={() => setPage(p => p + 1)}>Sau →</button></nav></>;
 }
@@ -268,6 +270,9 @@ export default function App() {
   else if (path === '/admin/work-shifts') content = profile ? <Attendance key="shifts" profile={profile} view="shifts" /> : login;
   else if (path === '/admin/leave-types') content = profile ? <Attendance key="leave-types" profile={profile} view="leave-types" /> : login;
   else if (path === '/admin/attendance-policy') content = profile ? <Attendance key="policy" profile={profile} view="policy" /> : login;
+  else if (path === '/admin/payroll') content = profile ? <Payroll key="payroll" profile={profile} view="periods" /> : login;
+  else if (path === '/admin/salary-components') content = profile ? <Payroll key="components" profile={profile} view="components" /> : login;
+  else if (path === '/admin/my-payslips') content = profile ? <Payroll key="my-slips" profile={profile} view="my-slips" /> : login;
   else if (path === '/admin/units') content = profile ? <Units onSelected={result=>{setProfile(result);navigate('/app');}} /> : login;
   else if (path === '/app') content = profile ? (profileView?<AccountProfile profile={profile} />:<Dashboard profile={profile}/>) : <><Notice error>Phiên đăng nhập không còn hiệu lực.</Notice>{login}</>;
   else if (path === '/login' || path === '/') content = login;
