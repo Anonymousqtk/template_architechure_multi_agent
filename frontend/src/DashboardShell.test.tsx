@@ -4,12 +4,33 @@ import '@testing-library/jest-dom/vitest';
 import { DashboardShell } from './DashboardShell';
 import type { Profile } from './api';
 const profile:Profile={user:{id:'employee',email:'employee@example.test',fullName:'Test Employee'},organization:{id:'org',name:'Company',role:'EMPLOYEE'},permissions:{invite:false,grantHR:false},deliveryMode:'DEV_ONLY'};
+it('groups reference catalogs, highlights the active page and reopens the correct group on navigation',()=>{
+ const admin:Profile={...profile,organization:{...profile.organization,role:'ADMIN'},permissions:{invite:true,grantHR:true,readUsers:true,manageOrg:true,viewAudit:true}};
+ const view=render(<DashboardShell profile={admin} path="/admin/units" profileView={false} busy={false} onLogout={()=>{}}>Units</DashboardShell>);
+ expect(screen.getByRole('button',{name:'Danh mục'})).toHaveAttribute('aria-expanded','true');
+ expect(screen.getByRole('link',{name:'Đơn vị'})).toHaveAttribute('aria-current','page');
+ for(const name of ['Phòng ban','Chức danh và vị trí','Ca làm việc','Loại nghỉ phép','Chế độ chấm công'])expect(screen.getByRole('link',{name})).toBeVisible();
+ expect(screen.getByRole('link',{name:'Đơn vị'}).querySelector('svg')).toBeInTheDocument();
+ view.rerender(<DashboardShell profile={admin} path="/admin/attendance" profileView={false} busy={false} onLogout={()=>{}}>Attendance</DashboardShell>);
+ expect(screen.getByRole('button',{name:'Hồ sơ nhân viên'})).toHaveAttribute('aria-expanded','true');
+ expect(screen.getByRole('button',{name:'Danh mục'})).toHaveAttribute('aria-expanded','false');
+ expect(screen.getByRole('link',{name:'Chấm công và nghỉ phép'})).toHaveAttribute('aria-current','page');
+});
+
+it('keeps organization selection available without exposing management catalogs to employees',()=>{
+ render(<DashboardShell profile={profile} path="/admin/units" profileView={false} busy={false} onLogout={()=>{}}>Units</DashboardShell>);
+ expect(screen.getByRole('link',{name:'Đơn vị'})).toBeVisible();
+ expect(screen.queryByRole('link',{name:'Phòng ban'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('link',{name:'Ca làm việc'})).not.toBeInTheDocument();
+});
 it('Managers can discover scoped chart, departments and positions without mutation privileges',()=>{
  const manager:Profile={...profile,organization:{...profile.organization,role:'MANAGER'},permissions:{invite:false,grantHR:false,readUsers:true,manageOrg:false}};
  render(<DashboardShell profile={manager} path="/admin/org-chart" profileView={false} busy={false} onLogout={()=>{}}>Chart</DashboardShell>);
  expect(screen.getByRole('link',{name:'Sơ đồ tổ chức'})).toHaveAttribute('href','/admin/org-chart');
+ fireEvent.click(screen.getByRole('button',{name:'Danh mục'}));
  expect(screen.getByRole('link',{name:'Phòng ban'})).toBeVisible();
  expect(screen.getByRole('link',{name:'Chức danh và vị trí'})).toBeVisible();
+ expect(screen.queryByRole('link',{name:'Ca làm việc'})).not.toBeInTheDocument();
  expect(screen.queryByRole('link',{name:'Lời mời'})).not.toBeInTheDocument();
 });
 beforeEach(()=>{Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:function(this:HTMLDialogElement){this.setAttribute('open','');}});Object.defineProperty(HTMLDialogElement.prototype,'close',{configurable:true,value:function(this:HTMLDialogElement){this.removeAttribute('open');}});});afterEach(()=>{cleanup();vi.unstubAllGlobals();});

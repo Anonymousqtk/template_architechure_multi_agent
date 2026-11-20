@@ -115,7 +115,7 @@ export async function request<T = void>(path: string, body?: unknown, methodOver
   try {
     return await send<T>(path, body, methodOverride);
   } catch (cause) {
-    if (cause instanceof ApiError && cause.code === 'REAUTH_REQUIRED' && path.startsWith('/api/organizations/') &&
+    if (cause instanceof ApiError && cause.code === 'REAUTH_REQUIRED' && (path.startsWith('/api/organizations/') || path==='/api/units' || path.startsWith('/api/units/')) &&
       (methodOverride ? methodOverride !== 'GET' : body !== undefined) && confirmSensitiveAction) {
       if (await confirmSensitiveAction()) return send<T>(path, body, methodOverride);
       throw new ApiError(403, 'REAUTH_CANCELLED');
@@ -165,6 +165,11 @@ export function errorText(error: unknown): string {
       ATT_INSUFFICIENT_BALANCE: 'Số dư phép không đủ hoặc chưa được cấp.',
       ATT_CHARGE_REQUIRED: 'Nhập số phút trừ theo chính sách đã duyệt.',
       ATT_INVALID_CHARGE: 'Số phút trừ không phù hợp với loại phép hoặc khoảng thời gian đã yêu cầu.',
+      ATT_OFFICE_NO_SHIFT: 'Phòng ban này chấm công giờ hành chính, không cần phân ca. Bạn vẫn có thể gán ngày nghỉ.',
+      ATT_DEPARTMENT_NOT_FOUND: 'Không tìm thấy phòng ban đang hoạt động trong tổ chức.',
+      UNIT_NOT_FOUND: 'Không tìm thấy đơn vị hoặc bạn chưa có quyền truy cập.',
+      UNIT_ADMIN_UNAVAILABLE: 'Email Admin phải thuộc tài khoản đang hoạt động và đã xác minh email.',
+      UNIT_CURRENT: 'Hãy chuyển sang đơn vị khác trước khi lưu trữ đơn vị đang làm việc.',
     };
     if (attendanceMessages[error.code]) return attendanceMessages[error.code];
     const messages:Record<string,string>={EMPLOYEE_NOT_FOUND:'Không tìm thấy hồ sơ trong phạm vi được phép.',EMPLOYEE_CODE_EXISTS:'Mã nhân viên đã tồn tại trong tổ chức.',EMPLOYEE_ACCOUNT_EXISTS:'Tài khoản đã được liên kết với một hồ sơ.',INVALID_EMPLOYEE_ACCOUNT:'Tài khoản phải đang hoạt động trong cùng tổ chức.',ACCOUNT_ASSIGNMENT_MISMATCH:'Phân công của hồ sơ liên kết phải khớp với tài khoản hiện có.',INVALID_EMPLOYEE_DATES:'Kiểm tra ngày vào làm và ngày sinh. Ngày vào làm không được ở tương lai.',STALE_RECORD:'Dữ liệu đã thay đổi. Hãy tải lại hồ sơ trước khi lưu.',INVALID_HISTORY_DATE:'Ngày công tác phải từ ngày vào làm, không ở tương lai và không trước mốc đã ghi nhận.',ASSIGNMENT_UNCHANGED:'Phòng ban, vị trí và quản lý chưa có thay đổi.',CONTRACT_NUMBER_EXISTS:'Số hợp đồng đã tồn tại trong tổ chức.',CONTRACT_NOT_FOUND:'Không tìm thấy hợp đồng.',INVALID_CONTRACT_DATES:'Kiểm tra thời hạn, ngày ký và ngày chấm dứt hợp đồng.',CONTRACT_IMMUTABLE:'Nội dung hợp đồng đã được khóa. Hãy tạo hợp đồng mới để ghi nhận thay đổi.',INVALID_CONTRACT_TRANSITION:'Không thể chuyển sang trạng thái hợp đồng này.',ACTIVE_CONTRACT_EXISTS:'Nhân viên đã có một hợp đồng đang thực hiện.',CONTRACT_SIGNATURE_DATE_REQUIRED:'Cần ghi ngày ký hợp lệ trước khi hoàn tất hợp đồng.'};

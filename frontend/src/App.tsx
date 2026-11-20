@@ -10,8 +10,10 @@ import { UsersPanel, AuditPanel } from './Users';
 import { OrganizationView } from './OrganizationView';
 import { Employees } from './Employees';
 import { Attendance } from './Attendance';
+import { Units } from './Units';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, errorText, initialize, request, type DeliveryMode, type Invitation, type Profile } from './api';
+import './workspace.css';
 
 // Kept only in memory: remove credentials from browser history before any request.
 const linkPath = window.location.pathname;
@@ -262,7 +264,11 @@ export default function App() {
   else if (path === '/admin/positions') content = profile ? <OrganizationView profile={profile} activeTab="positions" onNavigate={navigate} /> : login;
   else if (path === '/admin/organization') content = profile ? <OrganizationView profile={profile} activeTab="organization" onNavigate={navigate} /> : login;
   else if (path === '/admin/employees') content = profile ? <Employees profile={profile} /> : login;
-  else if (path === '/admin/attendance') content = profile ? <Attendance profile={profile} /> : login;
+  else if (path === '/admin/attendance') content = profile ? <Attendance key="attendance" profile={profile} /> : login;
+  else if (path === '/admin/work-shifts') content = profile ? <Attendance key="shifts" profile={profile} view="shifts" /> : login;
+  else if (path === '/admin/leave-types') content = profile ? <Attendance key="leave-types" profile={profile} view="leave-types" /> : login;
+  else if (path === '/admin/attendance-policy') content = profile ? <Attendance key="policy" profile={profile} view="policy" /> : login;
+  else if (path === '/admin/units') content = profile ? <Units onSelected={result=>{setProfile(result);navigate('/app');}} /> : login;
   else if (path === '/app') content = profile ? (profileView?<AccountProfile profile={profile} />:<Dashboard profile={profile}/>) : <><Notice error>Phiên đăng nhập không còn hiệu lực.</Notice>{login}</>;
   else if (path === '/login' || path === '/') content = login;
   else content = <><h1>Không tìm thấy trang</h1><a href="/login">Về trang đăng nhập</a></>;

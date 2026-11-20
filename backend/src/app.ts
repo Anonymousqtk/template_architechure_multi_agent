@@ -13,6 +13,7 @@ import { registerSecurityRoutes } from './session-security.js';
 import { passkeysAvailable, registerPasskeyRoutes } from './passkeys.js';
 import { registerUserRoutes } from './users.js';
 import { registerOrgStructureRoutes } from './organization-structure.js';
+import { registerUnitRoutes } from './units.js';
 import { registerEmployeeRoutes } from './employees.js';
 import { registerAttendanceRoutes } from './attendance.js';
 import { serviceErrorCode } from './service-errors.js';
@@ -317,12 +318,13 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
     throttle:(req,keys,limit)=>throttle(req,keys,limit,'passkey')});
   registerUserRoutes(app, { pool, transaction, audit, requireIdentity });
   registerOrgStructureRoutes(app, { pool, transaction, audit, requireIdentity });
+  registerUnitRoutes(app, { pool, transaction, audit, requireIdentity, config });
   registerEmployeeRoutes(app, { pool, transaction, audit, requireIdentity });
   registerAttendanceRoutes(app, { pool, transaction, audit, requireIdentity });
   app.use('/api',(_req,res)=>res.status(404).json({code:'NOT_FOUND'}));
   app.use(async(error: unknown,_req: Authed,res: Response,_next: NextFunction)=>{
     void _next;
-    if(error instanceof HttpError && [403,404,409].includes(error.status) && _req.identity && _req.originalUrl.startsWith('/api/organizations/')) {
+    if(error instanceof HttpError && [403,404,409].includes(error.status) && _req.identity && (_req.originalUrl.startsWith('/api/organizations/') || _req.originalUrl.startsWith('/api/units'))) {
       try { await audit(pool,'ADMIN_ACTION_DENIED',_req.identity.userId,_req.identity.orgId,undefined,{outcome:'DENIED',code:error.code,method:_req.method}); } catch { /* Do not expose audit infrastructure or request secrets. */ }
     }
     if(error instanceof HttpError && (error.status===429 || (_req.path==='/api/auth/login'&&error.status===401) || (_req.path.startsWith('/api/auth/mfa/')&&error.status===401))) {

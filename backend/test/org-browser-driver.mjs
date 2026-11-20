@@ -7,6 +7,7 @@ import { join, resolve, dirname, basename } from 'node:path';
 let input='';
 for await(const chunk of process.stdin)input+=chunk;
 const fixture=JSON.parse(input);
+if(fixture.evidence)mkdirSync(fixture.evidence,{recursive:true});
 if(new URL(fixture.url).hostname!=='127.0.0.1')throw Error('Loopback test app required');
 const profile=mkdtempSync(join(tmpdir(),'managerhr-org-browser-'));
 const browser=spawn(fixture.browser,['--headless=new','--disable-gpu','--no-first-run','--disable-extensions',
@@ -42,6 +43,27 @@ try{
     await until(()=>evaluate("!!document.querySelector('input[name=email]')"),'login form');
     await evaluate(`document.querySelector('input[name=email]').value=${JSON.stringify(identity.email)};document.querySelector('input[name=password]').value=${JSON.stringify(fixture.password)};document.querySelector('form').requestSubmit();`);
     await until(()=>evaluate("location.pathname==='/app' && !document.querySelector('input[name=password]')"),'authenticated app');
+    if(identity.role==='ADMIN'){
+      for(const path of ['/admin/units','/admin/work-shifts','/admin/leave-types','/admin/attendance-policy']){
+        await send('Page.navigate',{url:fixture.url+path});
+        await until(()=>evaluate("!!document.querySelector('h1') && !document.body.innerText.includes('Đang tải')"),'catalog page '+path);
+        if(!await evaluate("document.querySelector('.dash-sidebar nav[aria-label=\"Danh mục\"] button').getAttribute('aria-expanded')==='true'"))throw Error('Catalog group not expanded');
+        if(!await evaluate(`!!document.querySelector('.dash-sidebar a[href="${path}"][aria-current="page"] svg')`))throw Error('Missing active catalog link/icon');
+        if(await evaluate('document.documentElement.scrollWidth>innerWidth+1'))throw Error('Desktop catalog overflow: '+path);
+        if(fixture.evidence&&path==='/admin/work-shifts'){
+          const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});writeFileSync(join(fixture.evidence,'catalog-desktop.png'),Buffer.from(shot.data,'base64'));
+        }
+        await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+        await delay(250);
+        if(await evaluate('document.documentElement.scrollWidth>innerWidth+1'))throw Error('Mobile catalog overflow: '+path);
+        if(await evaluate("Array.from(document.querySelectorAll('.dash-content button.primary,.dash-content button.secondary')).some(b=>b.getBoundingClientRect().height<43)"))throw Error('Mobile action too small');
+        if(fixture.evidence&&path==='/admin/attendance-policy'){
+          const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});writeFileSync(join(fixture.evidence,'catalog-mobile.png'),Buffer.from(shot.data,'base64'));
+        }
+        await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+      }
+      console.log('PASS catalog routes, active group/icons and desktop/mobile dimensions');
+    }
     await send('Page.navigate',{url:fixture.url+'/admin/org-chart'});
     await until(()=>evaluate("document.body.innerText.includes('Visible Department') && document.body.innerText.includes('Nested Team')"),'chart data');
     const body=await evaluate('document.body.innerText');

@@ -51,6 +51,61 @@ describe('ATT-001 attendance, scheduling and leave', () => {
    employee = created.body.id;
  });
 
+ it('supports office in/out without assigning a shift and preserves punches after policy changes', async () => {
+   const admin=await actor('admin'), worker=await actor('employee'), outsider=await actor('outsider');
+   const policy={mode:'OFFICE',timeZone:'UTC',startTime:'00:00',endTime:'23:59',weekdays:[0,1,2,3,4,5,6]};
+   const url=att()+'/departments/'+department+'/policy';
+   expect((await worker.call(url,'PUT',policy)).status).toBe(403);
+   expect((await admin.call(url,'PUT',{...policy,weekdays:[]})).status).toBe(400);
+   expect((await admin.call(url,'PUT',{...policy,timeZone:'Invalid/Zone'})).status).toBe(400);
+   expect((await admin.call(att()+'/departments/'+randomUUID()+'/policy','PUT',policy)).status).toBe(404);
+   expect((await admin.call(url,'PUT',policy)).status).toBe(204);
+   const currentDay=(await pool.query("SELECT (now() AT TIME ZONE 'UTC')::date::text AS day")).rows[0].day;
+   const ledgerUrl=att()+'/employees/'+employee+'/ledger?from='+currentDay+'&to='+currentDay;
+   const ledger=await worker.call(ledgerUrl);
+   expect(ledger.status,JSON.stringify(ledger.body)).toBe(200);
+   expect(ledger.body.schedule).toHaveLength(1);
+   expect(ledger.body.schedule[0]).toMatchObject({attendanceKind:'OFFICE',shiftId:null,virtual:true,status:'SCHEDULED'});
+   expect((await pool.query('SELECT count(*)::int AS n FROM work_schedule')).rows[0].n).toBe(0);
+   const punch=att()+'/employees/'+employee+'/office-punch';
+   expect((await outsider.call(punch,'POST',{action:'IN',workDate:currentDay})).status).toBe(404);
+   expect((await worker.call(punch,'POST',{action:'IN',workDate:currentDay,at:new Date().toISOString()})).status).toBe(400);
+   const concurrent=await Promise.all([worker.call(punch,'POST',{action:'IN',workDate:currentDay}),worker.call(punch,'POST',{action:'IN',workDate:currentDay})]);
+   expect(concurrent.map(r=>r.status).sort()).toEqual([200,409]);
+   const recorded=(await worker.call(ledgerUrl)).body.schedule[0];
+   expect(recorded).toMatchObject({attendanceKind:'OFFICE',virtual:false,status:'IN_PROGRESS',canCheckOut:true});
+   expect((await admin.call(url,'PUT',{...policy,mode:'SHIFT'})).status).toBe(204);
+   expect((await worker.call(att()+'/punches/'+recorded.id,'POST',{action:'OUT'})).status).toBe(200);
+   expect((await worker.call(ledgerUrl)).body.schedule[0]).toMatchObject({status:'COMPLETE',attendanceKind:'OFFICE'});
+ });
+
+ it('respects office weekdays, explicit days off, leave and office correction review', async () => {
+   const admin=await actor('admin'),worker=await actor('employee'),manager=await actor('manager');
+   const policy={mode:'OFFICE',timeZone:'UTC',startTime:'00:00',endTime:'23:59',weekdays:[0,1,2,3,4,5,6]};
+   const url=att()+'/departments/'+department+'/policy';
+   expect((await admin.call(url,'PUT',policy)).status).toBe(204);
+   const currentDay=(await pool.query("SELECT (now() AT TIME ZONE 'UTC')::date::text AS day")).rows[0].day;
+   await pool.query("UPDATE departments SET office_since='2020-01-01' WHERE id=$1",[department]);
+   const past=(await worker.call(att()+'/employees/'+employee+'/ledger?from=2020-01-13&to=2020-01-13')).body.schedule[0];
+   const correction=await worker.call(att()+'/corrections/'+past.id,'POST',{employeeId:employee,workDate:'2020-01-13',checkedInAt:'2020-01-13T08:00:00Z',checkedOutAt:'2020-01-13T17:00:00Z',reason});
+   expect(correction.status,JSON.stringify(correction.body)).toBe(201);
+   expect((await manager.call(att()+'/corrections/'+correction.body.id+'/review','POST',{action:'APPROVE',reason})).status).toBe(204);
+   const future='2099-01-12';
+   const shiftId=(await admin.call(att()+'/shifts/new','PUT',shift)).body.id;
+   expect((await admin.call(att()+'/employees/'+employee+'/schedule/new','PUT',{kind:'SHIFT',shiftId,workDate:future})).body.code).toBe('ATT_OFFICE_NO_SHIFT');
+   expect((await admin.call(att()+'/employees/'+employee+'/schedule/new','PUT',{kind:'OFF',workDate:future,timeZone:'UTC'})).status).toBe(201);
+   const off=(await worker.call(att()+'/employees/'+employee+'/ledger?from='+future+'&to='+future)).body.schedule;
+   expect(off).toHaveLength(1);expect(off[0].status).toBe('OFF');
+   const lt=(await admin.call(att()+'/leave-types/new','PUT',{name:'Office leave',tracksBalance:false,active:true})).body.id;
+   const leave=await worker.call(att()+'/employees/'+employee+'/leave','POST',{leaveTypeId:lt,startsAt:currentDay+'T00:00:00Z',endsAt:currentDay+'T23:59:00Z',reason});
+   expect(leave.status).toBe(201);
+   expect((await manager.call(att()+'/leave/'+leave.body.id+'/review','POST',{action:'APPROVE',reason})).status).toBe(204);
+   expect((await worker.call(att()+'/employees/'+employee+'/office-punch','POST',{action:'IN',workDate:currentDay})).body.code).toBe('ATT_LEAVE_CONFLICT');
+   // Change weekdays in SQL to isolate projection from policy-save historical snapshots.
+   await pool.query('UPDATE departments SET office_days=ARRAY[0] WHERE id=$1',[department]);
+   expect((await worker.call(att()+'/employees/'+employee+'/ledger?from=2099-01-13&to=2099-01-13')).body.schedule).toHaveLength(0);
+ });
+
  it('resolves overnight shifts, protects calendar intervals and handles daylight saving gaps and folds', async () => {
    const admin = await actor('admin');
    const shiftResponse = await admin.call(att() + '/shifts/new', 'PUT', shift);

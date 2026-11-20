@@ -109,3 +109,32 @@ with active children, memberships or positions cannot be disabled (409
 position requires a matching department on assignment; moves that would invalidate
 existing assignments return 409 `POSITION_IN_USE`. Strict body schemas reject
 mass assignment. Changes to reporting, position or department never change RBAC.
+
+## ATT-002 — department attendance
+
+Under `/api/organizations/:organizationId/attendance` (same-origin JSON/CSRF and existing session/MFA checks):
+
+- `GET /catalog` adds `departments` for Admin/HR: `{id,name,mode,timeZone,startTime,endTime,weekdays}`. Other roles receive an empty department list.
+- `PUT /departments/:id/policy`: Admin/HR with recent reauthentication only. Strict body `{mode:"SHIFT"|"OFFICE",timeZone,startTime:"HH:mm",endTime:"HH:mm",weekdays:number[]}`; weekdays use Sunday=0 through Saturday=6, unique and nonempty. Office hours must end later on the same day; timezone must exist in PostgreSQL. Returns 204; unknown/foreign/inactive department 404. Audit event `ATT_DEPARTMENT_POLICY_SAVED`.
+- `GET /employees` adds `attendanceMode`, default SHIFT for employees without a department. Mode is taken from the employee's own department, without inheritance.
+- `GET /employees/:employeeId/ledger` adds `attendanceKind` (SHIFT/OFFICE/OFF) and `virtual` to schedule rows. Office days are projected from the department's activation date, employee hire date, weekdays and timezone; existing overlapping schedules/days off take precedence. GET performs no writes.
+- `POST /employees/:employeeId/office-punch`: strict `{action:"IN",workDate:"YYYY-MM-DD"}`. Self only, active office employee, current day in department timezone. Creates the day's snapshot and records server time atomically. Early check-in opens 120 minutes before start, never on the previous local date; closes at end. Existing open work, duplicate punches and approved leave still block check-in. Clients use existing `POST /punches/:id` with `{action:"OUT"}` after check-in, including after a department/mode change.
+- Existing `POST /corrections/:scheduleId` accepts optional paired `{employeeId,workDate}` to snapshot a virtual office day before requesting a correction. Existing scope/self/admin checks, past-day restrictions, review rules and raw-punch preservation remain mandatory.
+
+New shift assignments to an office department return 409 `ATT_OFFICE_NO_SHIFT`; explicit days off remain supported. Existing schedules and recorded punches remain valid. Changing department policy snapshots elapsed office days (including today) under the organization mutation lock. Newly projected future days use the updated policy. Recorded minutes are elapsed in/out time; there is no automatic lunch deduction or overtime threshold for office days. No default departments are switched automatically.
+
+Migration `011_department_attendance.sql` is additive and defaults all departments to SHIFT. It takes schema locks with a 5-second lock timeout; existing null-shift schedules become OFF. For rollback, retain the new schema and roll back application code, or restore an approved backup; do not drop attendance history. Production application requires human review and CI.
+
+## ORG-003 — independent companies and system provisioning
+
+The operator explicitly selected separate system-administrator provisioning. Company ADMIN does not imply system authority. `system_administrators` records a separately designated existing verified identity; migration 012 grants nobody. The initial local designation was explicitly requested for `admin@managerhr.test`. No public registration, automatic bootstrap or runtime API for granting system-administrator rights exists.
+
+All `/api/units` operations require a valid active session; writes use the existing same-origin JSON/CSRF protections. System authority requires completed MFA in runtime mode. Sensitive writes also recheck current session, membership, user status and recent reauthentication in the transaction.
+
+- `GET /api/units` → `{items,canCreate,canArchive}`. Ordinary users see active organizations with active memberships. System administrators see organization metadata including archived organizations. Each item is `{id,name,code,description,isActive,role,current,canSelect,canEdit}`. Global metadata access does not grant tenant-data access.
+- `POST /api/units`: system administrators only; strict `{name,code:null|string,description:null|string,adminEmail}`. Code uses uppercase letters, numbers, underscore, dot or hyphen (1–30 characters), name 1–100, description at most 500. Initial Admin must be an active, verified existing user. Atomically creates an independent organization plus the nominated initial ADMIN membership; the creator receives no implicit membership. Returns 201 `{id}`. Audits `ORGANIZATION_PROVISIONED` with nominated user. This is the explicitly authorized organization-provisioning flow; ordinary memberships still use invitation acceptance.
+- `PATCH /api/units/:id`: system administrator or active ADMIN membership in that target organization; strict full metadata `{name,code,description,isActive?}`. Only system administrators may change activation state. Returns 204. Code collisions return 409 `DUPLICATE_CODE`; inaccessible targets 404 `UNIT_NOT_FOUND`. Audits `ORGANIZATION_UPDATED`.
+- `DELETE /api/units/:id`: system administrators only; `{}` body. Archives the organization and revokes its sessions while retaining history, employees, memberships and audit evidence. Returns 204; already archived/unknown target 404. Cannot archive the current organization (409 `UNIT_CURRENT`); first select another authorized active organization. Audits `ORGANIZATION_ARCHIVED`. Restore using PATCH with `isActive:true`.
+- `POST /api/units/:id/select`: `{}` body. Requires an active target membership even for system administrators. Revokes the previous session and issues a new random HttpOnly cookie with only the target role from the database. Preserves the previous absolute expiry and reauthentication/MFA state; entering a privileged membership without completed MFA creates a restricted session capped at five minutes. Returns 204; client fetches `/api/auth/me` and clears tenant-specific screens. Audits `ORGANIZATION_SELECTED`.
+
+Errors also include `UNIT_ADMIN_UNAVAILABLE`, `FORBIDDEN`, `MFA_REQUIRED`, `REAUTH_REQUIRED`, and existing authentication/input errors. Selecting a unit never changes membership or grants ADMIN. No operation attaches independent organizations in a hierarchy. Hard deletion and global access to employee/attendance records are not provided.

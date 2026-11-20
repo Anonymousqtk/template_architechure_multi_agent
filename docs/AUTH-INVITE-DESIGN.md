@@ -2,6 +2,8 @@
 
 Status: APPROVED DESIGN (implementation pending). Task: AUTH-001. Inherits Agent Governance V5.1.
 
+ORG-003 extension: the operator explicitly authorized a separate system-administrator organization-provisioning flow, with `admin@managerhr.test` designated for the initial local system role. Authenticated system administrators may create an independent organization and explicitly nominate an existing verified account as its first Admin. Company Admins cannot provision organizations or grant themselves system authority. This extends the approved organization-provisioning option below; public registration, automatic bootstrap and ordinary role self-assignment remain forbidden. See `contracts/api.md` ORG-003 for the session-switch and MFA contract. No production authorization or deployment is implied.
+
 ## Product rules
 - No public employee self-registration endpoint. `/register` is an invite-acceptance page requiring a valid token; it does not create an arbitrary company membership.
 - An authenticated, active HR/Admin may invite a user **only to their own organization** and only for permitted roles. Role HR cannot grant ADMIN unless explicitly allowed by a separately reviewed policy; default: only ADMIN may assign HR; nobody may assign ADMIN from the invitation UI.

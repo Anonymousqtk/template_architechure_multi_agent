@@ -3,13 +3,14 @@ import { errorText, request, type Profile } from './api';
 import { DashIcon } from './DashboardShell';
 import './attendance.css';
 
-type Employee = { id: string; name: string; code: string; self: boolean; status: string };
+type Employee = { attendanceMode?: 'SHIFT' | 'OFFICE'; id: string; name: string; code: string; self: boolean; status: string };
 type Shift = {
   id: string; name: string; timeZone: string; startTime: string; endTime: string; active: boolean;
   earlyCheckIn: number; lateGrace: number | null; earlyGrace: number | null; overtimeAfter: number | null;
 };
 type LeaveType = { id: string; name: string; active: boolean; tracksBalance: boolean };
 type Schedule = {
+  attendanceKind?: 'SHIFT' | 'OFFICE' | 'OFF'; virtual?: boolean;
   id: string; label: string; shiftId: string | null; workDate: string; timeZone: string;
   startsAt: string; endsAt: string; rawIn: string | null; rawOut: string | null;
   checkedInAt: string | null; checkedOutAt: string | null; status: string; adjusted: boolean;
@@ -27,10 +28,12 @@ type Leave = Review & {
 type Correction = Review & { workDate: string; proposedIn: string; proposedOut: string };
 type Balance = { leaveTypeId: string; name: string; allowanceMinutes: number; availableMinutes: number };
 type Ledger = { schedule: Schedule[]; leave: Leave[]; corrections: Correction[]; balances: Balance[] };
-type Catalog = { shifts: Shift[]; leaveTypes: LeaveType[] };
+type DepartmentPolicy = { id: string; name: string; mode: 'SHIFT' | 'OFFICE'; timeZone: string; startTime: string; endTime: string; weekdays: number[] };
+type Catalog = { shifts: Shift[]; leaveTypes: LeaveType[]; departments?: DepartmentPolicy[] };
 type Save = (path: string, body: unknown, method?: 'POST' | 'PUT' | 'DELETE') => Promise<unknown>;
 
 const statuses: Record<string, string> = {
+  OFFICE_SCHEDULED: 'Chưa chấm công',
   OFF: 'Ngày nghỉ', LEAVE: 'Nghỉ phép đã duyệt', COMPLETE: 'Đã ghi đủ giờ', MISSING: 'Thiếu dấu giờ',
   IN_PROGRESS: 'Đang làm việc', SCHEDULED: 'Đã phân ca', PENDING: 'Chờ duyệt', APPROVED: 'Đã duyệt',
   REJECTED: 'Đã từ chối', CANCELLED: 'Đã hủy',
@@ -141,17 +144,53 @@ function TimeRange() {
   </>;
 }
 
-function CatalogPanel({ catalog, save }: { catalog: Catalog; save: Save }) {
-  const [tab, setTab] = useState<'shifts' | 'leave-types'>('shifts');
+function DepartmentPolicies({ departments, save }: { departments: DepartmentPolicy[]; save: Save }) {
+  const [selected, setSelected] = useState('');
+  const department = departments.find(item => item.id === selected) ?? departments[0];
+  const [mode, setMode] = useState<'SHIFT' | 'OFFICE' | null>(null);
+  if (!department) return <p>Hãy tạo phòng ban trước khi thiết lập chế độ chấm công.</p>;
+  return <section aria-label="Chấm công theo phòng ban">
+    <label className="field">Phòng ban<select value={department.id} onChange={event => { setSelected(event.target.value); setMode(departments.find(d => d.id === event.target.value)!.mode); }}>
+      {departments.map(item => <option key={item.id} value={item.id}>{item.name} · {item.mode === 'OFFICE' ? 'Giờ hành chính' : 'Theo ca'}</option>)}
+    </select></label>
+    <ActionForm key={department.id + department.mode + department.startTime + department.endTime + department.weekdays.join(',')} title="Chế độ chấm công phòng ban" submitLabel="Lưu chế độ chấm công" reset={false}
+      save={data => save('/departments/' + department.id + '/policy', {
+        mode: str(data, 'mode'), timeZone: str(data, 'zone') || department.timeZone,
+        startTime: str(data, 'start') || department.startTime, endTime: str(data, 'end') || department.endTime,
+        weekdays: str(data, 'mode') === 'OFFICE' ? data.getAll('weekdays').map(Number) : department.weekdays,
+      }, 'PUT')}>
+      <label className="field">Hình thức chấm công<select name="mode" defaultValue={department.mode} onChange={event => setMode(event.target.value as 'SHIFT' | 'OFFICE')}>
+        <option value="SHIFT">Theo ca — phân ca cho từng nhân viên</option>
+        <option value="OFFICE">Giờ hành chính — vào buổi sáng, ra cuối ngày</option>
+      </select></label>
+      {(mode ?? department.mode) === 'OFFICE' && <>
+        <p>Nhân viên tự chấm công vào–ra theo ngày làm việc, không cần phân ca. Lịch đã gán riêng được ưu tiên.</p>
+        <div className="att-form-pair">
+          <label className="field">Giờ bắt đầu<input name="start" type="time" defaultValue={department.startTime} required /></label>
+          <label className="field">Giờ kết thúc<input name="end" type="time" defaultValue={department.endTime} required /></label>
+        </div>
+        <label className="field">Múi giờ<input name="zone" defaultValue={department.timeZone} required maxLength={80} /></label>
+        <fieldset><legend>Ngày làm việc trong tuần</legend>
+          {['Chủ nhật','Thứ hai','Thứ ba','Thứ tư','Thứ năm','Thứ sáu','Thứ bảy'].map((label, index) =>
+            <label key={index}><input type="checkbox" name="weekdays" value={index} defaultChecked={department.weekdays.includes(index)} />{label} </label>)}
+        </fieldset>
+        <p className="att-help">Thời gian ghi nhận là khoảng từ vào đến ra; chưa tự trừ nghỉ trưa. Dấu giờ đã ghi nhận được giữ nguyên khi đổi chế độ.</p>
+      </>}
+    </ActionForm>
+  </section>;
+}
+
+function CatalogPanel({ catalog, save, section }: { catalog: Catalog; save: Save; section?: 'shifts' | 'leave-types' }) {
+  const [tab, setTab] = useState<'shifts' | 'leave-types'>(section ?? 'shifts');
   const [id, setId] = useState('new');
   const shift = catalog.shifts.find(item => item.id === id);
   const type = catalog.leaveTypes.find(item => item.id === id);
   return <section className="att-catalog" aria-label="Danh mục ca và loại phép">
     <div className="att-catalog-picker">
-    <div className="att-switch" role="group" aria-label="Chọn danh mục">
+    {!section && <div className="att-switch" role="group" aria-label="Chọn danh mục">
       <button className="secondary" type="button" aria-pressed={tab === 'shifts'} onClick={() => { setTab('shifts'); setId('new'); }}>Ca làm việc</button>
       <button className="secondary" type="button" aria-pressed={tab === 'leave-types'} onClick={() => { setTab('leave-types'); setId('new'); }}>Loại phép</button>
-    </div>
+    </div>}
     <label className="field">{tab === 'shifts' ? 'Chọn ca' : 'Chọn loại phép'}
       <select value={id} onChange={event => setId(event.target.value)}>
         <option value="new">Tạo mới</option>
@@ -199,7 +238,7 @@ function CatalogPanel({ catalog, save }: { catalog: Catalog; save: Save }) {
 function ScheduleForm({ employee, shifts, row, save, close }: {
   employee: Employee; shifts: Shift[]; row: Schedule | null; save: Save; close: () => void;
 }) {
-  const [kind, setKind] = useState(row && !row.shiftId ? 'OFF' : 'SHIFT');
+  const [kind, setKind] = useState(employee.attendanceMode === 'OFFICE' || (row && !row.shiftId) ? 'OFF' : 'SHIFT');
   return <ActionForm title={row ? 'Sửa lịch làm việc' : 'Phân ca hoặc ngày nghỉ'} submitLabel="Lưu lịch" dismiss={close}
     save={data => {
       const workDate = str(data, 'date');
@@ -211,7 +250,7 @@ function ScheduleForm({ employee, shifts, row, save, close }: {
     }}>
     <label className="field">Ngày làm việc<input name="date" type="date" defaultValue={row?.workDate} required /></label>
     <label className="field">Loại lịch<select value={kind} onChange={event => setKind(event.target.value)}>
-      <option value="SHIFT">Ca làm việc</option><option value="OFF">Ngày nghỉ</option>
+      {employee.attendanceMode !== 'OFFICE' && <option value="SHIFT">Ca làm việc</option>}<option value="OFF">Ngày nghỉ</option>
     </select></label>
     {kind === 'SHIFT' ? <>
       <label className="field">Ca làm việc<select name="shift" required defaultValue={row?.shiftId ?? ''}>
@@ -227,7 +266,7 @@ function ScheduleForm({ employee, shifts, row, save, close }: {
   </ActionForm>;
 }
 
-function Punch({ row, save }: { row: Schedule; save: Save }) {
+function Punch({ row, employee, save }: { row: Schedule; employee: Employee; save: Save }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const action = row.canCheckOut ? 'OUT' : row.canCheckIn ? 'IN' : null;
@@ -235,7 +274,8 @@ function Punch({ row, save }: { row: Schedule; save: Save }) {
   async function punch() {
     setBusy(true);
     setError('');
-    try { await save('/punches/' + row.id, { action }); }
+    try { await save(row.virtual ? '/employees/' + employee.id + '/office-punch' : '/punches/' + row.id,
+      row.virtual ? { action, workDate: row.workDate } : { action }); }
     catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
@@ -265,7 +305,7 @@ function SchedulePanel({ employee, catalog, ledger, canManage, save }: {
   return <section className="att-section" aria-labelledby="att-schedule-heading">
     <div className="att-section-heading">
       <div><h2 id="att-schedule-heading">Bảng công</h2><p>{ledger.schedule.length} mục trong kỳ</p></div>
-      {canManage && employee.status !== 'TERMINATED' && <button type="button" className="primary" onClick={() => setEditor('new')}>+ Phân ca</button>}
+      {canManage && employee.status !== 'TERMINATED' && <button type="button" className="primary" onClick={() => setEditor('new')}>{employee.attendanceMode === 'OFFICE' ? '+ Đánh dấu ngày nghỉ' : '+ Phân ca'}</button>}
     </div>
     {editor && <ScheduleForm key={editor === 'new' ? 'new' : editor.id} employee={employee} shifts={catalog.shifts}
       row={editor === 'new' ? null : editor} save={save} close={() => setEditor(null)} />}
@@ -273,19 +313,20 @@ function SchedulePanel({ employee, catalog, ledger, canManage, save }: {
     {correction && <ActionForm key={correction.id} title={'Đề nghị điều chỉnh công ngày ' + correction.workDate} submitLabel="Gửi đề nghị"
       dismiss={() => setCorrection(null)} save={data => save('/corrections/' + correction.id, {
         checkedInAt: localInstant(str(data, 'start')), checkedOutAt: localInstant(str(data, 'end')), reason: str(data, 'reason'),
+        ...(correction.virtual && { employeeId: employee.id, workDate: correction.workDate }),
       })}><TimeRange /><Reason /></ActionForm>}
     <div className="table-wrap att-table">
       <table role="table" aria-labelledby="att-schedule-heading">
         <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Ngày / ca</th><th role="columnheader" scope="col">Giờ thực tế</th><th role="columnheader" scope="col">Trạng thái</th><th role="columnheader" scope="col">Thao tác</th></tr></thead>
         <tbody role="rowgroup">{ledger.schedule.map(row => <tr key={row.id} role="row">
           <td role="cell" className="att-leading-cell"><strong>{formatDay(row.workDate)}</strong>
-            <span>{row.shiftId ? row.label : 'Ngày nghỉ'}</span>
-            {row.shiftId && <small>{shiftMoment(row.startsAt, row)} – {shiftMoment(row.endsAt, row)} · {row.timeZone}</small>}
+            <span>{row.attendanceKind === 'OFFICE' || row.shiftId ? row.label : 'Ngày nghỉ'}</span>
+            {(row.attendanceKind === 'OFFICE' || row.shiftId) && <small>{shiftMoment(row.startsAt, row)} – {shiftMoment(row.endsAt, row)} · {row.timeZone}</small>}
           </td>
           <td role="cell" data-label="Giờ thực tế"><span className="att-times">{shiftMoment(row.checkedInAt, row)} → {shiftMoment(row.checkedOutAt, row)}</span>
             {row.adjusted && <details><summary>Đã điều chỉnh</summary>
               Giờ gốc: {formatDate(row.rawIn, row.timeZone)} → {formatDate(row.rawOut, row.timeZone)}</details>}</td>
-          <td role="cell" data-label="Trạng thái"><Status status={row.status} />
+          <td role="cell" data-label="Trạng thái"><Status status={row.attendanceKind === 'OFFICE' && row.status === 'SCHEDULED' ? 'OFFICE_SCHEDULED' : row.status} />
             <div className="att-flags">
             {row.late && <div>Đi muộn</div>}{row.leftEarly && <div>Về sớm</div>}
             {row.recordedMinutes !== null && <div>{duration(row.recordedMinutes)} ghi nhận</div>}
@@ -294,12 +335,12 @@ function SchedulePanel({ employee, catalog, ledger, canManage, save }: {
             </div>
           </td>
           <td role="cell" className="att-table-actions"><div className="org-action-cell">
-            {employee.self && <Punch row={row} save={save} />}
-            {canManage && employee.status !== 'TERMINATED' && Date.parse(row.startsAt) > Date.now() && !row.rawIn && <>
+            {employee.self && <Punch row={row} employee={employee} save={save} />}
+            {canManage && !row.virtual && row.attendanceKind !== 'OFFICE' && employee.status !== 'TERMINATED' && Date.parse(row.startsAt) > Date.now() && !row.rawIn && <>
               <button className="secondary" type="button" onClick={() => setEditor(row)}>Sửa lịch</button>
               <button className="secondary" type="button" disabled={Boolean(removing)} onClick={() => void remove(row)}>Xóa lịch</button>
             </>}
-            {(employee.self || canManage) && row.shiftId && Date.parse(row.endsAt) <= Date.now() &&
+            {(employee.self || canManage) && (row.shiftId || row.attendanceKind === 'OFFICE') && Date.parse(row.endsAt) <= Date.now() &&
               <button className="secondary" type="button" onClick={() => setCorrection(row)}>Đề nghị điều chỉnh</button>}
           </div></td>
         </tr>)}
@@ -399,10 +440,10 @@ function RequestsPanel({ employee, ledger, catalog, profile, canManage, save }: 
   </section>;
 }
 
-export function Attendance({ profile }: { profile: Profile }) {
+export function Attendance({ profile, view }: { profile: Profile; view?: 'shifts' | 'leave-types' | 'policy' }) {
   const endpoint = '/api/organizations/' + profile.organization.id + '/attendance';
   const canManage = ['ADMIN', 'HR'].includes(profile.organization.role);
-  const [tab, setTab] = useState<'schedule' | 'requests' | 'catalog'>('schedule');
+  const [tab, setTab] = useState<'schedule' | 'requests' | 'catalog' | 'departments'>(view === 'policy' ? 'departments' : view ? 'catalog' : 'schedule');
   const [revision, setRevision] = useState(0);
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState('');
@@ -412,9 +453,9 @@ export function Attendance({ profile }: { profile: Profile }) {
     return { from: localDate(new Date(current.getFullYear(), current.getMonth(), current.getDate() - 7)),
       to: localDate(new Date(current.getFullYear(), current.getMonth(), current.getDate() + 14)) };
   });
-  const people = useLoad<{ items: Employee[]; hasMore: boolean }>(endpoint + '/employees?' + new URLSearchParams({ q: search.q, page: String(search.page) }), 0);
+  const people = useLoad<{ items: Employee[]; hasMore: boolean }>(view ? null : endpoint + '/employees?' + new URLSearchParams({ q: search.q, page: String(search.page) }), revision);
   const employee = people.data?.items.find(item => item.id === selected) ?? people.data?.items[0];
-  const catalog = useLoad<Catalog>(endpoint + '/catalog', revision);
+  const catalog = useLoad<Catalog>(view && !canManage ? null : endpoint + '/catalog', revision);
   const ledger = useLoad<Ledger>(employee ? endpoint + '/employees/' + employee.id + '/ledger?' + new URLSearchParams({ ...range, timeZone: browserZone }) : null, revision);
 
   const save: Save = async (path, body, method) => {
@@ -425,20 +466,22 @@ export function Attendance({ profile }: { profile: Profile }) {
     return result;
   };
 
+  if (view && !canManage) return <p role="alert" className="notice error">Bạn không có quyền quản lý danh mục chấm công.</p>;
+  const title = view === 'shifts' ? 'Ca làm việc' : view === 'leave-types' ? 'Loại nghỉ phép' : view === 'policy' ? 'Chế độ chấm công' : 'Chấm công và nghỉ phép';
   return <div className="att-page">
     <header className="att-header">
-      <span className="att-header-icon"><DashIcon name="clock" /></span>
-      <div><h1>Chấm công và nghỉ phép</h1><p>{profile.organization.name}</p></div>
+      <span className="att-header-icon"><DashIcon name={view === 'policy' ? 'settings' : view === 'leave-types' ? 'leave' : 'clock'} /></span>
+      <div><h1>{title}</h1><p>{profile.organization.name}</p></div>
     </header>
-    <nav className="att-tabs" aria-label="Chức năng chấm công">
+    {!view && <nav className="att-tabs" aria-label="Chức năng chấm công">
       <button type="button" aria-pressed={tab === 'schedule'} onClick={() => setTab('schedule')}>Lịch và bảng công</button>
       <button type="button" aria-pressed={tab === 'requests'} onClick={() => setTab('requests')}>Đơn và số dư phép</button>
-      {canManage && <button type="button" aria-pressed={tab === 'catalog'} onClick={() => setTab('catalog')}>Ca và loại phép</button>}
-    </nav>
+    </nav>}
     {message && <p role="status" className="notice success">{message}</p>}
+    {view && catalog.loading && <p role="status">Đang tải danh mục…</p>}
     {(catalog.error || (tab !== 'catalog' && (people.error || ledger.error))) &&
       <p role="alert" className="notice error">{catalog.error || people.error || ledger.error}</p>}
-    {tab === 'catalog' ? (catalog.data && <CatalogPanel catalog={catalog.data} save={save} />) : <>
+    {tab === 'departments' ? (catalog.data && <DepartmentPolicies departments={catalog.data.departments ?? []} save={save} />) : tab === 'catalog' ? (catalog.data && <CatalogPanel catalog={catalog.data} save={save} section={view === 'shifts' || view === 'leave-types' ? view : undefined} />) : <>
       <section className="att-context" aria-label="Nhân viên và khoảng ngày">
       {profile.organization.role !== 'EMPLOYEE' && <div className="att-person-controls">
         {employee && <label className="field">Nhân viên<select value={employee.id} onChange={event => setSelected(event.target.value)}>

@@ -33,19 +33,38 @@ const scheduleInput = z.discriminatedUnion('kind', [
 ]);
 const reviewInput = z.object({ action: z.enum(['APPROVE', 'REJECT']), reason }).strict();
 type Employee = {
-  id: string; user_id: string | null; full_name: string; employee_code: string;
+  id: string; attendance_mode: 'SHIFT' | 'OFFICE'; user_id: string | null; full_name: string; employee_code: string;
   employment_status: string; department_id: string | null; manager_user_id: string | null; role: string | null;
 };
 type Schedule = {
-  id: string; employee_id: string; shift_id: string | null; starts_at: Date; ends_at: Date;
+  id: string; employee_id: string; shift_id: string | null; attendance_kind: string; starts_at: Date; ends_at: Date;
   early_check_in: number; checked_in_at: Date | null; checked_out_at: Date | null; adjusted: boolean;
 };
 type Db = Pool | PoolClient;
-const employeeColumns = "e.id,e.user_id,e.full_name,e.employee_code,e.employment_status,e.department_id,e.manager_user_id,m.role";
+const employeeColumns = "e.id,e.user_id,e.full_name,e.employee_code,e.employment_status,e.department_id,e.manager_user_id,m.role,COALESCE((SELECT d.attendance_mode FROM departments d WHERE d.id=e.department_id AND d.organization_id=e.organization_id),'SHIFT') AS attendance_mode";
 const employeeJoin = "employees e LEFT JOIN memberships m ON m.organization_id=e.organization_id AND m.user_id=e.user_id";
 const shiftColumns = 'id,name,time_zone AS "timeZone",to_char(start_time,\'HH24:MI\') AS "startTime",to_char(end_time,\'HH24:MI\') AS "endTime",active,early_check_in AS "earlyCheckIn",late_grace AS "lateGrace",early_grace AS "earlyGrace",overtime_after AS "overtimeAfter"';
 const typeColumns = 'id,name,tracks_balance AS "tracksBalance",active';
 const usedBalance = "COALESCE((SELECT sum(r.charge_minutes) FROM leave_requests r WHERE r.organization_id=b.organization_id AND r.employee_id=b.employee_id AND r.leave_type_id=b.leave_type_id AND r.status='APPROVED'),0)";
+
+const departmentColumns = `id,name,attendance_mode AS mode,office_time_zone AS "timeZone",
+  to_char(office_start,'HH24:MI') AS "startTime",to_char(office_end,'HH24:MI') AS "endTime",office_days AS weekdays`;
+// Project office days without writes on GET. A real snapshot is inserted on the first punch.
+const officeDaysSql = `SELECT overlay(overlay(md5(e.id::text||':'||to_char(d.work_date,'YYYY-MM-DD')||':office') placing '3' from 13 for 1) placing '8' from 17 for 1)::uuid AS id,
+  e.organization_id,e.id AS employee_id,NULL::uuid AS shift_id,'Giờ hành chính'::text AS label,
+  d.work_date::date AS work_date,p.office_time_zone AS time_zone,
+  (d.work_date::date+p.office_start) AT TIME ZONE p.office_time_zone AS starts_at,
+  (d.work_date::date+p.office_end) AT TIME ZONE p.office_time_zone AS ends_at,
+  120 AS early_check_in,0 AS late_grace,0 AS early_grace,NULL::integer AS overtime_after,'OFFICE'::text AS attendance_kind
+  FROM employees e JOIN departments p ON p.id=e.department_id AND p.organization_id=e.organization_id
+  CROSS JOIN LATERAL generate_series($3::date::timestamp,$4::date::timestamp,interval '1 day') d(work_date)
+  WHERE e.organization_id=$1 AND e.id=$2 AND p.attendance_mode='OFFICE' AND p.is_active AND e.employment_status='ACTIVE'
+    AND d.work_date::date>=greatest(e.hire_date,p.office_since) AND extract(dow FROM d.work_date)::int=ANY(p.office_days)
+    AND (((d.work_date::date+p.office_start) AT TIME ZONE p.office_time_zone) AT TIME ZONE p.office_time_zone)::time=p.office_start
+    AND (((d.work_date::date+p.office_end) AT TIME ZONE p.office_time_zone) AT TIME ZONE p.office_time_zone)::time=p.office_end
+    AND NOT EXISTS(SELECT 1 FROM work_schedule s WHERE s.organization_id=e.organization_id AND s.employee_id=e.id
+      AND (s.work_date=d.work_date::date OR (s.starts_at<((d.work_date::date+p.office_end) AT TIME ZONE p.office_time_zone)
+      AND s.ends_at>((d.work_date::date+p.office_start) AT TIME ZONE p.office_time_zone))))`;
 
 async function employeeScope(db: Db, identity: Identity) {
   const params: unknown[] = [identity.orgId, identity.userId];
@@ -157,18 +176,46 @@ export function registerAttendanceRoutes(app: Express, { pool, transaction, audi
       ` AND (e.full_name ILIKE $` + q + ` ESCAPE '\\' OR e.employee_code ILIKE $` + q + ` ESCAPE '\\') ORDER BY self DESC,e.employee_code,e.id LIMIT 51 OFFSET $` + (q + 1),
     [...scope.params, '%' + escapeLike(query.q) + '%', (query.page - 1) * 50]);
     res.json({ items: result.rows.slice(0, 50).map(e => ({
-      id: e.id, name: e.full_name, code: e.employee_code, self: e.self, status: e.employment_status,
+      id: e.id, name: e.full_name, code: e.employee_code, self: e.self, status: e.employment_status, attendanceMode: e.attendance_mode,
     })), hasMore: result.rows.length > 50 });
   });
 
   app.get(prefix + '/catalog', async (req: Authed, res) => {
     const identity = actor(req);
     const admin = admins.some(role => role === identity.role);
-    const [shifts, leaveTypes] = await Promise.all([
+    const [shifts, leaveTypes, departments] = await Promise.all([
       admin ? pool.query('SELECT ' + shiftColumns + ' FROM work_shifts WHERE organization_id=$1 ORDER BY name,id', [identity.orgId]) : { rows: [] },
       pool.query('SELECT ' + typeColumns + ' FROM leave_types WHERE organization_id=$1 AND ($2 OR active) ORDER BY name,id', [identity.orgId, admin]),
+      admin ? pool.query('SELECT ' + departmentColumns + ' FROM departments WHERE organization_id=$1 AND is_active ORDER BY name,id', [identity.orgId]) : { rows: [] },
     ]);
-    res.json({ shifts: shifts.rows, leaveTypes: leaveTypes.rows });
+    res.json({ shifts: shifts.rows, leaveTypes: leaveTypes.rows, departments: departments.rows });
+  });
+
+  app.put(prefix + '/departments/:id/policy', async (req: Authed, res) => {
+    const identity = actor(req), id = uuid.parse(req.params.id);
+    const input = z.object({ mode: z.enum(['SHIFT','OFFICE']), timeZone: z.string().trim().min(1).max(80),
+      startTime: clockTime, endTime: clockTime, weekdays: z.array(z.number().int().min(0).max(6)).min(1).max(7)
+    }).strict().parse(req.body);
+    if (input.endTime <= input.startTime || new Set(input.weekdays).size !== input.weekdays.length) fail(400, 'ATT_INVALID_RANGE');
+    await mutate(identity, admins, async db => {
+      await assertZone(db, input.timeZone);
+      // Freeze elapsed office days before a policy change so historical absences/hours do not drift.
+      const affected = await db.query(`SELECT e.id,p.office_since::text AS since,
+        (clock_timestamp() AT TIME ZONE p.office_time_zone)::date::text AS today
+        FROM departments p JOIN employees e ON e.department_id=p.id AND e.organization_id=p.organization_id
+        WHERE p.organization_id=$1 AND p.id=$2 AND p.attendance_mode='OFFICE'`, [identity.orgId,id]);
+      for (const employee of affected.rows) {
+        await db.query('INSERT INTO work_schedule ' + officeDaysSql,
+          [identity.orgId,employee.id,employee.since,employee.today]);
+      }
+      const updated = await db.query(`UPDATE departments SET office_since=CASE WHEN attendance_mode='SHIFT' AND $3='OFFICE'
+          THEN (clock_timestamp() AT TIME ZONE $4)::date ELSE office_since END,attendance_mode=$3,office_time_zone=$4,office_start=$5,
+        office_end=$6,office_days=$7,updated_at=now() WHERE organization_id=$1 AND id=$2 AND is_active`,
+      [identity.orgId,id,input.mode,input.timeZone,input.startTime,input.endTime,input.weekdays]);
+      if (!updated.rowCount) fail(404, 'ATT_DEPARTMENT_NOT_FOUND');
+      await audit(db, 'ATT_DEPARTMENT_POLICY_SAVED', identity.userId, identity.orgId, undefined, { departmentId: id, mode: input.mode });
+    });
+    res.status(204).end();
   });
 
   app.put(prefix + '/shifts/:id', async (req: Authed, res) => {
@@ -218,6 +265,9 @@ export function registerAttendanceRoutes(app: Express, { pool, transaction, audi
     await mutate(identity, admins, async (db, current) => {
       const employee = await getEmployee(db, current, employeeId);
       if (employee.employment_status === 'TERMINATED') fail(409, 'ATT_EMPLOYEE_INACTIVE');
+      if (data.kind === 'SHIFT' && employee.department_id && (await db.query(
+        "SELECT 1 FROM departments WHERE id=$1 AND organization_id=$2 AND attendance_mode='OFFICE'",
+        [employee.department_id, current.orgId])).rowCount) fail(409, 'ATT_OFFICE_NO_SHIFT');
       if (param !== 'new') {
         const original = await getSchedule(db, current.orgId, id);
         if (original.employee_id !== employee.id) fail(404, 'ATT_SCHEDULE_NOT_FOUND');
@@ -235,14 +285,14 @@ export function registerAttendanceRoutes(app: Express, { pool, transaction, audi
         starts_at<$5 AND ends_at>$4 LIMIT 1`,
       [identity.orgId, employee.id, id, window.startsAt, window.endsAt])).rowCount) fail(409, 'ATT_SCHEDULE_CONFLICT');
       await db.query(`INSERT INTO work_schedule
-        (organization_id,employee_id,id,shift_id,label,work_date,time_zone,starts_at,ends_at,early_check_in,late_grace,early_grace,overtime_after)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        ON CONFLICT(id) DO UPDATE SET shift_id=EXCLUDED.shift_id,label=EXCLUDED.label,work_date=EXCLUDED.work_date,
+        (organization_id,employee_id,id,shift_id,label,work_date,time_zone,starts_at,ends_at,early_check_in,late_grace,early_grace,overtime_after,attendance_kind)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        ON CONFLICT(id) DO UPDATE SET attendance_kind=EXCLUDED.attendance_kind,shift_id=EXCLUDED.shift_id,label=EXCLUDED.label,work_date=EXCLUDED.work_date,
           time_zone=EXCLUDED.time_zone,starts_at=EXCLUDED.starts_at,ends_at=EXCLUDED.ends_at,early_check_in=EXCLUDED.early_check_in,
           late_grace=EXCLUDED.late_grace,early_grace=EXCLUDED.early_grace,overtime_after=EXCLUDED.overtime_after
         WHERE work_schedule.organization_id=EXCLUDED.organization_id AND work_schedule.employee_id=EXCLUDED.employee_id`,
       [identity.orgId, employee.id, id, shift?.id ?? null, shift?.name ?? 'OFF', data.workDate, zone, window.startsAt, window.endsAt,
-        shift?.earlyCheckIn ?? 0, shift?.lateGrace ?? null, shift?.earlyGrace ?? null, shift?.overtimeAfter ?? null]);
+        shift?.earlyCheckIn ?? 0, shift?.lateGrace ?? null, shift?.earlyGrace ?? null, shift?.overtimeAfter ?? null, data.kind]);
       await audit(db, 'ATT_SCHEDULE_SAVED', identity.userId, identity.orgId, employee.user_id ?? undefined, { scheduleId: id, employeeId });
     });
     res.status(param === 'new' ? 201 : 200).json({ id });
@@ -261,31 +311,50 @@ export function registerAttendanceRoutes(app: Express, { pool, transaction, audi
     res.status(204).end();
   });
 
-  app.post(prefix + '/punches/:id', async (req: Authed, res) => {
-    const identity = actor(req), id = uuid.parse(req.params.id);
-    const { action } = z.object({ action: z.enum(['IN','OUT']) }).strict().parse(req.body);
-    const date = await mutate(identity, roles, async (db, current) => {
+  async function punch(db: PoolClient, current: Identity, id: string, action: 'IN' | 'OUT') {
       const row = await getSchedule(db, current.orgId, id);
       const employee = await getEmployee(db, current, row.employee_id);
       own(current, employee);
-      if (!row.shift_id || row.adjusted || (action === 'IN' && employee.employment_status !== 'ACTIVE')) fail(409, 'ATT_PUNCH_UNAVAILABLE');
+      if (row.attendance_kind === 'OFF' || row.adjusted || (action === 'IN' && employee.employment_status !== 'ACTIVE')) fail(409, 'ATT_PUNCH_UNAVAILABLE');
       const clock = await now(db);
       if (action === 'IN') {
         if (row.checked_in_at) fail(409, 'ATT_DUPLICATE_PUNCH');
         if (clock.getTime() < row.starts_at.getTime() - row.early_check_in * 60000 || clock >= row.ends_at) fail(409, 'ATT_PUNCH_WINDOW');
         const open = await db.query(`SELECT 1 FROM attendance_punches p JOIN work_schedule s ON s.id=p.schedule_id
           WHERE s.organization_id=$1 AND s.employee_id=$2 AND p.checked_out_at IS NULL AND NOT EXISTS
-            (SELECT 1 FROM attendance_adjustments a WHERE a.schedule_id=s.id AND a.status='APPROVED') LIMIT 1`, [identity.orgId, employee.id]);
+            (SELECT 1 FROM attendance_adjustments a WHERE a.schedule_id=s.id AND a.status='APPROVED') LIMIT 1`, [current.orgId, employee.id]);
         if (open.rowCount) fail(409, 'ATT_OPEN_PUNCH');
-        await assertNoLeave(db, identity.orgId, employee.id, clock);
-        await db.query('INSERT INTO attendance_punches(organization_id,schedule_id,checked_in_at) VALUES($1,$2,$3)', [identity.orgId, id, clock]);
+        await assertNoLeave(db, current.orgId, employee.id, clock);
+        await db.query('INSERT INTO attendance_punches(organization_id,schedule_id,checked_in_at) VALUES($1,$2,$3)', [current.orgId, id, clock]);
       } else {
         if (!row.checked_in_at || row.checked_out_at) return fail(409, 'ATT_DUPLICATE_PUNCH');
         await db.query('UPDATE attendance_punches SET checked_out_at=$3 WHERE organization_id=$1 AND schedule_id=$2 AND checked_out_at IS NULL',
-          [identity.orgId, id, clock]);
+          [current.orgId, id, clock]);
       }
-      await audit(db, action === 'IN' ? 'ATT_CHECK_IN' : 'ATT_CHECK_OUT', identity.userId, identity.orgId, identity.userId, { scheduleId: id });
+      await audit(db, action === 'IN' ? 'ATT_CHECK_IN' : 'ATT_CHECK_OUT', current.userId, current.orgId, current.userId, { scheduleId: id });
       return clock;
+  }
+  app.post(prefix + '/punches/:id', async (req: Authed, res) => {
+    const identity = actor(req), id = uuid.parse(req.params.id);
+    const { action } = z.object({ action: z.enum(['IN','OUT']) }).strict().parse(req.body);
+    const date = await mutate(identity, roles, (db, current) => punch(db, current, id, action));
+    res.json({ at: date });
+  });
+  app.post(prefix + '/employees/:employeeId/office-punch', async (req: Authed, res) => {
+    const identity = actor(req), employeeId = uuid.parse(req.params.employeeId);
+    const input = z.object({ action: z.literal('IN'), workDate: day }).strict().parse(req.body);
+    const date = await mutate(identity, roles, async (db, current) => {
+      const employee = await getEmployee(db, current, employeeId);
+      own(current, employee);
+      const projected = (await db.query(officeDaysSql, [current.orgId, employee.id, input.workDate, input.workDate])).rows[0];
+      if (!projected) fail(409, 'ATT_PUNCH_UNAVAILABLE');
+      const today = (await db.query("SELECT (clock_timestamp() AT TIME ZONE $1)::date::text AS day", [projected.time_zone])).rows[0].day;
+      if (today !== input.workDate) fail(409, 'ATT_PUNCH_WINDOW');
+      await db.query(`INSERT INTO work_schedule
+        (id,organization_id,employee_id,shift_id,label,work_date,time_zone,starts_at,ends_at,early_check_in,late_grace,early_grace,overtime_after,attendance_kind)
+        VALUES($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,0,0,NULL,'OFFICE')`,
+      [projected.id,current.orgId,employee.id,projected.label,input.workDate,projected.time_zone,projected.starts_at,projected.ends_at,projected.early_check_in]);
+      return punch(db, current, projected.id, 'IN');
     });
     res.json({ at: date });
   });
@@ -299,33 +368,35 @@ export function registerAttendanceRoutes(app: Express, { pool, transaction, audi
     await assertZone(pool, range.timeZone);
     const params = [identity.orgId, employee.id, range.from, range.to];
     const [schedule, leave, balances, corrections] = await Promise.all([
-      pool.query(`WITH records AS (
+      pool.query(`WITH all_schedule AS (SELECT * FROM work_schedule WHERE organization_id=$1 AND employee_id=$2
+        UNION ALL ${officeDaysSql}), records AS (
         SELECT s.*,p.checked_in_at AS raw_in,p.checked_out_at AS raw_out,
           COALESCE(a.proposed_in,p.checked_in_at) AS effective_in,COALESCE(a.proposed_out,p.checked_out_at) AS effective_out,
           a.id IS NOT NULL AS adjusted,
           COALESCE((SELECT range_agg(tstzrange(l.starts_at,l.ends_at,'[)')) @> tstzrange(s.starts_at,s.ends_at,'[)')
             FROM leave_requests l WHERE l.organization_id=s.organization_id AND l.employee_id=s.employee_id
               AND l.status='APPROVED' AND l.starts_at<s.ends_at AND l.ends_at>s.starts_at),false) AS covered
-        FROM work_schedule s LEFT JOIN attendance_punches p ON p.schedule_id=s.id
+        FROM all_schedule s LEFT JOIN attendance_punches p ON p.schedule_id=s.id
         LEFT JOIN LATERAL (SELECT id,proposed_in,proposed_out FROM attendance_adjustments a
           WHERE a.schedule_id=s.id AND a.status='APPROVED' ORDER BY reviewed_at DESC,id DESC LIMIT 1) a ON true
         WHERE s.organization_id=$1 AND s.employee_id=$2 AND s.work_date BETWEEN $3 AND $4
       )
-      SELECT id,label,work_date::text AS "workDate",time_zone AS "timeZone",shift_id AS "shiftId",starts_at AS "startsAt",ends_at AS "endsAt",
+      SELECT id,label,attendance_kind AS "attendanceKind",NOT EXISTS(SELECT 1 FROM work_schedule persisted WHERE persisted.id=records.id) AS virtual,work_date::text AS "workDate",time_zone AS "timeZone",shift_id AS "shiftId",starts_at AS "startsAt",ends_at AS "endsAt",
         raw_in AS "rawIn",raw_out AS "rawOut",effective_in AS "checkedInAt",effective_out AS "checkedOutAt",adjusted,
-        CASE WHEN shift_id IS NULL THEN 'OFF' WHEN covered THEN 'LEAVE' WHEN effective_out IS NOT NULL THEN 'COMPLETE'
+        CASE WHEN attendance_kind='OFF' THEN 'OFF' WHEN covered THEN 'LEAVE' WHEN effective_out IS NOT NULL THEN 'COMPLETE'
           WHEN now()>=ends_at THEN 'MISSING' WHEN effective_in IS NOT NULL THEN 'IN_PROGRESS' ELSE 'SCHEDULED' END AS status,
-        CASE WHEN shift_id IS NOT NULL AND NOT covered AND effective_in IS NOT NULL AND late_grace IS NOT NULL
+        CASE WHEN attendance_kind<>'OFF' AND NOT covered AND effective_in IS NOT NULL AND late_grace IS NOT NULL
           THEN effective_in>starts_at+late_grace*interval '1 minute' END AS late,
-        CASE WHEN shift_id IS NOT NULL AND NOT covered AND effective_out IS NOT NULL AND early_grace IS NOT NULL
+        CASE WHEN attendance_kind<>'OFF' AND NOT covered AND effective_out IS NOT NULL AND early_grace IS NOT NULL
           THEN effective_out<ends_at-early_grace*interval '1 minute' END AS "leftEarly",
         CASE WHEN effective_out IS NOT NULL AND overtime_after IS NOT NULL
           THEN greatest(0,trunc(extract(epoch FROM (effective_out-greatest(ends_at+overtime_after*interval '1 minute',effective_in)))/60))::int END AS "overtimeMinutes",
         CASE WHEN effective_out IS NOT NULL THEN trunc(extract(epoch FROM (effective_out-effective_in))/60)::int END AS "recordedMinutes",
         EXISTS(SELECT 1 FROM leave_requests l WHERE l.organization_id=records.organization_id AND l.employee_id=records.employee_id
           AND l.status='APPROVED' AND l.starts_at<COALESCE(effective_out,now()) AND l.ends_at>effective_in) AS "leaveConflict",
-        (shift_id IS NOT NULL AND NOT covered AND effective_in IS NULL AND now()>=starts_at-early_check_in*interval '1 minute' AND now()<ends_at) AS "canCheckIn",
-        (shift_id IS NOT NULL AND NOT adjusted AND raw_in IS NOT NULL AND raw_out IS NULL) AS "canCheckOut"
+        (attendance_kind<>'OFF' AND NOT adjusted AND NOT covered AND effective_in IS NULL AND now()>=starts_at-early_check_in*interval '1 minute' AND now()<ends_at
+          AND (attendance_kind<>'OFFICE' OR work_date=(now() AT TIME ZONE time_zone)::date)) AS "canCheckIn",
+        (attendance_kind<>'OFF' AND NOT adjusted AND raw_in IS NOT NULL AND raw_out IS NULL) AS "canCheckOut"
       FROM records ORDER BY work_date,starts_at,id`, params),
       pool.query(`SELECT r.id,t.name,r.starts_at AS "startsAt",r.ends_at AS "endsAt",r.status,r.reason,
         r.charge_minutes AS "chargeMinutes",r.created_by AS "createdBy",r.created_at AS "createdAt",r.reviewed_at AS "reviewedAt",
@@ -349,14 +420,25 @@ export function registerAttendanceRoutes(app: Express, { pool, transaction, audi
 
   app.post(prefix + '/corrections/:scheduleId', async (req: Authed, res) => {
     const identity = actor(req), scheduleId = uuid.parse(req.params.scheduleId), id = randomUUID();
-    const input = z.object({ checkedInAt: instant, checkedOutAt: instant, reason }).strict().parse(req.body);
+    const input = z.object({ checkedInAt: instant, checkedOutAt: instant, reason, employeeId: uuid.optional(), workDate: day.optional() }).strict().parse(req.body);
     validateRange(input.checkedInAt, input.checkedOutAt);
     await mutate(identity, roles, async (db, current) => {
+      if (input.employeeId || input.workDate) {
+        if (!input.employeeId || !input.workDate) fail(400, 'ATT_INVALID_RANGE');
+        const employee = await getEmployee(db, current, uuid.parse(input.employeeId));
+        if (employee.user_id !== current.userId) await authorizeMutation(db, current, [current.userId], admins);
+        const projected = (await db.query(officeDaysSql, [current.orgId, employee.id, input.workDate, input.workDate])).rows[0];
+        if (!projected || projected.id !== scheduleId) fail(404, 'ATT_SCHEDULE_NOT_FOUND');
+        await db.query(`INSERT INTO work_schedule
+          (id,organization_id,employee_id,shift_id,label,work_date,time_zone,starts_at,ends_at,early_check_in,late_grace,early_grace,overtime_after,attendance_kind)
+          VALUES($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,0,0,NULL,'OFFICE')`,
+        [projected.id,current.orgId,employee.id,projected.label,input.workDate,projected.time_zone,projected.starts_at,projected.ends_at,projected.early_check_in]);
+      }
       const row = await getSchedule(db, current.orgId, scheduleId);
       const employee = await getEmployee(db, current, row.employee_id);
       if (employee.user_id !== current.userId) await authorizeMutation(db, current, [current.userId], admins);
       const clock = await now(db);
-      if (!row.shift_id || row.ends_at > clock || Date.parse(input.checkedOutAt) > clock.getTime() ||
+      if (row.attendance_kind === 'OFF' || row.ends_at > clock || Date.parse(input.checkedOutAt) > clock.getTime() ||
           Date.parse(input.checkedOutAt) <= row.starts_at.getTime() || Date.parse(input.checkedInAt) >= row.ends_at.getTime()) {
         fail(400, 'ATT_INVALID_RANGE');
       }
