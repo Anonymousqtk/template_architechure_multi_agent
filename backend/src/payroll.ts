@@ -325,6 +325,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
         }
 
         const profileId = randomUUID();
+        await db.query("SELECT set_config('app.current_user_id', $1, true)", [identity.userId]);
         // Insert new profile version
         await db.query(
           `INSERT INTO employee_salary_profiles(

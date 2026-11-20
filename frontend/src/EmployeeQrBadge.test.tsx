@@ -21,6 +21,7 @@ describe('EmployeeQrBadge component', () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   const dummyEmployee = {
@@ -30,66 +31,38 @@ describe('EmployeeQrBadge component', () => {
     departmentName: 'Phòng Kỹ thuật',
     positionTitle: 'Kỹ sư phần mềm',
   };
+  const orgId = '22345678-1234-1234-1234-123456789abc';
+  const cardUrl = `${window.location.origin}/employee-card#org=${orgId}&code=EMP-001`;
 
   it('renders trigger button with accessible label', () => {
-    render(
-      <EmployeeQrBadge
-        employee={dummyEmployee}
-        orgId="org-123"
-        orgName="Công ty Cổ phần ManagerHR"
-      />
-    );
-
-    const trigger = screen.getByRole('button', { name: /Xem mã QR thẻ nhân viên của Nguyễn Văn A/i });
-    expect(trigger).toBeInTheDocument();
+    render(<EmployeeQrBadge employee={dummyEmployee} orgId={orgId} orgName="Công ty Cổ phần ManagerHR" />);
+    expect(screen.getByRole('button', { name: /Xem mã QR thẻ nhân viên của Nguyễn Văn A/i })).toBeInTheDocument();
   });
 
-  it('opens dialog with QR code and card information when clicked', () => {
-    render(
-      <EmployeeQrBadge
-        employee={dummyEmployee}
-        orgId="org-123"
-        orgName="Công ty Cổ phần ManagerHR"
-      />
-    );
-
-    const trigger = screen.getByRole('button', { name: /Xem mã QR thẻ nhân viên của Nguyễn Văn A/i });
-    fireEvent.click(trigger);
+  it('opens the modal with a QR and displays the local-only URL', () => {
+    render(<EmployeeQrBadge employee={dummyEmployee} orgId={orgId} orgName="Công ty Cổ phần ManagerHR" />);
+    fireEvent.click(screen.getByRole('button', { name: /Xem mã QR thẻ nhân viên của Nguyễn Văn A/i }));
 
     const dialog = screen.getByRole('dialog', { name: /Mã QR thẻ nhân viên của Nguyễn Văn A/i });
     expect(dialog).toBeInTheDocument();
     expect(screen.getByText('Công ty Cổ phần ManagerHR')).toBeInTheDocument();
-    expect(screen.getByText('Nguyễn Văn A')).toBeInTheDocument();
-    expect(screen.getByText('EMP-001')).toBeInTheDocument();
     expect(screen.getByText('Kỹ sư phần mềm')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Mã QR truy cập hồ sơ/i })).toBeInTheDocument();
+    expect(screen.getByText(cardUrl)).toBeInTheDocument();
+    expect(screen.getByText(/localhost chỉ dùng trên thiết bị này/i)).toBeInTheDocument();
 
-    // Close button works
-    const closeBtn = screen.getByRole('button', { name: 'Đóng' });
-    fireEvent.click(closeBtn);
+    fireEvent.click(screen.getByRole('button', { name: 'Đóng' }));
     expect(dialog).not.toBeInTheDocument();
   });
 
-  it('copies link to clipboard when "Sao chép link" is clicked', async () => {
-    const writeTextMock = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, {
-      clipboard: { writeText: writeTextMock },
-    });
+  it('copies the displayed URL to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<EmployeeQrBadge employee={dummyEmployee} orgId={orgId} />);
+    fireEvent.click(screen.getByRole('button', { name: /Xem mã QR/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sao chép URL' }));
 
-    render(
-      <EmployeeQrBadge
-        employee={dummyEmployee}
-        orgId="org-123"
-        orgName="Công ty Cổ phần ManagerHR"
-      />
-    );
-
-    const trigger = screen.getByRole('button', { name: /Xem mã QR/i });
-    fireEvent.click(trigger);
-
-    const copyBtn = screen.getByRole('button', { name: /Sao chép liên kết/i });
-    fireEvent.click(copyBtn);
-
-    expect(writeTextMock).toHaveBeenCalled();
+    expect(writeText).toHaveBeenCalledWith(cardUrl);
     expect(await screen.findByText('✓ Đã sao chép')).toBeInTheDocument();
   });
 });

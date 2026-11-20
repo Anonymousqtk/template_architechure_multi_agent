@@ -273,6 +273,40 @@
   height: 100%;
   display: block;
 }
+.qr-link-state {
+  margin: 0;
+  padding: 12px;
+  color: #686477;
+  font-size: 13px;
+}
+.qr-link-management {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px 20px;
+  color: #686477;
+  font-size: 13px;
+}
+.qr-link-management p {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: center;
+}
+.qr-link-url {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: #39354d;
+  font-size: 12px;
+  text-align: center;
+}
+.qr-link-preview-warning {
+  color: #686477;
+}
+.qr-local-origin-warning {
+  color: #9a5b00;
+}
 .qr-card-info {
   display: flex;
   flex-direction: column;

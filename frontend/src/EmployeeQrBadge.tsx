@@ -4,12 +4,10 @@ import { createQrMatrix, generateQrSvgPath } from './qrcode';
 
 type Props = {
   employee: {
-    id: string;
     employeeCode: string;
     fullName: string;
     departmentName?: string | null;
     positionTitle?: string | null;
-    avatarUrl?: string | null;
   };
   orgId: string;
   orgName?: string;
@@ -20,30 +18,31 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
   const [open, setOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState('');
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
+  const cardFragment = `org=${encodeURIComponent(orgId)}&code=${encodeURIComponent(employee.employeeCode)}`;
   const cardUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/employee-card?org=${encodeURIComponent(orgId)}&code=${encodeURIComponent(employee.employeeCode)}`
-    : `/employee-card?org=${encodeURIComponent(orgId)}&code=${encodeURIComponent(employee.employeeCode)}`;
+    ? `${window.location.origin}/employee-card#${cardFragment}`
+    : `/employee-card#${cardFragment}`;
 
-  // Generate QR matrix and SVG path
   let matrix: boolean[][] = [];
   let svgPath = '';
-  let matrixSize = 25;
+  let matrixSize = 0;
+  let qrError = '';
   try {
     matrix = createQrMatrix(cardUrl, 'M');
     matrixSize = matrix.length;
     svgPath = generateQrSvgPath(matrix);
   } catch {
-    // Fallback if data is unusually long
     try {
       matrix = createQrMatrix(cardUrl, 'L');
       matrixSize = matrix.length;
       svgPath = generateQrSvgPath(matrix);
     } catch {
-      matrix = [];
+      qrError = 'Địa chỉ quá dài để tạo mã QR.';
     }
   }
 
@@ -78,21 +77,20 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
     try {
       await navigator.clipboard.writeText(cardUrl);
       setCopied(true);
+      setCopyError('');
       setTimeout(() => setCopied(false), 2500);
     } catch {
-      // Fallback
       setCopied(false);
+      setCopyError('Không thể sao chép URL. Hãy sao chép trực tiếp từ đường dẫn bên dưới.');
     }
   }
 
   function handleDownloadSvg() {
-    const margin = 2;
-    const totalSize = matrixSize + margin * 2;
+    if (!svgPath) return;
+    const totalSize = matrixSize + 8;
     const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalSize} ${totalSize}" shape-rendering="crispEdges">
       <rect width="100%" height="100%" fill="#ffffff" />
-      <g transform="translate(${margin}, ${margin})">
-        <path d="${svgPath}" fill="#1e1e2d" />
-      </g>
+      <path d="${svgPath}" fill="#1e1e2d" />
     </svg>`;
     const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -147,7 +145,7 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
             <button type="button" aria-label="Kích thước ban đầu" onClick={() => setZoom(1)}>
               100%
             </button>
-            <button type="button" className="qr-action-btn" onClick={handleCopy} aria-label="Sao chép liên kết">
+            <button type="button" className="qr-action-btn" onClick={handleCopy} aria-label="Sao chép URL">
               {copied ? '✓ Đã sao chép' : 'Sao chép link'}
             </button>
             <button type="button" className="qr-action-btn" onClick={handleDownloadSvg} aria-label="Tải mã QR SVG">
@@ -164,18 +162,20 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
                 </div>
 
                 <div className="qr-code-box">
-                  <svg
-                    viewBox={`0 0 ${matrixSize + 4} ${matrixSize + 4}`}
-                    shapeRendering="crispEdges"
-                    className="qr-code-svg"
-                    role="img"
-                    aria-label={`Mã QR truy cập hồ sơ ${employee.fullName}`}
-                  >
-                    <rect width="100%" height="100%" fill="#ffffff" rx="1" />
-                    <g transform="translate(2, 2)">
+                  {svgPath ? (
+                    <svg
+                      viewBox={`0 0 ${matrixSize + 8} ${matrixSize + 8}`}
+                      shapeRendering="crispEdges"
+                      className="qr-code-svg"
+                      role="img"
+                      aria-label={`Mã QR truy cập hồ sơ ${employee.fullName}`}
+                    >
+                      <rect width="100%" height="100%" fill="#ffffff" rx="1" />
                       <path d={svgPath} fill="#1a1926" />
-                    </g>
-                  </svg>
+                    </svg>
+                  ) : (
+                    <p className="qr-link-state">{qrError}</p>
+                  )}
                 </div>
 
                 <div className="qr-card-info">
@@ -193,20 +193,32 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
 
                 <div className="qr-card-footer">
                   <p className="qr-card-tip">
-                    <span>Quét mã bằng camera điện thoại để xem thẻ nhân viên &amp; thông tin ngân hàng</span>
+                    <span>Quét mã để kiểm tra URL; thông tin nhân viên không hiển thị</span>
                   </p>
                   <a
                     href={cardUrl}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className="qr-link-preview"
                     onClick={e => e.stopPropagation()}
                   >
-                    Mở trang thẻ nhân viên ↗
+                    Mở URL xem trước ↗
                   </a>
                 </div>
               </div>
             </div>
+          </div>
+          <div className="qr-link-management">
+            {copyError && <p role="alert">{copyError}</p>}
+            <code className="qr-link-url">{cardUrl}</code>
+            <p className="qr-link-preview-warning">
+              URL chỉ để kiểm tra mã QR; thẻ công khai chưa được bật nên thông tin nhân viên không hiển thị.
+            </p>
+            {typeof window !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname) && (
+              <p className="qr-local-origin-warning">
+                Địa chỉ localhost chỉ dùng trên thiết bị này. Để quét bằng điện thoại, hãy mở ứng dụng qua tên miền HTTPS hoặc địa chỉ mạng mà điện thoại có thể truy cập được.
+              </p>
+            )}
           </div>
         </dialog>,
         document.body
@@ -223,6 +235,7 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
         title="Xem mã QR &amp; danh thiếp nhân viên"
         onClick={() => {
           setZoom(1);
+          setCopyError('');
           setOpen(true);
         }}
       >

@@ -321,6 +321,23 @@ export function createQrMatrix(text: string, eccLevel: EccLevel = 'M'): boolean[
     if (matrix[i][8] === null) matrix[i][8] = false;
   }
 
+  if (selectedSpec.version >= 7) {
+    let versionRemainder = selectedSpec.version << 12;
+    for (let i = 5; i >= 0; i--) {
+      if ((versionRemainder & (1 << (i + 12))) !== 0) {
+        versionRemainder ^= 0x1f25 << i;
+      }
+    }
+    const versionWord = (selectedSpec.version << 12) | versionRemainder;
+    for (let i = 0; i < 18; i++) {
+      const bit = ((versionWord >>> i) & 1) === 1;
+      const x = size - 11 + (i % 3);
+      const y = Math.floor(i / 3);
+      matrix[y][x] = bit;
+      matrix[x][y] = bit;
+    }
+  }
+
   // Place data bits in zig-zag
   const allBits: boolean[] = [];
   for (const b of finalCodewords) {
@@ -332,7 +349,7 @@ export function createQrMatrix(text: string, eccLevel: EccLevel = 'M'): boolean[
   let bitIndex = 0;
   for (let right = size - 1; right > 0; right -= 2) {
     if (right === 6) right--; // Skip vertical timing column
-    const upward = ((right + 1) / 2) % 2 === 1;
+    const upward = ((right + 1) & 2) === 0;
     for (let vert = 0; vert < size; vert++) {
       const y = upward ? size - 1 - vert : vert;
       for (let x = right; x >= right - 1; x--) {
@@ -389,6 +406,8 @@ function isFunctionModule(x: number, y: number, size: number, aligns: number[]):
   if (x <= 8 && y <= 8) return true;
   if (x >= size - 9 && y <= 8) return true;
   if (x <= 8 && y >= size - 9) return true;
+  // Version information (Versions 7-10)
+  if ((x >= size - 11 && y < 6) || (y >= size - 11 && x < 6)) return true;
   // Timing
   if (x === 6 || y === 6) return true;
   // Dark module
@@ -407,11 +426,12 @@ function isFunctionModule(x: number, y: number, size: number, aligns: number[]):
 
 export function generateQrSvgPath(matrix: boolean[][]): string {
   const size = matrix.length;
+  const quietZone = 4;
   let path = '';
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       if (matrix[y][x]) {
-        path += `M${x},${y}h1v1h-1z `;
+        path += `M${x + quietZone},${y + quietZone}h1v1h-1z `;
       }
     }
   }

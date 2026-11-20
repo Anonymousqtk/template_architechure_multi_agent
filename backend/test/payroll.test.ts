@@ -464,6 +464,8 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     const hrLog = await hr.call(`${payrollPath()}/employees/${employeeId}/adjustment-log`);
     expect(hrLog.status).toBe(200);
     expect(hrLog.body.items).toBeInstanceOf(Array);
+    expect(hrLog.body.items).toHaveLength(1);
+    expect(hrLog.body.items[0].actorName).toBe('hr@payroll.test');
 
     const empLog = await emp.call(`${payrollPath()}/employees/${employeeId}/adjustment-log`);
     expect(empLog.status).toBe(200);

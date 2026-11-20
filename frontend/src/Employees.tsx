@@ -466,7 +466,7 @@ export function Employees({ profile }: { profile: Profile }) {
             <thead>
               <tr>
                 <th>Mã nhân viên</th>
-                <th>Mã QR</th>
+                {canCreate && <th>Mã QR</th>}
                 <th>Họ và tên</th>
                 <th>Phòng ban / vị trí</th>
                 <th>Trạng thái</th>
@@ -479,13 +479,15 @@ export function Employees({ profile }: { profile: Profile }) {
                   <td>
                     <strong>{e.employeeCode}</strong>
                   </td>
-                  <td>
-                    <EmployeeQrBadge
-                      employee={e}
-                      orgId={e.organizationId || profile.organization.id}
-                      orgName={profile.organization.name}
-                    />
-                  </td>
+                  {canCreate && (
+                    <td>
+                      <EmployeeQrBadge
+                        employee={e}
+                        orgId={e.organizationId || profile.organization.id}
+                        orgName={profile.organization.name}
+                      />
+                    </td>
+                  )}
                   <td>
                     <div className="emp-name-cell">
                       <Avatar src={e.avatarUrl} name={e.fullName} className="emp-avatar-thumb" />
@@ -517,7 +519,7 @@ export function Employees({ profile }: { profile: Profile }) {
               ))}
               {!loading && !error && list?.items.length === 0 && (
                 <tr>
-                  <td colSpan={6}>Chưa có hồ sơ phù hợp.</td>
+                  <td colSpan={canCreate ? 6 : 5}>Chưa có hồ sơ phù hợp.</td>
                 </tr>
               )}
             </tbody>

@@ -659,20 +659,10 @@ describe('EMP-001 profiles and EMP-002 contracts/history',()=>{
     expect(updatedDetail.bankAccountNumber).toBe('1122334455');
     expect(updatedDetail.bankAccountName).toBe('HOANG THI NGAN HANG UPDATED');
 
-    // 4. Public employee digital card endpoint (accessible without login)
+    // 4. Public employee lookup and unauthenticated avatar routes stay disabled.
     const anonymousClient = new Client();
-    const publicCardRes = await anonymousClient.call(
-      `/api/public/organizations/${org}/employees/${empCode}`,
-      'GET'
-    );
-    expect(publicCardRes.status).toBe(200);
-    const card = publicCardRes.body.employee;
-    expect(card.employeeCode).toBe(empCode);
-    expect(card.fullName).toBe('Hoàng Thị Ngân Hàng');
-    expect(card.bankName).toBe('Techcombank');
-    expect(card.bankAccountNumber).toBe('1122334455');
-    expect(card.bankAccountName).toBe('HOANG THI NGAN HANG UPDATED');
-    expect(card.organizationName).toBe('Employees');
+    expect((await anonymousClient.call(`/api/public/organizations/${org}/employees/${empCode}`)).status).not.toBe(200);
+    expect((await fetch(base + '/api/public/employee-card')).status).not.toBe(200);
   });
  });
 });

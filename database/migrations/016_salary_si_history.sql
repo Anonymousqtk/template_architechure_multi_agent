@@ -94,7 +94,16 @@ CREATE INDEX salary_adj_log_emp ON salary_adjustment_log
 -- 4. Trigger: auto-populate salary_adjustment_log on INSERT to employee_salary_profiles
 CREATE OR REPLACE FUNCTION trg_salary_profile_audit_log()
 RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  audit_actor uuid;
 BEGIN
+  audit_actor := NULLIF(current_setting('app.current_user_id', true), '')::uuid;
+  IF audit_actor IS NULL THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23502',
+      MESSAGE = 'salary profile insert requires app.current_user_id';
+  END IF;
+
   INSERT INTO salary_adjustment_log(
     id, organization_id, employee_id, salary_profile_id,
     action, effective_from, effective_to, salary_mode, currency,
@@ -109,8 +118,7 @@ BEGIN
     NEW.effective_to,
     NEW.salary_mode,
     NEW.currency,
-    -- actor_user_id: use current_setting if available, else NULL
-    NULLIF(current_setting('app.current_user_id', true), '')::uuid,
+    audit_actor,
     NULL,
     now()
   );

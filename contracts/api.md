@@ -185,7 +185,7 @@ All payroll endpoints operate under `/api/organizations/:organizationId/payroll`
 - Audit events: `PAYROLL_PROFILE_SAVED`, `SI_PROFILE_SAVED`, `SI_CONTRIBUTION_RECORDED`. No salary amounts in audit payloads.
 
 Migration `013_payroll_management.sql` creates core payroll tables and the `guard_closed_payroll_period` trigger.
-Migration `016_salary_si_history.sql` (additive) creates `employee_social_insurance`, `social_insurance_contributions`, `salary_adjustment_log`, and the `trg_salary_profile_created` trigger that auto-populates the adjustment log on each salary profile insert.
+Migration `016_salary_si_history.sql` (additive) creates `employee_social_insurance`, `social_insurance_contributions`, `salary_adjustment_log`, and the `trg_salary_profile_created` trigger that auto-populates the adjustment log on each salary profile insert. Salary profile writes set `app.current_user_id` transaction-locally; the trigger rejects inserts without this authenticated actor context.
 
 ## EMP-003 — Employee Profile Enhancements, Documents & Batch Import
 
@@ -225,12 +225,10 @@ Migration `014_employee_profile_documents_import.sql` adds `avatar_url` to `empl
 
 ## EMP-004 — Employee QR Code Badge, Public Digital Card & Bank Account Management
 
-Employees can have associated banking details (bank name, account number, account holder name). Each employee profile generates a vector QR code in the employee roster, opening a zoomable modal preview similar to the avatar viewer. Scanning the QR code navigates to an accessible, responsive public digital employee card displaying verified affiliation, contact information, and bank details for payroll/expense transfers.
+Employees can have associated banking details (bank name, account number, account holder name). The current roster QR is a local-only URL preview: organization ID and employee code are placed in the URL fragment, which is not sent to the server. No public employee-card API is enabled, and the previous predictable employee lookup and unauthenticated avatar routes are removed. A QR scan therefore does not disclose or retrieve employee data. A real public card requires an approved secure-link design and a reachable HTTPS origin.
 
 | Method | Path | Access | Operation |
 |---|---|---|---|
-| GET | `/api/public/organizations/:organizationId/employees/:employeeCode` | Public, unauthenticated | Retrieve safe public employee card: organization name, employee code, full name, avatar URL, department, position, hire date, status, contact, and bank details. Excludes salary, internal IDs, and sensitive PII. |
-| GET | `/api/public/organizations/:organizationId/employees/:employeeId/avatar` | Public, unauthenticated | Stream verified employee profile avatar for the digital card. |
 | POST | `/api/organizations/:organizationId/employees` | Admin, HR | Create employee with optional `bankName`, `bankAccountNumber`, and `bankAccountName`. |
 | PATCH | `/api/organizations/:organizationId/employees/:id` | Admin, HR | Update employee details including `bankName`, `bankAccountNumber`, and `bankAccountName`. |
 

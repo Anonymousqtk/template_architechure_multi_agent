@@ -147,6 +147,7 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL; END;
 
   -- Employee salary profile with effective dates
+  PERFORM set_config('app.current_user_id','00000000-0000-0000-0000-000000000002',true);
   INSERT INTO employee_salary_profiles(id,organization_id,employee_id,salary_mode,base_salary,effective_from)
   VALUES ('00000000-0000-0000-0000-000000000070','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000040','GROSS',15000000.00,'2026-01-01');
   -- Invalid effective_to < effective_from

@@ -1,21 +1,13 @@
 {
-  "id": "EMP-004",
-  "summary": "Employee QR Code Badge, Public Digital Card page, and Bank Account Management",
-  "allowed_scopes": ["frontend", "backend", "database", "contracts", "tests"],
+  "id": "PAY-001-BHXH",
+  "summary": "Fix BHXH tab data readiness and salary audit attribution",
+  "allowed_scopes": ["backend", "database", "contracts", "tests"],
   "risk": "high",
-  "security_review_required": false,
+  "security_review_required": true,
   "acceptance": [
-    "Migration 017: Added bank_name, bank_account_number, bank_account_name to employees table",
-    "Pure TypeScript zero-dependency QR Code generator with SVG vector output (qrcode.ts)",
-    "Employee roster shows interactive QR badge thumbnail on each row",
-    "Clicking QR badge opens zoomable accessible dialog modal matching the Avatar viewer design pattern",
-    "QR modal contains copy link, download SVG QR, and direct navigation button",
-    "Scanning QR code directs to /employee-card public digital employee business card page",
-    "Public API endpoint GET /api/public/organizations/:organizationId/employees/:employeeCode returns safe card info with bank details",
-    "Public API endpoint GET /api/public/organizations/:organizationId/employees/:employeeId/avatar streams verified avatar",
-    "EmployeeDetailDrawer profile tab displays and allows editing bank account information",
-    "Employees create modal supports optional bank information fields",
-    "100% test coverage with automated unit tests for QR generator, QR badge component, and public digital card page",
-    "Creating a new employee profile with valid personal and optional bank details succeeds; invalid profile input reports actionable validation guidance"
+    "Identify and verify why the BHXH API returns SERVICE_NOT_READY",
+    "Record the authenticated actor for salary adjustment log trigger inserts",
+    "A BHXH profile request succeeds after migration 016 is applied",
+    "Do not apply a database migration without explicit user approval"
   ]
 }
