@@ -391,3 +391,212 @@ describe('PAY-001 Payroll, Salary Components & Allowance Management', () => {
     expect(crossComp.status).toBe(403);
   });
 });
+
+// ==================================================================
+// PAY-001 Enhancement: Salary History & Social Insurance (BHXH) Tests
+// ==================================================================
+describe('PAY-001 Enhancement: Salary history & BHXH', () => {
+  it('GET salary-history: employee sees own history, outsider is blocked', async () => {
+    const hr = await actor('hr');
+    const emp = await actor('employee');
+
+    // Create salary profile via HR
+    const save = await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
+      salaryMode: 'GROSS',
+      baseSalary: 15_000_000,
+      effectiveFrom: '2026-01-01',
+      currency: 'VND',
+      status: 'ACTIVE',
+      components: [],
+    });
+    expect(save.status).toBe(200);
+
+    // Employee can read own salary history
+    const empHist = await emp.call(`${payrollPath()}/employees/${employeeId}/salary-history`);
+    expect(empHist.status).toBe(200);
+    expect(empHist.body.items).toHaveLength(1);
+    expect(empHist.body.items[0].effectiveFrom).toBe('2026-01-01');
+    expect(empHist.body.items[0].salaryMode).toBe('GROSS');
+    // Actual salary amount must be present (self-view)
+    expect(empHist.body.items[0].baseSalary).toBeDefined();
+
+    // Outsider (different org) is blocked
+    const outsider = new Client();
+    await outsider.login('outsider@payroll.test');
+    const outsiderHist = await outsider.call(`${payrollPath()}/employees/${employeeId}/salary-history`);
+    expect(outsiderHist.status).toBe(403);
+  });
+
+  it('GET my-salary-profile: returns current profile for employee', async () => {
+    const hr = await actor('hr');
+    const emp = await actor('employee');
+
+    await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
+      salaryMode: 'GROSS',
+      baseSalary: 20_000_000,
+      effectiveFrom: '2026-02-01',
+      currency: 'VND',
+      status: 'ACTIVE',
+      components: [],
+    });
+
+    const myProfile = await emp.call(`${payrollPath()}/my-salary-profile`);
+    expect(myProfile.status).toBe(200);
+    expect(myProfile.body.profile).not.toBeNull();
+    expect(myProfile.body.profile.salaryMode).toBe('GROSS');
+    expect(myProfile.body.history).toBeInstanceOf(Array);
+  });
+
+  it('GET adjustment-log: HR can read; employee can read own; outsider blocked', async () => {
+    const hr = await actor('hr');
+    const emp = await actor('employee');
+
+    // Create a salary profile to generate a log entry
+    await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
+      salaryMode: 'NET',
+      baseSalary: 18_000_000,
+      effectiveFrom: '2026-03-01',
+      currency: 'VND',
+      status: 'ACTIVE',
+      components: [],
+    });
+
+    const hrLog = await hr.call(`${payrollPath()}/employees/${employeeId}/adjustment-log`);
+    expect(hrLog.status).toBe(200);
+    expect(hrLog.body.items).toBeInstanceOf(Array);
+
+    const empLog = await emp.call(`${payrollPath()}/employees/${employeeId}/adjustment-log`);
+    expect(empLog.status).toBe(200);
+
+    const outsider = new Client();
+    await outsider.login('outsider@payroll.test');
+    const outsiderLog = await outsider.call(`${payrollPath()}/employees/${employeeId}/adjustment-log`);
+    expect(outsiderLog.status).toBe(403);
+  });
+
+  it('PUT social-insurance: HR creates profile; employee can read; invalid data rejected', async () => {
+    const hr = await actor('hr');
+    const emp = await actor('employee');
+
+    // HR creates BHXH profile
+    const put = await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance`, 'PUT', {
+      siCode: '0123456789',
+      insuredName: 'Nguyễn Văn A',
+      enrollmentDate: '2024-01-01',
+      siSalary: 6_500_000,
+      currency: 'VND',
+      status: 'ACTIVE',
+    });
+    expect(put.status).toBe(200);
+    expect(put.body.ok).toBe(true);
+
+    // Employee reads own BHXH
+    const getByEmp = await emp.call(`${payrollPath()}/employees/${employeeId}/social-insurance`);
+    expect(getByEmp.status).toBe(200);
+    expect(getByEmp.body.profile).not.toBeNull();
+    expect(getByEmp.body.profile.siCode).toBe('0123456789');
+    expect(getByEmp.body.profile.status).toBe('ACTIVE');
+    expect(getByEmp.body.contributions).toBeInstanceOf(Array);
+
+    // Validation: terminationDate before enrollmentDate
+    const badDates = await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance`, 'PUT', {
+      siCode: '0123456789',
+      insuredName: 'Nguyễn Văn A',
+      enrollmentDate: '2024-06-01',
+      terminationDate: '2024-01-01',
+      siSalary: 6_500_000,
+      currency: 'VND',
+      status: 'ACTIVE',
+    });
+    expect(badDates.status).toBe(400);
+
+    // Employee cannot write (PUT is ADMIN/HR only)
+    const empPut = await emp.call(`${payrollPath()}/employees/${employeeId}/social-insurance`, 'PUT', {
+      siCode: '0000000000',
+      insuredName: 'Hack',
+      enrollmentDate: '2024-01-01',
+      siSalary: 1,
+      currency: 'VND',
+      status: 'ACTIVE',
+    });
+    expect(empPut.status).toBe(403);
+  });
+
+  it('POST SI contribution: validates month boundary; rejects non-first-of-month', async () => {
+    const hr = await actor('hr');
+
+    // Create SI profile first
+    await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance`, 'PUT', {
+      siCode: '9876543210',
+      insuredName: 'Trần Thị B',
+      enrollmentDate: '2025-01-01',
+      siSalary: 7_200_000,
+      currency: 'VND',
+      status: 'ACTIVE',
+    });
+
+    // Valid: first of month
+    const ok = await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance/contributions`, 'POST', {
+      contributionMonth: '2026-10-01',
+      siSalary: 7_200_000,
+      employeeRate: 0.08,
+      employerRate: 0.175,
+      employeeAmount: 576_000,
+      employerAmount: 1_260_000,
+      status: 'CONFIRMED',
+    });
+    expect(ok.status).toBe(201);
+
+    // Invalid: not first of month
+    const bad = await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance/contributions`, 'POST', {
+      contributionMonth: '2026-10-15',
+      siSalary: 7_200_000,
+      employeeRate: 0.08,
+      employerRate: 0.175,
+      employeeAmount: 576_000,
+      employerAmount: 1_260_000,
+      status: 'PENDING',
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe('CONTRIBUTION_MONTH_MUST_BE_FIRST_OF_MONTH');
+  });
+
+  it('GET SI contributions paginated: employee sees own; outsider blocked', async () => {
+    const hr = await actor('hr');
+    const emp = await actor('employee');
+
+    await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance`, 'PUT', {
+      siCode: '1111111111',
+      insuredName: 'Test Employee',
+      enrollmentDate: '2025-01-01',
+      siSalary: 8_000_000,
+      currency: 'VND',
+      status: 'ACTIVE',
+    });
+
+    await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance/contributions`, 'POST', {
+      contributionMonth: '2026-09-01',
+      siSalary: 8_000_000,
+      employeeRate: 0.08,
+      employerRate: 0.175,
+      employeeAmount: 640_000,
+      employerAmount: 1_400_000,
+      status: 'CONFIRMED',
+    });
+
+    const empContrib = await emp.call(
+      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`
+    );
+    expect(empContrib.status).toBe(200);
+    expect(empContrib.body.items).toHaveLength(1);
+    expect(empContrib.body.items[0].contributionMonth).toBe('2026-09-01');
+    expect(empContrib.body.items[0].status).toBe('CONFIRMED');
+
+    const outsider = new Client();
+    await outsider.login('outsider@payroll.test');
+    const blocked = await outsider.call(
+      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`
+    );
+    expect(blocked.status).toBe(403);
+  });
+});

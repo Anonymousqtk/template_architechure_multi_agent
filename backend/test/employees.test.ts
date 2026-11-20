@@ -256,6 +256,15 @@ describe('EMP-001 profiles and EMP-002 contracts/history',()=>{
   expect((await create(admin,{birthDate:'2021-01-01'})).status).toBe(400);
   expect((await create(admin,{role:'ADMIN'})).status).toBe(400);
   expect((await pool.query('SELECT role FROM memberships WHERE user_id=$1 AND organization_id=$2',[userId,org])).rows[0].role).toBe('EMPLOYEE');
+  });
+
+  it('returns invalid employee field names without echoing submitted values', async () => {
+   const admin = await actor('admin');
+   const invalidEmail = 'not-an-email';
+   const response = await create(admin, { personalEmail: invalidEmail });
+   expect(response.status).toBe(400);
+   expect(response.body).toEqual({ code: 'INVALID_INPUT', fields: ['personalEmail'] });
+   expect(JSON.stringify(response.body)).not.toContain(invalidEmail);
  });
  it('enforces tenant, Manager basic-data scope, HR target limits and Employee self access',async()=>{
   const admin=await actor('admin'),hr=await actor('hr'),manager=await actor('manager'),self=await actor('employee');
@@ -613,6 +622,57 @@ describe('EMP-001 profiles and EMP-002 contracts/history',()=>{
     expect(checkRes.status).toBe(200);
     expect(checkRes.body.items).toHaveLength(1);
     expect(checkRes.body.items[0].fullName).toBe('Nguyễn Văn Mới');
+  });
+
+  it('EMP-004: supports bank details and public employee digital card endpoint', async () => {
+    const admin = await actor('admin');
+    const empCode = 'EMP-BANK-01';
+
+    // 1. Create employee with bank details
+    const created = await create(admin, {
+      employeeCode: empCode,
+      fullName: 'Hoàng Thị Ngân Hàng',
+      bankName: 'Vietcombank',
+      bankAccountNumber: '9988776655',
+      bankAccountName: 'HOANG THI NGAN HANG',
+    });
+    expect(created.status).toBe(201);
+    const empId = created.body.id;
+
+    // 2. Verify detail endpoint returns bank information
+    const empDetail = await detail(admin, empId);
+    expect(empDetail.bankName).toBe('Vietcombank');
+    expect(empDetail.bankAccountNumber).toBe('9988776655');
+    expect(empDetail.bankAccountName).toBe('HOANG THI NGAN HANG');
+
+    // 3. Update bank details via PATCH
+    const patchRes = await admin.call(path() + '/' + empId, 'PATCH', {
+      version: empDetail.version,
+      bankName: 'Techcombank',
+      bankAccountNumber: '1122334455',
+      bankAccountName: 'HOANG THI NGAN HANG UPDATED',
+    });
+    expect(patchRes.status).toBe(204);
+
+    const updatedDetail = await detail(admin, empId);
+    expect(updatedDetail.bankName).toBe('Techcombank');
+    expect(updatedDetail.bankAccountNumber).toBe('1122334455');
+    expect(updatedDetail.bankAccountName).toBe('HOANG THI NGAN HANG UPDATED');
+
+    // 4. Public employee digital card endpoint (accessible without login)
+    const anonymousClient = new Client();
+    const publicCardRes = await anonymousClient.call(
+      `/api/public/organizations/${org}/employees/${empCode}`,
+      'GET'
+    );
+    expect(publicCardRes.status).toBe(200);
+    const card = publicCardRes.body.employee;
+    expect(card.employeeCode).toBe(empCode);
+    expect(card.fullName).toBe('Hoàng Thị Ngân Hàng');
+    expect(card.bankName).toBe('Techcombank');
+    expect(card.bankAccountNumber).toBe('1122334455');
+    expect(card.bankAccountName).toBe('HOANG THI NGAN HANG UPDATED');
+    expect(card.organizationName).toBe('Employees');
   });
  });
 });

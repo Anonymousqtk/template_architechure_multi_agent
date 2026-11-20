@@ -13,6 +13,7 @@ import { Attendance } from './Attendance';
 import { Payroll } from './Payroll';
 import { Units } from './Units';
 import { Avatar } from './Avatar';
+import { EmployeeCardPage } from './EmployeeCardPage';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, errorText, initialize, request, type DeliveryMode, type Invitation, type Profile } from './api';
 import './workspace.css';
@@ -242,6 +243,11 @@ export default function App() {
   const personal=path==='/app'||path==='/security';
   const workspace=Boolean(ready&&profile&&!limited&&!passkeyOffer&&(personal||path.startsWith('/admin/')));
   const organizationHome=profile?.permissions.readUsers?'/admin/users':profile?.permissions.invite?'/admin/invitations':profile?.permissions.viewAudit?'/admin/audit':null;
+
+  if (path === '/employee-card') {
+    return <EmployeeCardPage profile={profile} onNavigate={navigate} />;
+  }
+
   let content: ReactNode;
   if (!ready) { if (error) content = <><Notice error>{error}</Notice><button onClick={() => window.location.reload()}>Tải lại trang</button></>; else if (path.startsWith('/admin/') || path === '/app' || path === '/security') return <div className="workspace-loading-splash" role="status" aria-live="polite"><div className="workspace-loading-inner"><span className="dash-brand-mark" aria-hidden="true" /><div className="workspace-loading-text"><strong>ManagerHR</strong><span>Đang đồng bộ không gian làm việc…</span></div></div></div>; else content = <p role="status">Đang kết nối an toàn…</p>; }
   else if (profile && passkeyOffer) content = <PasskeySettings onContinue={() => {

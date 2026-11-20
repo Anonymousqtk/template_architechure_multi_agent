@@ -15,16 +15,17 @@ const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>{
   const d=new Date(value+'T00:00:00Z');return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value;
 });
 const code=z.string().trim().min(1).max(30).regex(/^[A-Za-z0-9_.-]+$/).transform(v=>v.toUpperCase());
-const privateFields={birthDate:date.nullable().optional(),phone:z.string().trim().min(1).max(32).nullable().optional(),personalEmail:z.string().trim().email().max(254).nullable().optional(),address:z.string().trim().min(1).max(500).nullable().optional()};
+const privateFields={birthDate:date.nullable().optional(),phone:z.string().trim().min(1).max(32).nullable().optional(),personalEmail:z.string().trim().email().max(254).nullable().optional(),address:z.string().trim().min(1).max(500).nullable().optional(),bankName:z.string().trim().max(100).nullable().optional(),bankAccountNumber:z.string().trim().max(50).nullable().optional(),bankAccountName:z.string().trim().max(150).nullable().optional()};
 const assignment={departmentId:uuid.nullable().optional(),positionId:uuid.nullable().optional(),managerUserId:uuid.nullable().optional()};
 const contractFields={contractNumber:z.string().trim().min(1).max(60).regex(/^[\p{L}\p{N}_./-]+$/u),contractType:z.enum(['PROBATION','FIXED_TERM','INDEFINITE']),startDate:date,endDate:date.nullable(),signedOn:date.nullable().optional(),notes:z.string().trim().max(1000).nullable().optional()};
 const contractSchema=z.object(contractFields);
 const paging=z.object({page:z.coerce.number().int().min(1).max(100000).default(1),limit:z.coerce.number().int().min(1).max(100).default(20)});
 
-type Employee={id:string;organization_id:string;user_id:string|null;employee_code:string;full_name:string;hire_date:string;employment_status:string;birth_date:string|null;phone:string|null;personal_email:string|null;address:string|null;department_id:string|null;position_id:string|null;manager_user_id:string|null;department_name:string|null;position_title:string|null;manager_name:string|null;version:number;role:string|null;avatar_url:string|null};
+type Employee={id:string;organization_id:string;user_id:string|null;employee_code:string;full_name:string;hire_date:string;employment_status:string;birth_date:string|null;phone:string|null;personal_email:string|null;address:string|null;department_id:string|null;position_id:string|null;manager_user_id:string|null;department_name:string|null;position_title:string|null;manager_name:string|null;version:number;role:string|null;avatar_url:string|null;bank_name:string|null;bank_account_number:string|null;bank_account_name:string|null};
 
 const employeeSelect=`SELECT e.*,e.hire_date::text AS hire_date,e.birth_date::text AS birth_date,
-  d.name AS department_name,p.title AS position_title,u.full_name AS manager_name,m.role,e.avatar_url
+  d.name AS department_name,p.title AS position_title,u.full_name AS manager_name,m.role,e.avatar_url,
+  e.bank_name,e.bank_account_number,e.bank_account_name
   FROM employees e LEFT JOIN departments d ON d.id=e.department_id AND d.organization_id=e.organization_id
   LEFT JOIN positions p ON p.id=e.position_id AND p.organization_id=e.organization_id
   LEFT JOIN users u ON u.id=e.manager_user_id
@@ -57,7 +58,7 @@ export function registerEmployeeRoutes(app:Express,deps:OrgStructureDeps){
   }
   function dto(row:Employee,identity:Identity,detail=false){
     const avatarUrl=row.avatar_url?`/api/organizations/${row.organization_id}/employees/${row.id}/avatar`:null;
-    const basic={id:row.id,userId:row.user_id,employeeCode:row.employee_code,fullName:row.full_name,avatarUrl,hireDate:row.hire_date,employmentStatus:row.employment_status,departmentId:row.department_id,departmentName:row.department_name,positionId:row.position_id,positionTitle:row.position_title,managerUserId:row.manager_user_id,managerName:row.manager_name,version:row.version,canEdit:identity.role==='ADMIN'||(identity.role==='HR'&&(!row.user_id||row.role==='EMPLOYEE'))};
+    const basic={id:row.id,organizationId:row.organization_id,userId:row.user_id,employeeCode:row.employee_code,fullName:row.full_name,avatarUrl,hireDate:row.hire_date,employmentStatus:row.employment_status,departmentId:row.department_id,departmentName:row.department_name,positionId:row.position_id,positionTitle:row.position_title,managerUserId:row.manager_user_id,managerName:row.manager_name,version:row.version,canEdit:identity.role==='ADMIN'||(identity.role==='HR'&&(!row.user_id||row.role==='EMPLOYEE')),bankName:row.bank_name,bankAccountNumber:row.bank_account_number,bankAccountName:row.bank_account_name};
     return detail&&(identity.role==='ADMIN'||identity.role==='HR'||row.user_id===identity.userId)?{...basic,birthDate:row.birth_date,phone:row.phone,personalEmail:row.personal_email,address:row.address}:basic;
   }
   async function context(db:PoolClient,identity:Identity,effective:string,reason:string){await db.query("SELECT set_config('app.employee_actor',$1,true),set_config('app.employee_effective_on',$2,true),set_config('app.employee_reason',$3,true)",[identity.userId,effective,reason]);}
@@ -113,8 +114,8 @@ export function registerEmployeeRoutes(app:Express,deps:OrgStructureDeps){
       }else if(identity.role==='HR'&&assigned.managerUserId)fail(403,'FORBIDDEN');
       await validAssignment(db,identity,data.userId??null,assigned);
       await context(db,identity,data.hireDate,'PROFILE_CREATED');
-      await db.query(`INSERT INTO employees(id,organization_id,user_id,employee_code,full_name,hire_date,birth_date,phone,personal_email,address,department_id,position_id,manager_user_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,[id,identity.orgId,data.userId??null,data.employeeCode,data.fullName,data.hireDate,data.birthDate??null,data.phone??null,data.personalEmail??null,data.address??null,assigned.departmentId,assigned.positionId,assigned.managerUserId]);
+      await db.query(`INSERT INTO employees(id,organization_id,user_id,employee_code,full_name,hire_date,birth_date,phone,personal_email,address,department_id,position_id,manager_user_id,bank_name,bank_account_number,bank_account_name)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,[id,identity.orgId,data.userId??null,data.employeeCode,data.fullName,data.hireDate,data.birthDate??null,data.phone??null,data.personalEmail??null,data.address??null,assigned.departmentId,assigned.positionId,assigned.managerUserId,data.bankName??null,data.bankAccountNumber??null,data.bankAccountName??null]);
       await audit(db,'EMPLOYEE_CREATED',identity.userId,identity.orgId,data.userId??undefined,{employeeId:id});
     });res.status(201).json({id});
   });
@@ -127,7 +128,7 @@ export function registerEmployeeRoutes(app:Express,deps:OrgStructureDeps){
       if(row.version!==data.version)fail(409,'STALE_RECORD');
       if(data.birthDate&&data.birthDate>row.hire_date)fail(400,'INVALID_EMPLOYEE_DATES');
       if(data.employeeCode&&(await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND upper(btrim(employee_code))=$2 AND id<>$3',[identity.orgId,data.employeeCode,id])).rowCount)fail(409,'EMPLOYEE_CODE_EXISTS');
-      const columns:Record<string,string>={employeeCode:'employee_code',fullName:'full_name',employmentStatus:'employment_status',birthDate:'birth_date',phone:'phone',personalEmail:'personal_email',address:'address'};
+      const columns:Record<string,string>={employeeCode:'employee_code',fullName:'full_name',employmentStatus:'employment_status',birthDate:'birth_date',phone:'phone',personalEmail:'personal_email',address:'address',bankName:'bank_name',bankAccountNumber:'bank_account_number',bankAccountName:'bank_account_name'};
       const values:unknown[]=[identity.orgId,id];const sets:string[]=[];
       for(const [field,column] of Object.entries(columns))if(field in data){values.push(data[field as keyof typeof data]);sets.push(column+'=$'+values.length);}
       if(!sets.length)fail(400,'INVALID_INPUT');
@@ -519,5 +520,68 @@ export function registerEmployeeRoutes(app:Express,deps:OrgStructureDeps){
       await db.query('UPDATE employee_contracts SET contract_number=$1,contract_type=$2,start_date=$3,end_date=$4,signed_on=$5,notes=$6,status=$7,termination_date=$8,version=version+1,updated_at=now() WHERE organization_id=$9 AND employee_id=$10 AND id=$11',[next.contractNumber,next.contractType,next.startDate,next.endDate,next.signedOn,next.notes,next.status,next.terminationDate??null,identity.orgId,employeeId,id]);
       await audit(db,'EMPLOYEE_CONTRACT_UPDATED',identity.userId,identity.orgId,undefined,{employeeId,contractId:id,status:next.status});
     });res.status(204).end();
+  });
+
+  // --- 5. Public Employee Digital Card (QR code scan destination) ---
+  app.get('/api/public/organizations/:organizationId/employees/:employeeCode', async (req, res, next) => {
+    try {
+      const orgId = uuid.parse(req.params.organizationId);
+      const empCode = String(req.params.employeeCode || '').trim();
+      if (!empCode) fail(400, 'INVALID_EMPLOYEE_CODE');
+
+      const orgRes = await pool.query<{ id: string; name: string; is_active: boolean }>(
+        'SELECT id, name, is_active FROM organizations WHERE id = $1',
+        [orgId]
+      );
+      if (!orgRes.rowCount || !orgRes.rows[0].is_active) fail(404, 'ORGANIZATION_NOT_FOUND');
+      const org = orgRes.rows[0];
+
+      const empRes = await pool.query<Employee>(
+        `${employeeSelect} WHERE e.organization_id = $1 AND upper(btrim(e.employee_code)) = upper(btrim($2)) LIMIT 1`,
+        [orgId, empCode]
+      );
+      if (!empRes.rowCount) fail(404, 'EMPLOYEE_NOT_FOUND');
+      const row = empRes.rows[0];
+
+      res.json({
+        employee: {
+          id: row.id,
+          organizationId: org.id,
+          organizationName: org.name,
+          employeeCode: row.employee_code,
+          fullName: row.full_name,
+          avatarUrl: row.avatar_url ? `/api/public/organizations/${org.id}/employees/${row.id}/avatar` : null,
+          hireDate: row.hire_date,
+          employmentStatus: row.employment_status,
+          departmentName: row.department_name,
+          positionTitle: row.position_title,
+          managerName: row.manager_name,
+          phone: row.phone,
+          personalEmail: row.personal_email,
+          bankName: row.bank_name,
+          bankAccountNumber: row.bank_account_number,
+          bankAccountName: row.bank_account_name,
+        },
+      });
+    } catch (err) { next(err); }
+  });
+
+  app.get('/api/public/organizations/:organizationId/employees/:employeeId/avatar', async (req, res, next) => {
+    try {
+      const orgId = uuid.parse(req.params.organizationId);
+      const empId = uuid.parse(req.params.employeeId);
+      const empRes = await pool.query<{ avatar_url: string | null }>(
+        'SELECT avatar_url FROM employees WHERE organization_id = $1 AND id = $2',
+        [orgId, empId]
+      );
+      const row = empRes.rows[0];
+      if (!row || !row.avatar_url) fail(404, 'AVATAR_NOT_FOUND');
+      const { buffer, absolutePath } = await readFile(orgId, row.avatar_url!);
+      const ext = path.extname(absolutePath).toLowerCase();
+      const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(buffer);
+    } catch (err) { next(err); }
   });
 }

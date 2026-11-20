@@ -1,20 +1,21 @@
 {
-  "id": "EMP-003",
-  "summary": "Employee Profile Enhancement: Avatar upload, Documents management, Work history & appointments, and Excel batch import with duplicate validation",
-  "allowed_scopes": ["frontend", "backend", "database", "tests", "governance"],
+  "id": "EMP-004",
+  "summary": "Employee QR Code Badge, Public Digital Card page, and Bank Account Management",
+  "allowed_scopes": ["frontend", "backend", "database", "contracts", "tests"],
   "risk": "high",
-  "security_review_required": true,
+  "security_review_required": false,
   "acceptance": [
-    "Secure file upload service for JPG/PNG avatars, PDF/Excel documents with MIME validation, size limits, and tenant isolation",
-    "Avatar display in employee roster with upload capability for HR/Admin and self-service for employees",
-    "Employee work history timeline expanded to support appointment, promotion, transfer, and awards/achievements",
-    "Employee documents tab in detail drawer supporting upload, listing, metadata, and secure authenticated download",
-    "Excel/CSV bulk employee import with downloadable sample template, preview, format validation, duplicate detection, and batch execution report",
-    "Strict tenant isolation, RBAC enforcement, audit logging, and automated integration tests",
-    "Every signed-in account, including users without an employee record, can upload and access only its own JPG/PNG profile avatar up to 10 MB",
-    "Account, member, and invitation avatars open in an accessible zoomable image viewer; list rows use initials when no account avatar exists",
-    "Employee roster avatars and avatar-bearing account/employee detail views use the same accessible zoomable image viewer",
-    "Employee import offers a downloadable XLSX template with column guidance, and the parser accepts the downloaded template format",
-    "The shared avatar viewer uses the browser modal top layer and appears above native employee/account detail dialogs"
+    "Migration 017: Added bank_name, bank_account_number, bank_account_name to employees table",
+    "Pure TypeScript zero-dependency QR Code generator with SVG vector output (qrcode.ts)",
+    "Employee roster shows interactive QR badge thumbnail on each row",
+    "Clicking QR badge opens zoomable accessible dialog modal matching the Avatar viewer design pattern",
+    "QR modal contains copy link, download SVG QR, and direct navigation button",
+    "Scanning QR code directs to /employee-card public digital employee business card page",
+    "Public API endpoint GET /api/public/organizations/:organizationId/employees/:employeeCode returns safe card info with bank details",
+    "Public API endpoint GET /api/public/organizations/:organizationId/employees/:employeeId/avatar streams verified avatar",
+    "EmployeeDetailDrawer profile tab displays and allows editing bank account information",
+    "Employees create modal supports optional bank information fields",
+    "100% test coverage with automated unit tests for QR generator, QR badge component, and public digital card page",
+    "Creating a new employee profile with valid personal and optional bank details succeeds; invalid profile input reports actionable validation guidance"
   ]
 }

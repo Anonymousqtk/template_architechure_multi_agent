@@ -53,7 +53,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
   const [success, setSuccess] = useState('');
   const [today, setToday] = useState('');
 
-  const [tab, setTab] = useState<'profile' | 'contracts' | 'history' | 'documents'>('profile');
+  const [tab, setTab] = useState<'profile' | 'contracts' | 'history' | 'documents' | 'salary' | 'insurance'>('profile');
   const [contracts, setContracts] = useState<EmployeePage<EmployeeContract> | null>(null);
   const [history, setHistory] = useState<EmployeePage<WorkHistory> | null>(null);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -64,6 +64,28 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
   const [historyPage, setHistoryPage] = useState(1);
   const [sectionLoading, setSectionLoading] = useState(false);
   const [sectionError, setSectionError] = useState('');
+
+  // PAY-001 Enhancement: Salary & Insurance history state
+  interface SalaryProfileHistory {
+    id: string; salaryMode: string; baseSalary: string; currency: string;
+    effectiveFrom: string | null; effectiveTo: string | null;
+    status: string; notes: string | null; createdAt: string;
+    components: Array<{ componentId: string; componentName: string; componentCode: string; type: string; amount: string; percentage: string | null; notes: string | null }>;
+  }
+  interface SIProfile {
+    id: string; siCode: string; hiCode: string | null; insuredName: string;
+    enrollmentDate: string; terminationDate: string | null; siSalary: string;
+    currency: string; status: string; suspensionReason: string | null; notes: string | null;
+  }
+  interface SIContribution {
+    contributionMonth: string; siSalary: string; employeeRate: string; employerRate: string;
+    employeeAmount: string; employerAmount: string; status: string;
+    adjustmentReason: string | null; notes: string | null; confirmedAt: string | null;
+  }
+  const [salaryHistory, setSalaryHistory] = useState<{ items: SalaryProfileHistory[]; total: number } | null>(null);
+  const [siProfile, setSiProfile] = useState<SIProfile | null>(null);
+  const [siContributions, setSiContributions] = useState<SIContribution[]>([]);
+  const [salaryPage, setSalaryPage] = useState(1);
 
   const [editing, setEditing] = useState(false);
   const [contractEditor, setContractEditor] = useState<EmployeeContract | 'new' | null>(null);
@@ -157,6 +179,37 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
       loadDocuments();
       return;
     }
+    if (tab === 'salary') {
+      let active = true;
+      setSectionLoading(true);
+      setSectionError('');
+      const payBase = '/api/organizations/' + encodeURIComponent(profile.organization.id) + '/payroll';
+      request<{ items: SalaryProfileHistory[]; total: number }>(
+        payBase + '/employees/' + detail.id + '/salary-history?page=' + salaryPage + '&limit=10'
+      )
+        .then(r => { if (active) setSalaryHistory(r); })
+        .catch(e => { if (active) setSectionError(errorText(e)); })
+        .finally(() => { if (active) setSectionLoading(false); });
+      return () => { active = false; };
+    }
+    if (tab === 'insurance') {
+      let active = true;
+      setSectionLoading(true);
+      setSectionError('');
+      const payBase = '/api/organizations/' + encodeURIComponent(profile.organization.id) + '/payroll';
+      request<{ profile: SIProfile | null; contributions: SIContribution[] }>(
+        payBase + '/employees/' + detail.id + '/social-insurance'
+      )
+        .then(r => {
+          if (active) {
+            setSiProfile(r.profile);
+            setSiContributions(r.contributions);
+          }
+        })
+        .catch(e => { if (active) setSectionError(errorText(e)); })
+        .finally(() => { if (active) setSectionLoading(false); });
+      return () => { active = false; };
+    }
     let active = true;
     setSectionLoading(true);
     setSectionError('');
@@ -181,7 +234,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     return () => {
       active = false;
     };
-  }, [url, detail?.id, tab, contractPage, historyPage, canContracts]);
+  }, [url, detail?.id, tab, contractPage, historyPage, canContracts, salaryPage, profile.organization.id]);
 
   function close() {
     if (busy || closing) return;
@@ -227,6 +280,9 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
             phone: nullable(f, 'phone'),
             personalEmail: nullable(f, 'personalEmail'),
             address: nullable(f, 'address'),
+            bankName: nullable(f, 'bankName'),
+            bankAccountNumber: nullable(f, 'bankAccountNumber'),
+            bankAccountName: nullable(f, 'bankAccountName'),
           },
           'PATCH'
         ),
@@ -568,6 +624,24 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
               >
                 Tài liệu đính kèm
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'salary'}
+                className={'emp-drawer-tab' + (tab === 'salary' ? ' is-active' : '')}
+                onClick={() => { setTab('salary'); setSalaryPage(1); }}
+              >
+                Lịch sử lương
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'insurance'}
+                className={'emp-drawer-tab' + (tab === 'insurance' ? ' is-active' : '')}
+                onClick={() => { setTab('insurance'); }}
+              >
+                BHXH
+              </button>
             </nav>
 
             {tab === 'profile' && !editing && (
@@ -647,6 +721,33 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                   </section>
                 )}
 
+                <section className="emp-card">
+                  <div className="emp-card-header">
+                    <h4>Thông tin tài khoản ngân hàng</h4>
+                    <small className="muted">Dùng cho chi trả lương &amp; thanh toán công tác</small>
+                  </div>
+                  <dl className="drawer-detail-list">
+                    <div>
+                      <dt>Ngân hàng</dt>
+                      <dd>{detail.bankName || 'Chưa cập nhật'}</dd>
+                    </div>
+                    <div>
+                      <dt>Số tài khoản</dt>
+                      <dd>
+                        {detail.bankAccountNumber ? (
+                          <code>{detail.bankAccountNumber}</code>
+                        ) : (
+                          'Chưa cập nhật'
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Tên chủ tài khoản</dt>
+                      <dd>{detail.bankAccountName ? detail.bankAccountName.toUpperCase() : 'Chưa cập nhật'}</dd>
+                    </div>
+                  </dl>
+                </section>
+
                 {profile.organization.role === 'ADMIN' && !detail.userId && (
                   <form
                     className="emp-card emp-link-card"
@@ -716,6 +817,18 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                   <label className="field">
                     <span>Địa chỉ</span>
                     <input name="address" maxLength={500} defaultValue={detail.address || ''} />
+                  </label>
+                  <label className="field">
+                    <span>Tên ngân hàng</span>
+                    <input name="bankName" maxLength={100} placeholder="VD: Vietcombank, Techcombank, MB Bank..." defaultValue={detail.bankName || ''} />
+                  </label>
+                  <label className="field">
+                    <span>Số tài khoản ngân hàng</span>
+                    <input name="bankAccountNumber" maxLength={50} placeholder="Nhập số tài khoản ngân hàng" defaultValue={detail.bankAccountNumber || ''} />
+                  </label>
+                  <label className="field">
+                    <span>Tên chủ tài khoản</span>
+                    <input name="bankAccountName" maxLength={150} placeholder="Tên chủ tài khoản (in hoa)" defaultValue={detail.bankAccountName || ''} />
                   </label>
                   <div className="emp-actions">
                     <button className="primary" type="submit">
@@ -1174,6 +1287,139 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                     <p className="muted">Chưa có tài liệu đính kèm nào.</p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* ---- PAY-001 Enhancement: Salary History Tab ---- */}
+            {tab === 'salary' && (
+              <div className="emp-tab-panel">
+                <section className="emp-card">
+                  <div className="emp-card-header">
+                    <h4>Lịch sử mức lương</h4>
+                  </div>
+                  {sectionLoading && <p role="status">Đang tải lịch sử lương…</p>}
+                  {sectionError && <p role="alert" className="notice error">{sectionError}</p>}
+                  {!sectionLoading && !sectionError && salaryHistory && (
+                    <>
+                      {salaryHistory.items.length === 0 && (
+                        <p className="muted">Chưa có hồ sơ lương nào.</p>
+                      )}
+                      {salaryHistory.items.map(sp => (
+                        <article key={sp.id} className="emp-history-entry">
+                          <div className="emp-history-meta">
+                            <span className="emp-badge emp-badge-linked">
+                              {sp.salaryMode === 'GROSS' ? 'Gross' : 'Net'}
+                            </span>
+                            <span className="emp-history-date">
+                              Hiệu lực từ: <strong>{dateLabel(sp.effectiveFrom)}</strong>
+                              {sp.effectiveTo ? ` → ${dateLabel(sp.effectiveTo)}` : ' (đang áp dụng)'}
+                            </span>
+                            <span className={'emp-badge ' + (sp.status === 'ACTIVE' ? 'emp-badge-active' : 'emp-badge-inactive')}>
+                              {sp.status === 'ACTIVE' ? 'Hiệu lực' : sp.status === 'DRAFT' ? 'Nháp' : 'Không hiệu lực'}
+                            </span>
+                          </div>
+                          {sp.components.length > 0 && (
+                            <table className="payroll-table" style={{ marginTop: 8, fontSize: '0.85rem' }}>
+                              <thead>
+                                <tr>
+                                  <th>Khoản mục</th>
+                                  <th>Loại</th>
+                                  <th style={{ textAlign: 'right' }}>Số tiền / %</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sp.components.map(c => (
+                                  <tr key={c.componentId}>
+                                    <td>{c.componentName}</td>
+                                    <td>{c.type === 'ALLOWANCE' ? 'Phụ cấp' : c.type === 'BONUS' ? 'Thưởng' : c.type === 'DEDUCTION' ? 'Khấu trừ' : 'Lương cơ bản'}</td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      {c.percentage != null ? `${c.percentage}%` : Number(c.amount).toLocaleString('vi-VN') + ' ₫'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          {sp.notes && <p className="muted" style={{ marginTop: 4, fontSize: '0.82rem' }}>{sp.notes}</p>}
+                        </article>
+                      ))}
+                      {salaryHistory.total > 10 && (
+                        <div className="payroll-pager">
+                          <button disabled={salaryPage <= 1} onClick={() => setSalaryPage(p => p - 1)} type="button">‹ Trước</button>
+                          <span>Trang {salaryPage}</span>
+                          <button disabled={salaryPage * 10 >= salaryHistory.total} onClick={() => setSalaryPage(p => p + 1)} type="button">Sau ›</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </section>
+              </div>
+            )}
+
+            {/* ---- PAY-001 Enhancement: Social Insurance (BHXH) Tab ---- */}
+            {tab === 'insurance' && (
+              <div className="emp-tab-panel">
+                <section className="emp-card">
+                  <div className="emp-card-header">
+                    <h4>Hồ sơ Bảo hiểm xã hội (BHXH)</h4>
+                  </div>
+                  {sectionLoading && <p role="status">Đang tải hồ sơ BHXH…</p>}
+                  {sectionError && <p role="alert" className="notice error">{sectionError}</p>}
+                  {!sectionLoading && !siProfile && !sectionError && (
+                    <p className="muted">Chưa có thông tin BHXH được ghi nhận.</p>
+                  )}
+                  {!sectionLoading && siProfile && (
+                    <>
+                      <dl className="emp-dl">
+                        <dt>Mã số BHXH</dt><dd><strong>{siProfile.siCode}</strong></dd>
+                        {siProfile.hiCode && (<><dt>Mã BHYT</dt><dd>{siProfile.hiCode}</dd></>)}
+                        <dt>Tên trên hồ sơ BHXH</dt><dd>{siProfile.insuredName}</dd>
+                        <dt>Ngày tham gia</dt><dd>{dateLabel(siProfile.enrollmentDate)}</dd>
+                        {siProfile.terminationDate && (<><dt>Ngày kết thúc</dt><dd>{dateLabel(siProfile.terminationDate)}</dd></>)}
+                        <dt>Mức lương đóng BHXH</dt><dd>{Number(siProfile.siSalary).toLocaleString('vi-VN')} {siProfile.currency}</dd>
+                        <dt>Trạng thái</dt>
+                        <dd>
+                          <span className={'emp-badge ' + (siProfile.status === 'ACTIVE' ? 'emp-badge-active' : 'emp-badge-inactive')}>
+                            {siProfile.status === 'ACTIVE' ? 'Đang tham gia' : siProfile.status === 'SUSPENDED' ? 'Tạm dừng' : 'Đã kết thúc'}
+                          </span>
+                        </dd>
+                        {siProfile.suspensionReason && (<><dt>Lý do tạm dừng</dt><dd className="muted">{siProfile.suspensionReason}</dd></>)}
+                      </dl>
+
+                      {siContributions.length > 0 && (
+                        <>
+                          <h5 style={{ marginTop: 16, marginBottom: 8 }}>Lịch sử đóng BHXH (12 tháng gần nhất)</h5>
+                          <table className="payroll-table">
+                            <thead>
+                              <tr>
+                                <th>Tháng</th>
+                                <th style={{ textAlign: 'right' }}>Mức lương đóng</th>
+                                <th style={{ textAlign: 'right' }}>NLĐ đóng</th>
+                                <th style={{ textAlign: 'right' }}>NSDLĐ đóng</th>
+                                <th>Trạng thái</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {siContributions.map(c => (
+                                <tr key={c.contributionMonth}>
+                                  <td>{c.contributionMonth.slice(0, 7)}</td>
+                                  <td style={{ textAlign: 'right' }}>{Number(c.siSalary).toLocaleString('vi-VN')}</td>
+                                  <td style={{ textAlign: 'right' }}>{Number(c.employeeAmount).toLocaleString('vi-VN')}</td>
+                                  <td style={{ textAlign: 'right' }}>{Number(c.employerAmount).toLocaleString('vi-VN')}</td>
+                                  <td>
+                                    <span className={'emp-badge ' + (c.status === 'CONFIRMED' ? 'emp-badge-active' : c.status === 'SKIPPED' ? 'emp-badge-inactive' : '')}>
+                                      {c.status === 'CONFIRMED' ? 'Đã xác nhận' : c.status === 'PENDING' ? 'Chờ xác nhận' : c.status === 'ADJUSTED' ? 'Điều chỉnh' : 'Bỏ qua'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </>
+                      )}
+                    </>
+                  )}
+                </section>
               </div>
             )}
           </>

@@ -1,9 +1,10 @@
 export interface Employee {
- id:string;userId:string|null;employeeCode:string;fullName:string;hireDate:string;
+ id:string;organizationId?:string;userId:string|null;employeeCode:string;fullName:string;hireDate:string;
  employmentStatus:'ACTIVE'|'ON_LEAVE'|'TERMINATED';departmentId:string|null;departmentName:string|null;
  positionId:string|null;positionTitle:string|null;managerUserId:string|null;managerName:string|null;
  version:number;canEdit:boolean;birthDate?:string|null;phone?:string|null;personalEmail?:string|null;address?:string|null;
  avatarUrl?:string|null;
+ bankName?:string|null;bankAccountNumber?:string|null;bankAccountName?:string|null;
 }
 export interface EmployeeContract {
  id:string;contractNumber:string;contractType:'PROBATION'|'FIXED_TERM'|'INDEFINITE';startDate:string;endDate:string|null;

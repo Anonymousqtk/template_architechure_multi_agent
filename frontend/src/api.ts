@@ -96,7 +96,7 @@ export interface Invitation {
   consumedAt: string | null; revokedAt: string | null; deliveryStatus: string; avatarUrl?: string | null;
 }
 export class ApiError extends Error {
-  constructor(public status: number, public code: string) { super(code); }
+  constructor(public status: number, public code: string, public fields: string[] = []) { super(code); }
 }
 let csrfToken = '';
 let confirmSensitiveAction: (() => Promise<boolean>) | undefined;
@@ -132,13 +132,31 @@ async function send<T>(path: string, body?: unknown, methodOverride?: 'GET' | 'P
     ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }),
   });
   if (!response.ok) {
-    const data = await response.json().catch(() => ({ code: 'REQUEST_FAILED' })) as { code?: string };
-    throw new ApiError(response.status, data.code || 'REQUEST_FAILED');
+    const data = await response.json().catch(() => ({ code: 'REQUEST_FAILED' })) as { code?: string; fields?: unknown };
+    const fields = Array.isArray(data.fields) ? data.fields.filter((field): field is string => typeof field === 'string') : [];
+    throw new ApiError(response.status, data.code || 'REQUEST_FAILED', fields);
   }
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === 'INVALID_INPUT' && error.fields.length) {
+      const fieldLabels: Record<string, string> = {
+        employeeCode: 'Mã nhân viên',
+        fullName: 'Họ và tên hồ sơ',
+        hireDate: 'Ngày vào làm',
+        birthDate: 'Ngày sinh',
+        phone: 'Số điện thoại cá nhân',
+        personalEmail: 'Email cá nhân',
+        address: 'Địa chỉ liên hệ',
+        bankName: 'Tên ngân hàng',
+        bankAccountNumber: 'Số tài khoản ngân hàng',
+        bankAccountName: 'Tên chủ tài khoản',
+        userId: 'Tài khoản liên kết',
+      };
+      const invalidFields = [...new Set(error.fields.map(field => fieldLabels[field]).filter(Boolean))];
+      if (invalidFields.length) return `Vui lòng kiểm tra lại: ${invalidFields.join(', ')}.`;
+    }
     const attendanceMessages: Record<string, string> = {
       ATT_EMPLOYEE_NOT_FOUND: 'Không tìm thấy nhân viên trong phạm vi được phép.',
       ATT_EMPLOYEE_INACTIVE: 'Hồ sơ nhân viên đã kết thúc công tác.',

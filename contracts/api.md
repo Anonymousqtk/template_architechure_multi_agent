@@ -21,7 +21,7 @@ API prefix: `/api/auth` and `/api/organizations/:organizationId/invitations`. JS
 
 No public `POST /api/auth/register`; public account creation requires invitation acceptance. The organization and role in an invitation cannot be overridden by request payloads. User cannot self-assign HR or ADMIN. 
 
-Use HTTP 400 for invalid input, 401 for unauthenticated, 403 for unauthorized, 409 for existing/incompatible membership where no information leaks to anonymous callers, 410 for expired/used invite (when safe), and 429 for rate limiting. HTTP status choices may be adapted to the selected framework provided security invariants remain intact.
+Use HTTP 400 for invalid input, 401 for unauthenticated, 403 for unauthorized, 409 for existing/incompatible membership where no information leaks to anonymous callers, 410 for expired/used invite (when safe), and 429 for rate limiting. Schema validation errors may include `fields`, an array of invalid field paths, but must never include submitted values. HTTP status choices may be adapted to the selected framework provided security invariants remain intact.
 
 **Contract first:** Backend owns API implementation; Frontend consumes this contract; Database owns migrations. Any change to this file requires Manager review and high-risk task approval.
 
@@ -154,7 +154,7 @@ All payroll endpoints operate under `/api/organizations/:organizationId/payroll`
 | POST | `/components` | Admin, HR | Create salary component (`code`, `name`, `type`, `calculationType`, `isTaxable`, `isStatutory`, `defaultAmount`, `active`, `description`). |
 | PUT | `/components/:id` | Admin, HR | Update component attributes. Code is immutable. |
 | GET | `/employees/:employeeId/salary-profile` | Admin, HR, Manager (in scope), Employee (self) | Fetch active employee salary profile, gross/net mode, base salary, and assigned recurring components. |
-| PUT | `/employees/:employeeId/salary-profile` | Admin, HR (reauth) | Create/update employee salary profile and recurring allowance/deduction components. Sensitive values are never logged to console or audit metadata. |
+| PUT | `/employees/:employeeId/salary-profile` | Admin, HR (reauth) | Create/update employee salary profile and recurring allowance/deduction components. Each save creates a new version preserving history. Sensitive values are never logged to console or audit metadata. |
 | GET | `/periods` | Admin, HR, Manager | Paginated payroll periods with status filter (`DRAFT`, `UNDER_REVIEW`, `APPROVED`, `CLOSED`). |
 | POST | `/periods` | Admin, HR | Create a new payroll period in `DRAFT` status (`code`, `name`, `startDate`, `endDate`, `standardWorkingDays`, `paymentDate`, `notes`). |
 | GET | `/periods/:id` | Admin, HR, Manager | Retrieve period detail and aggregate summary (slips count, total gross, total net, employee count). |
@@ -164,7 +164,28 @@ All payroll endpoints operate under `/api/organizations/:organizationId/payroll`
 | GET | `/slips/:id` | Admin, HR, Manager (in scope), Employee (self) | Itemized payslip detail with breakdown lines (base salary, allowances, bonuses, deductions, overtime). |
 | GET | `/my-slips` | Authenticated employee | Self-service payslip history for the logged-in user across all accessible periods. |
 
-Migration `013_payroll_management.sql` is additive and creates `salary_components`, `employee_salary_profiles`, `employee_salary_profile_components`, `payroll_periods`, `payroll_slips`, `payroll_slip_items`, and the `guard_closed_payroll_period` trigger.
+### PAY-001 Enhancement — Salary History & Social Insurance (BHXH)
+
+| Method | Relative path | Access | Operation |
+|---|---|---|---|
+| GET | `/employees/:employeeId/salary-history` | Admin, HR, Manager (in scope), Employee (self) | Paginated history of all salary profile versions for the employee, including effective dates, salary mode, currency, and recurring components. Applied salary (profile) vs. received salary (payslip) are distinct. |
+| GET | `/my-salary-profile` | Authenticated employee | Self-service shortcut: returns current active salary profile, components, and last 6 historical entries for the calling user's linked employee record. |
+| GET | `/employees/:employeeId/adjustment-log` | Admin, HR, Manager (in scope), Employee (self) | Paginated audit log of salary profile saves: action type, effective dates, salary mode, actor name, and reason. No monetary values stored in audit. |
+| GET | `/employees/:employeeId/social-insurance` | Admin, HR, Manager (in scope), Employee (self) | Current BHXH profile (mã BHXH, mã BHYT, ngày tham gia, mức lương đóng, trạng thái) and last 12 monthly contributions. |
+| PUT | `/employees/:employeeId/social-insurance` | Admin, HR (reauth) | Create/update employee BHXH profile. Deactivates the current ACTIVE record and inserts a new one to preserve history. Audit log written (no salary amounts). |
+| GET | `/employees/:employeeId/social-insurance/contributions` | Admin, HR, Manager (in scope), Employee (self) | Full paginated BHXH contribution history (tháng, mức lương đóng, tỷ lệ, số tiền, trạng thái xác nhận). |
+| POST | `/employees/:employeeId/social-insurance/contributions` | Admin, HR (reauth) | Record or update a monthly BHXH contribution. `contributionMonth` must be the first of the month. On conflict for the same month, updates the existing row (supports adjustments). Rates and amounts are entered by HR/Admin; no formula assumed. |
+
+**Invariants:**
+- Monetary fields use `numeric(15,2)`; never `float`. Rates use `numeric(5,4)`.
+- Salary profiles are append-only (each PUT creates a new row; old rows are retained).
+- BHXH profiles are append-only (PUT deactivates the current record and inserts a new one).
+- Contribution `contributionMonth` must be the first day of the month (400 `CONTRIBUTION_MONTH_MUST_BE_FIRST_OF_MONTH` otherwise).
+- No auto-confirmation, auto-transfer, or formula-based tax/insurance computation is performed without explicit HR input.
+- Audit events: `PAYROLL_PROFILE_SAVED`, `SI_PROFILE_SAVED`, `SI_CONTRIBUTION_RECORDED`. No salary amounts in audit payloads.
+
+Migration `013_payroll_management.sql` creates core payroll tables and the `guard_closed_payroll_period` trigger.
+Migration `016_salary_si_history.sql` (additive) creates `employee_social_insurance`, `social_insurance_contributions`, `salary_adjustment_log`, and the `trg_salary_profile_created` trigger that auto-populates the adjustment log on each salary profile insert.
 
 ## EMP-003 — Employee Profile Enhancements, Documents & Batch Import
 
@@ -201,3 +222,17 @@ Personal account avatars are available to every signed-in account, including adm
 | POST | `/employees-import/execute` | Admin, HR | Atomically batch-insert validated employee rows, creating employee records, initial work history snapshots, and audit events. |
 
 Migration `014_employee_profile_documents_import.sql` adds `avatar_url` to `employees`, adds `event_type`, `title`, and `notes` to `employee_work_history`, adds the `guard_work_history_delete` trigger, and creates the `employee_documents` table with strict MIME type constraints.
+
+## EMP-004 — Employee QR Code Badge, Public Digital Card & Bank Account Management
+
+Employees can have associated banking details (bank name, account number, account holder name). Each employee profile generates a vector QR code in the employee roster, opening a zoomable modal preview similar to the avatar viewer. Scanning the QR code navigates to an accessible, responsive public digital employee card displaying verified affiliation, contact information, and bank details for payroll/expense transfers.
+
+| Method | Path | Access | Operation |
+|---|---|---|---|
+| GET | `/api/public/organizations/:organizationId/employees/:employeeCode` | Public, unauthenticated | Retrieve safe public employee card: organization name, employee code, full name, avatar URL, department, position, hire date, status, contact, and bank details. Excludes salary, internal IDs, and sensitive PII. |
+| GET | `/api/public/organizations/:organizationId/employees/:employeeId/avatar` | Public, unauthenticated | Stream verified employee profile avatar for the digital card. |
+| POST | `/api/organizations/:organizationId/employees` | Admin, HR | Create employee with optional `bankName`, `bankAccountNumber`, and `bankAccountName`. |
+| PATCH | `/api/organizations/:organizationId/employees/:id` | Admin, HR | Update employee details including `bankName`, `bankAccountNumber`, and `bankAccountName`. |
+
+Migration `017_employee_bank_details.sql` adds `bank_name`, `bank_account_number`, and `bank_account_name` to `employees` with an index on `(organization_id, bank_name)`.
+

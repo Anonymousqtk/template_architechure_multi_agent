@@ -152,3 +152,460 @@
 .emp-import-table th{background:#f8f7fa;font-weight:600;color:#5d596c;}
 .emp-import-footer{padding:16px 24px;border-top:1px solid #eeedf2;display:flex;justify-content:flex-end;gap:12px;background:#fafbfc;}
 
+/* ============================================================
+   EMP-004: QR Code Badge, Viewer Modal & Digital Employee Card
+   ============================================================ */
+
+/* QR Code Trigger Button in Employee Roster */
+.emp-qr-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid #e0def0;
+  border-radius: 6px;
+  background: #fbfaff;
+  color: #5145bd;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+.emp-qr-trigger:hover {
+  background: #eeeaff;
+  border-color: #7367f0;
+  color: #3b2fb5;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(115, 103, 240, 0.15);
+}
+.emp-qr-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.emp-qr-label {
+  letter-spacing: 0.02em;
+}
+
+/* QR Viewer Modal Overrides & Enhancements */
+.qr-viewer-dialog {
+  max-width: 520px;
+}
+.qr-viewer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2b2838;
+}
+.qr-action-btn {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 6px 12px !important;
+  min-height: 36px !important;
+  border-radius: 8px !important;
+  background: #f4f3fb !important;
+  color: #5145bd !important;
+  border: 1px solid #e0def0 !important;
+  transition: background 0.15s ease;
+}
+.qr-action-btn:hover {
+  background: #eeeaff !important;
+  border-color: #7367f0 !important;
+}
+
+/* Stage & Card Inside QR Modal */
+.qr-viewer-stage {
+  padding: 24px 20px 32px;
+  background: #f8f7fc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+.qr-card-container {
+  transition: transform 0.12s ease-out;
+  transform-origin: center center;
+}
+.qr-card-badge {
+  width: 320px;
+  background: #ffffff;
+  border: 1px solid #e5e3f2;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(47, 43, 61, 0.08);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.qr-card-org {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #686477;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 14px;
+}
+.qr-org-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7367f0;
+}
+.qr-code-box {
+  width: 200px;
+  height: 200px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #eeedf4;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.qr-code-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.qr-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.qr-card-name strong {
+  font-size: 16.5px;
+  color: #2b2838;
+}
+.qr-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #686477;
+}
+.qr-emp-code {
+  font-weight: 600;
+  color: #7367f0;
+  background: #f4f3fb;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.qr-card-dept {
+  font-size: 12px;
+  color: #8b8698;
+}
+.qr-card-footer {
+  width: 100%;
+  border-top: 1px dashed #e8e6f4;
+  padding-top: 12px;
+}
+.qr-card-tip {
+  font-size: 11.5px;
+  color: #8b8698;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+.qr-link-preview {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7367f0;
+  text-decoration: none;
+}
+.qr-link-preview:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================
+   Digital Employee Card Page (Scan Destination Page)
+   ============================================================ */
+.emp-card-page-layout {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f0eef9 0%, #faf9fd 40%, #ffffff 100%);
+  display: flex;
+  flex-direction: column;
+  color: #2b2838;
+  font-family: inherit;
+}
+.emp-card-page-topbar {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(220, 216, 238, 0.6);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+}
+.emp-card-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  font-size: 18px;
+  font-weight: 700;
+  color: #2b2838;
+}
+.emp-card-main-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+.emp-card-loading,
+.emp-card-error-box {
+  background: #ffffff;
+  padding: 36px 32px;
+  border-radius: 16px;
+  border: 1px solid #e7e5f3;
+  box-shadow: 0 12px 36px rgba(47, 43, 61, 0.08);
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+}
+.emp-card-error-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+/* Digital Card Component */
+.digital-emp-card {
+  max-width: 460px;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #e4e2f2;
+  border-radius: 20px;
+  box-shadow: 0 16px 48px rgba(47, 43, 61, 0.09);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.digital-card-banner {
+  background: linear-gradient(135deg, #7367f0 0%, #5145bd 100%);
+  padding: 20px 24px 44px;
+  color: #ffffff;
+  position: relative;
+}
+.digital-card-org {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.digital-verified-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+.digital-org-name {
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.95;
+}
+.digital-card-profile-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  padding: 0 24px;
+  margin-top: -36px;
+  position: relative;
+  z-index: 2;
+}
+.digital-card-avatar-wrap {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 4px solid #ffffff;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.digital-card-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.digital-card-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eeeaff;
+  color: #5145bd;
+  font-size: 26px;
+  font-weight: 700;
+}
+.digital-card-name-group {
+  padding-bottom: 6px;
+  min-width: 0;
+}
+.digital-emp-name {
+  font-size: 21px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: #2b2838;
+}
+.digital-emp-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.digital-card-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.digital-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px 16px;
+}
+.digital-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.digital-label {
+  font-size: 11.5px;
+  color: #8b8698;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.digital-val {
+  font-size: 14px;
+  color: #2b2838;
+  font-weight: 600;
+}
+.digital-link {
+  font-size: 13.5px;
+  color: #7367f0;
+  text-decoration: none;
+  font-weight: 600;
+  word-break: break-all;
+}
+.digital-link:hover {
+  text-decoration: underline;
+}
+
+/* Bank Section in Card */
+.digital-bank-section {
+  background: #fbfaff;
+  border: 1px solid #ebe8f8;
+  border-radius: 12px;
+  padding: 16px;
+}
+.digital-bank-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #5145bd;
+  margin-bottom: 12px;
+}
+.digital-bank-header h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.digital-bank-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.digital-bank-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.bank-sublabel {
+  color: #686477;
+  font-size: 12.5px;
+}
+.bank-strong {
+  color: #2b2838;
+  font-weight: 600;
+  text-align: right;
+}
+.digital-bank-acc {
+  align-items: center;
+}
+.bank-acc-copy-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bank-number {
+  font-size: 15px;
+  font-weight: 700;
+  color: #2b2838;
+  background: #ffffff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #e2e0ee;
+  letter-spacing: 0.04em;
+}
+.bank-copy-btn {
+  padding: 4px 8px;
+  font-size: 11.5px;
+  border-radius: 4px;
+  background: #7367f0;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+.bank-copy-btn:hover {
+  opacity: 0.9;
+}
+.bank-holder-name {
+  font-weight: 700;
+  color: #2b2838;
+  letter-spacing: 0.03em;
+}
+.digital-bank-empty {
+  font-size: 12.5px;
+  margin: 0;
+  color: #8b8698;
+}
+
+.digital-card-footer {
+  padding: 16px 24px 20px;
+  border-top: 1px solid #eeedf4;
+  background: #fafbfc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.digital-btn-copy {
+  width: 100%;
+  min-height: 40px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.digital-powered-by {
+  font-size: 11px;
+  color: #a09cb0;
+}
+
+

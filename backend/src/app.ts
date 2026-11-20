@@ -362,7 +362,10 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
       const event=error.status===429?'AUTH_RATE_LIMITED':_req.path==='/api/auth/login'?'LOGIN_FAILED':'MFA_FAILED';
       try{await audit(pool,event,_req.identity?.userId,_req.identity?.orgId,undefined,{outcome:'DENIED',code:error.code});}catch{/* Never serialize sensitive input/provider errors. */}
     }
-    if(error instanceof z.ZodError) {res.status(400).json({code:'INVALID_INPUT'});return;}
+    if(error instanceof z.ZodError) {
+      const fields=[...new Set(error.issues.map(issue=>issue.path.map(String).join('.')).filter(Boolean))];
+      res.status(400).json({code:'INVALID_INPUT',...(fields.length?{fields}:{})});return;
+    }
     if(error instanceof HttpError) {if(error.status===429) res.setHeader('Retry-After','900');res.status(error.status).json({code:error.code});return;}
     if(error && typeof error==='object' && 'type' in error && error.type==='entity.too.large') {res.status(413).json({code:'FILE_TOO_LARGE'});return;}
     if(error instanceof SyntaxError) {res.status(400).json({code:'INVALID_JSON'});return;}

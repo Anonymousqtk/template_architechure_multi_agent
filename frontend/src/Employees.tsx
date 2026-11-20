@@ -3,6 +3,7 @@ import { request, errorText, type Profile } from './api';
 import { type Employee, type EmployeePage, type ImportPreviewResult, employmentLabels } from './employee-types';
 import { EmployeeDetailDrawer } from './EmployeeDetailDrawer';
 import { Avatar } from './Avatar';
+import { EmployeeQrBadge } from './EmployeeQrBadge';
 import './employees.css';
 
 type Choice = {
@@ -249,6 +250,9 @@ export function Employees({ profile }: { profile: Profile }) {
       phone: nullable(f, 'phone'),
       personalEmail: nullable(f, 'personalEmail'),
       address: nullable(f, 'address'),
+      bankName: nullable(f, 'bankName'),
+      bankAccountNumber: nullable(f, 'bankAccountNumber'),
+      bankAccountName: nullable(f, 'bankAccountName'),
     };
   }
 
@@ -379,6 +383,18 @@ export function Employees({ profile }: { profile: Profile }) {
                   <span>Địa chỉ liên hệ</span>
                   <input name="address" maxLength={500} placeholder="Địa chỉ thường trú hoặc tạm trú" />
                 </label>
+                <label className="field">
+                  <span>Tên ngân hàng (tùy chọn)</span>
+                  <input name="bankName" maxLength={100} placeholder="VD: Vietcombank, Techcombank..." />
+                </label>
+                <label className="field">
+                  <span>Số tài khoản ngân hàng</span>
+                  <input name="bankAccountNumber" maxLength={50} placeholder="Nhập số tài khoản" />
+                </label>
+                <label className="field emp-span">
+                  <span>Tên chủ tài khoản</span>
+                  <input name="bankAccountName" maxLength={150} placeholder="Tên chủ tài khoản (in hoa)" />
+                </label>
                 <div className="emp-span">
                   <SearchChoice
                     base={base}
@@ -450,6 +466,7 @@ export function Employees({ profile }: { profile: Profile }) {
             <thead>
               <tr>
                 <th>Mã nhân viên</th>
+                <th>Mã QR</th>
                 <th>Họ và tên</th>
                 <th>Phòng ban / vị trí</th>
                 <th>Trạng thái</th>
@@ -461,6 +478,13 @@ export function Employees({ profile }: { profile: Profile }) {
                 <tr key={e.id}>
                   <td>
                     <strong>{e.employeeCode}</strong>
+                  </td>
+                  <td>
+                    <EmployeeQrBadge
+                      employee={e}
+                      orgId={e.organizationId || profile.organization.id}
+                      orgName={profile.organization.name}
+                    />
                   </td>
                   <td>
                     <div className="emp-name-cell">
@@ -493,7 +517,7 @@ export function Employees({ profile }: { profile: Profile }) {
               ))}
               {!loading && !error && list?.items.length === 0 && (
                 <tr>
-                  <td colSpan={5}>Chưa có hồ sơ phù hợp.</td>
+                  <td colSpan={6}>Chưa có hồ sơ phù hợp.</td>
                 </tr>
               )}
             </tbody>
