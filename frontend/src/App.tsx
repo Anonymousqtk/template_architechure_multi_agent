@@ -12,6 +12,7 @@ import { Employees } from './Employees';
 import { Attendance } from './Attendance';
 import { Payroll } from './Payroll';
 import { Units } from './Units';
+import { ReportingCenter } from './ReportingCenter';
 import { Avatar } from './Avatar';
 import { EmployeeCardPage } from './EmployeeCardPage';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -278,7 +279,9 @@ export default function App() {
   else if (path === '/admin/attendance-policy') content = profile ? <Attendance key="policy" profile={profile} view="policy" /> : login;
   else if (path === '/admin/payroll') content = profile ? <Payroll key="payroll" profile={profile} view="periods" /> : login;
   else if (path === '/admin/salary-components') content = profile ? <Payroll key="components" profile={profile} view="components" /> : login;
+  else if (path === '/admin/payroll-accounting') content = profile ? <Payroll key="accounting" profile={profile} view="accounting" /> : login;
   else if (path === '/admin/my-payslips') content = profile ? <Payroll key="my-slips" profile={profile} view="my-slips" /> : login;
+  else if (path === '/admin/reports') content = profile ? <ReportingCenter profile={profile} onNavigate={navigate} /> : login;
   else if (path === '/admin/units') content = profile ? <Units onSelected={result=>{setProfile(result);navigate('/app');}} /> : login;
   else if (path === '/app') content = profile ? (profileView?<AccountProfile profile={profile} />:<Dashboard profile={profile}/>) : <><Notice error>Phiên đăng nhập không còn hiệu lực.</Notice>{login}</>;
   else if (path === '/login' || path === '/') content = login;

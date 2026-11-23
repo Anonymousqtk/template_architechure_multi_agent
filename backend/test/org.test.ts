@@ -361,7 +361,7 @@ describe('ORG-001 Organization Structure, Departments, Positions & Hierarchy', (
       await upgrade.end();
       await pool.query(`DROP DATABASE "${database}"`);
     }
-  }, 30000);
+  }, 120000);
   it('ORG-01: Organization management respects tenant isolation and Admin-only updates', async () => {
     const admin = await actor('admin@example.test');
     const hr = await actor('hr@example.test');

@@ -194,6 +194,125 @@ BEGIN
     DELETE FROM employee_work_history WHERE employee_id='00000000-0000-0000-0000-000000000040';
     RAISE EXCEPTION 'immutable work history guard absent';
   EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- PAY-003: Accounting & Reconciliation Constraints
+  INSERT INTO accounting_accounts(id,organization_id,code,name,type)
+  VALUES
+    ('00000000-0000-0000-0000-000000000101','00000000-0000-0000-0000-000000000001','6422','Chi phi quan ly DN','EXPENSE'),
+    ('00000000-0000-0000-0000-000000000102','00000000-0000-0000-0000-000000000001','3341','Phai tra nguoi lao dong','LIABILITY');
+
+  -- Duplicate account code in same org must fail
+  BEGIN
+    INSERT INTO accounting_accounts(id,organization_id,code,name,type)
+    VALUES ('00000000-0000-0000-0000-000000000103','00000000-0000-0000-0000-000000000001','6422','Duplicate Code','EXPENSE');
+    RAISE EXCEPTION 'duplicate account code constraint absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  -- Journal entry & posted immutability
+  INSERT INTO payroll_journal_entries(id,organization_id,period_id,entry_number,entry_date,status,total_debit,total_credit)
+  VALUES ('00000000-0000-0000-0000-000000000110','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000080','PKT-202601-01','2026-01-31','DRAFT',15000000.00,15000000.00);
+
+  INSERT INTO payroll_journal_entry_lines(id,organization_id,entry_id,account_id,debit_amount,credit_amount,line_order)
+  VALUES
+    ('00000000-0000-0000-0000-000000000111','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000110','00000000-0000-0000-0000-000000000101',15000000.00,0.00,1),
+    ('00000000-0000-0000-0000-000000000112','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000110','00000000-0000-0000-0000-000000000102',0.00,15000000.00,2);
+
+  -- Post entry
+  UPDATE payroll_journal_entries SET status='POSTED', posted_at=now() WHERE id='00000000-0000-0000-0000-000000000110';
+
+  -- Modifying posted entry must fail
+  BEGIN
+    UPDATE payroll_journal_entries SET total_debit=16000000.00 WHERE id='00000000-0000-0000-0000-000000000110';
+    RAISE EXCEPTION 'posted journal entry immutability absent';
+  EXCEPTION WHEN raise_exception THEN NULL; END;
+
+  -- Modifying line of posted entry must fail
+  BEGIN
+    INSERT INTO payroll_journal_entry_lines(id,organization_id,entry_id,account_id,debit_amount,credit_amount,line_order)
+    VALUES ('00000000-0000-0000-0000-000000000113','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000110','00000000-0000-0000-0000-000000000101',1000.00,0.00,3);
+    RAISE EXCEPTION 'posted journal line immutability absent';
+  EXCEPTION WHEN raise_exception THEN NULL; END;
+
+  -- Disbursements uniqueness check
+  INSERT INTO payroll_disbursements(id,organization_id,period_id,employee_id,disbursement_code,amount,payment_date)
+  VALUES ('00000000-0000-0000-0000-000000000120','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000080','00000000-0000-0000-0000-000000000040','DISB-001',15000000.00,'2026-02-05');
+
+  BEGIN
+    INSERT INTO payroll_disbursements(id,organization_id,period_id,employee_id,disbursement_code,amount,payment_date)
+    VALUES ('00000000-0000-0000-0000-000000000121','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000080','00000000-0000-0000-0000-000000000040','DISB-001',15000000.00,'2026-02-05');
+    RAISE EXCEPTION 'duplicate disbursement code constraint absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  -- PAY-004: Compliance & Reporting checks
+  -- 1. Statutory rule with invalid date range
+  BEGIN
+    INSERT INTO compliance_statutory_rules(id, organization_id, rule_type, rule_code, name, effective_from, effective_to, parameters, legal_reference)
+    VALUES ('00000000-0000-0000-0000-000000000130', '00000000-0000-0000-0000-000000000001', 'PIT_DEDUCTIONS', 'PIT_RULE_TEST', 'PIT Deductions', '2026-01-01', '2025-01-01', '{"personal": 11000000}'::jsonb, 'NQ 954/2020');
+    RAISE EXCEPTION 'statutory rule effective date check absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- 2. Valid statutory rule
+  INSERT INTO compliance_statutory_rules(id, organization_id, rule_type, rule_code, name, effective_from, effective_to, parameters, legal_reference)
+  VALUES ('00000000-0000-0000-0000-000000000131', '00000000-0000-0000-0000-000000000001', 'PIT_DEDUCTIONS', 'PIT_RULE_TEST', 'PIT Deductions', '2026-01-01', NULL, '{"personal": 11000000, "dependent": 4400000}'::jsonb, 'NQ 954/2020');
+
+  -- 3. Employee dependent
+  INSERT INTO employee_dependents(id, organization_id, employee_id, full_name, relationship, tax_id, effective_from)
+  VALUES ('00000000-0000-0000-0000-000000000140', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000040', 'Nguyen Con', 'CHILD', '8000112233', '2026-01-01');
+
+  -- 4. Compliance report creation & locking
+  INSERT INTO compliance_reports(id, organization_id, report_type, report_code, title, period_start, period_end, status, created_by)
+  VALUES ('00000000-0000-0000-0000-000000000150', '00000000-0000-0000-0000-000000000001', 'PIT_MONTHLY', 'REP-PIT-2026-01', 'Báo cáo thuế TNCN T1/2026', '2026-01-01', '2026-01-31', 'LOCKED', '00000000-0000-0000-0000-000000000002');
+
+  -- 5. Modifying locked report must fail
+  BEGIN
+    UPDATE compliance_reports SET title='Modified Title' WHERE id='00000000-0000-0000-0000-000000000150';
+    RAISE EXCEPTION 'locked compliance report immutability absent';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'locked compliance report immutability absent' THEN
+      RAISE EXCEPTION 'locked compliance report immutability absent';
+    END IF;
+  END;
+
+  -- 6. Compliance anomaly & audit log
+  INSERT INTO compliance_anomalies(id, organization_id, report_id, employee_id, anomaly_code, severity, description)
+  VALUES ('00000000-0000-0000-0000-000000000160', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000150', '00000000-0000-0000-0000-000000000040', 'SALARY_BELOW_REGIONAL_MIN', 'CRITICAL', 'Lương thấp hơn mức tối thiểu vùng');
+
+  INSERT INTO compliance_audit_logs(id, organization_id, action, target_type, target_id, performed_by, details)
+  VALUES ('00000000-0000-0000-0000-000000000170', '00000000-0000-0000-0000-000000000001', 'REPORT_LOCKED', 'COMPLIANCE_REPORT', '00000000-0000-0000-0000-000000000150', '00000000-0000-0000-0000-000000000002', '{"code": "REP-PIT-2026-01"}'::jsonb);
+
+  -- RPT-001: Reporting Center & Export Audit checks
+  -- 1. Insert report catalog entry
+  INSERT INTO report_catalog(id, organization_id, code, category, name, description, min_role)
+  VALUES ('00000000-0000-0000-0000-000000000180', '00000000-0000-0000-0000-000000000001', 'RPT-EMP-01', 'EMPLOYEE', 'Báo cáo nhân sự', 'Chi tiết nhân sự', 'HR');
+
+  -- Duplicate report code in same org must fail
+  BEGIN
+    INSERT INTO report_catalog(id, organization_id, code, category, name, description, min_role)
+    VALUES ('00000000-0000-0000-0000-000000000181', '00000000-0000-0000-0000-000000000001', 'RPT-EMP-01', 'EMPLOYEE', 'Duplicate Code', 'Mô tả', 'HR');
+    RAISE EXCEPTION 'duplicate report code constraint absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  -- 2. Insert report saved template
+  INSERT INTO report_saved_templates(id, organization_id, report_code, user_id, template_name, filters)
+  VALUES ('00000000-0000-0000-0000-000000000182', '00000000-0000-0000-0000-000000000001', 'RPT-EMP-01', '00000000-0000-0000-0000-000000000002', 'Mau thang nay', '{"department": "all"}'::jsonb);
+
+  -- Duplicate template name for same user must fail
+  BEGIN
+    INSERT INTO report_saved_templates(id, organization_id, report_code, user_id, template_name, filters)
+    VALUES ('00000000-0000-0000-0000-000000000183', '00000000-0000-0000-0000-000000000001', 'RPT-EMP-01', '00000000-0000-0000-0000-000000000002', 'Mau thang nay', '{"department": "tech"}'::jsonb);
+    RAISE EXCEPTION 'duplicate saved template constraint absent';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  -- 3. Insert report export audit log
+  INSERT INTO report_export_audit_logs(id, organization_id, report_code, format, row_count, filters, exported_by)
+  VALUES ('00000000-0000-0000-0000-000000000184', '00000000-0000-0000-0000-000000000001', 'RPT-EMP-01', 'CSV', 10, '{"status": "ACTIVE"}'::jsonb, '00000000-0000-0000-0000-000000000002');
+
+  -- Invalid export format must fail
+  BEGIN
+    INSERT INTO report_export_audit_logs(id, organization_id, report_code, format, row_count, filters, exported_by)
+    VALUES ('00000000-0000-0000-0000-000000000185', '00000000-0000-0000-0000-000000000001', 'RPT-EMP-01', 'EXE', 10, '{}'::jsonb, '00000000-0000-0000-0000-000000000002');
+    RAISE EXCEPTION 'invalid export format constraint absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
 END $$;
 ROLLBACK;
 DO $$ BEGIN

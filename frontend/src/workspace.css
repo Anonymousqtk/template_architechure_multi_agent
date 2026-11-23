@@ -6,7 +6,7 @@
 .hr-workspace .dash-submenu a > svg { flex: 0 0 18px; width: 18px; height: 18px; }
 .hr-workspace .dash-nav-parent > svg { width: 20px; height: 20px; }
 .hr-workspace .dash-submenu a[aria-current=page] { box-shadow: none; font-weight: 600; }
-.hr-workspace .dash-nav-parent[data-active=true] { color: #5748bf; background: #f1effe; }
+.hr-workspace .dash-nav-parent[data-active=true] { color: #fff; background: #403b68; }
 .hr-workspace :is(.org-view,.att-page,.employees-page) { min-width: 0; }
 .hr-workspace .org-view > h1 { margin: 0 0 4px; font-size: 24px; line-height: 1.25; letter-spacing: -.025em; }
 .hr-workspace .dash-content > h1,.hr-workspace .emp-heading h1 { margin: 0 0 4px; font-size: 24px; line-height: 1.25; letter-spacing: -.025em; }

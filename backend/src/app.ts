@@ -17,6 +17,7 @@ import { registerUnitRoutes } from './units.js';
 import { registerEmployeeRoutes } from './employees.js';
 import { registerAttendanceRoutes } from './attendance.js';
 import { registerPayrollRoutes } from './payroll.js';
+import { registerReportingRoutes } from './reporting.js';
 import { organizationUserAvatarUrl, registerProfileAvatarRoutes } from './profile-avatar.js';
 import { serviceErrorCode } from './service-errors.js';
 
@@ -352,6 +353,7 @@ export function createApp({pool,config,mailer=createMailer(),rateLimit=30}: AppO
   registerEmployeeRoutes(app, { pool, transaction, audit, requireIdentity });
   registerAttendanceRoutes(app, { pool, transaction, audit, requireIdentity });
   registerPayrollRoutes(app, { pool, transaction, audit, requireIdentity });
+  registerReportingRoutes(app, { pool, transaction, audit, requireIdentity });
   app.use('/api',(_req,res)=>res.status(404).json({code:'NOT_FOUND'}));
   app.use(async(error: unknown,_req: Authed,res: Response,_next: NextFunction)=>{
     void _next;

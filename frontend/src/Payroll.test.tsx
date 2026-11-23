@@ -180,3 +180,194 @@ it('allows employee to view self-service payslip history and detail breakdown', 
   expect(await screen.findByText('Đoàn phí')).toBeInTheDocument();
   expect(await screen.findByText('THỰC LĨNH (NET):')).toBeInTheDocument();
 });
+
+it('renders accounting and reconciliation tab and allows running reconciliation', async () => {
+  mock.mockImplementation(async (path: string, options?: unknown, method?: string) => {
+    if (path.endsWith('/payroll/periods')) {
+      return { items: [{ ...mockPeriod, status: 'APPROVED' }], total: 1 };
+    }
+    if (path.includes('/payroll/periods/period-1/slips')) {
+      return { items: [mockSlip], total: 1 };
+    }
+    if (path.includes('/payroll/periods/period-1') && !path.includes('/reconcile') && !path.includes('/accounting') && !path.includes('/liabilities')) {
+      return { period: { ...mockPeriod, status: 'APPROVED' }, summary: mockSummary };
+    }
+    if (path.includes('/payroll/periods/period-1/reconciliation')) {
+      return {
+        reconciliation: {
+          id: 'rec-1',
+          periodId: 'period-1',
+          reconciliationDate: '2026-02-05',
+          status: 'RECONCILED',
+          totalExpectedSlips: 1,
+          totalExpectedAmount: '22500000.00',
+          totalDisbursedSlips: 1,
+          totalDisbursedAmount: '22500000.00',
+          differenceAmount: '0.00',
+          matchedCount: 1,
+          discrepancyCount: 0,
+        },
+        discrepancies: [],
+      };
+    }
+    if (path.includes('/payroll/periods/period-1/accounting/entries')) {
+      return {
+        items: [
+          {
+            id: 'entry-1',
+            entryNumber: 'PKT-KY-2026-01-01',
+            entryDate: '2026-01-31',
+            status: 'POSTED',
+            totalDebit: '23000000.00',
+            totalCredit: '23000000.00',
+            description: 'Bút toán chi phí lương',
+          },
+        ],
+      };
+    }
+    if (path.includes('/payroll/periods/period-1/liabilities')) {
+      return {
+        liability: {
+          id: 'liab-1',
+          periodId: 'period-1',
+          periodCode: 'KY-2026-01',
+          periodName: 'Kỳ lương Tháng 1/2026',
+          beginningBalance: '0.00',
+          incurredAmount: '22500000.00',
+          paidAmount: '22500000.00',
+          endingBalance: '0.00',
+          status: 'SETTLED',
+        },
+      };
+    }
+    if (path.includes('/payroll/periods/period-1/reconcile')) {
+      return { ok: true, status: 'RECONCILED' };
+    }
+    return {};
+  });
+
+  render(<Payroll profile={adminProfile} view="accounting" />);
+
+  expect(await screen.findByText('Đối chiếu & Hạch toán')).toBeInTheDocument();
+  expect(await screen.findByText('🔍 Chạy đối chiếu')).toBeInTheDocument();
+  expect(await screen.findByText('📝 Tạo bút toán kế toán')).toBeInTheDocument();
+
+  // Trigger reconciliation
+  const reconcileBtn = screen.getByText('🔍 Chạy đối chiếu');
+  fireEvent.click(reconcileBtn);
+
+  await waitFor(() => {
+    expect(mock).toHaveBeenCalledWith('/api/organizations/org-1/payroll/periods/period-1/reconcile', {}, 'POST');
+  });
+});
+
+it('renders compliance & statutory reporting tab and executes compliance scan', async () => {
+  mock.mockImplementation(async (path: string, options?: unknown, method?: string) => {
+    if (path.endsWith('/payroll/periods')) {
+      return { items: [mockPeriod] };
+    }
+    if (path.includes('/payroll/periods/period-1/slips')) {
+      return { items: [mockSlip] };
+    }
+    if (path.includes('/payroll/periods/period-1')) {
+      return { period: mockPeriod, summary: mockSummary };
+    }
+    if (path.includes('/compliance/rules')) {
+      return {
+        rules: [
+          {
+            id: 'rule-1',
+            ruleType: 'PIT_DEDUCTIONS',
+            ruleCode: 'PIT_DEDUCTIONS_2020',
+            name: 'Mức giảm trừ gia cảnh thuế TNCN',
+            effectiveFrom: '2020-07-01',
+            effectiveTo: null,
+            parameters: { personal: 11000000, dependent: 4400000 },
+            legalReference: 'Nghị quyết 954/2020/UBTVQH14',
+            isVerified: true,
+            notes: null,
+          },
+        ],
+      };
+    }
+    if (path.includes('/compliance/pit/period/period-1')) {
+      return {
+        summary: {
+          totalEmployees: 1,
+          totalGrossPay: '23000000.00',
+          totalTaxableIncome: '23000000.00',
+          totalPersonalDeduction: '11000000.00',
+          totalDependentDeduction: '0.00',
+          totalInsuranceDeduction: '0.00',
+          totalAssessableIncome: '12000000.00',
+          totalCalculatedTax: '1050000.00',
+          totalWithheldTax: '500000.00',
+          totalVariance: '550000.00',
+        },
+        employees: [],
+      };
+    }
+    if (path.includes('/compliance/insurance/period/period-1')) {
+      return {
+        summary: {
+          totalParticipants: 1,
+          totalSiSalaryFund: '22000000.00',
+          totalEmployeePortion: '2310000.00',
+          totalEmployerPortion: '4730000.00',
+          totalTradeUnion: '440000.00',
+          totalPayableInsuranceAgency: '7040000.00',
+          totalCostToCompany: '5170000.00',
+        },
+        rates: {},
+        employees: [],
+      };
+    }
+    if (path.includes('/compliance/analytics/period/period-1')) {
+      return {
+        analytics: {
+          employeeCount: 1,
+          grossPayroll: '23000000.00',
+          proratedBaseSalary: '22000000.00',
+          allowances: '1000000.00',
+          bonuses: '0.00',
+          overtimePay: '0.00',
+          employerSocialInsurance: '4730000.00',
+          employerTradeUnion: '440000.00',
+          totalCostToCompany: '28170000.00',
+          financialMetrics: {
+            accruedExpense: '28170000.00',
+            payableLiability: '22500000.00',
+            disbursedPayment: '0.00',
+            remainingUnpaid: '22500000.00',
+          },
+          momComparison: { previousGross: '0.00', deltaAmount: '23000000.00', percentChange: 0 },
+          departmentDistribution: [],
+        },
+      };
+    }
+    if (path.includes('/compliance/anomalies')) {
+      return { anomalies: [] };
+    }
+    if (path.includes('/compliance/reports')) {
+      return { reports: [] };
+    }
+    if (path.includes('/compliance/check/period-1')) {
+      return { success: true, count: 0, anomalies: [] };
+    }
+    return {};
+  });
+
+  render(<Payroll profile={adminProfile} view="compliance" />);
+
+  expect(await screen.findByText('Tuân thủ & Báo cáo')).toBeInTheDocument();
+  expect(await screen.findByText('🛡 Quét kiểm tra tuân thủ')).toBeInTheDocument();
+  expect(await screen.findByText('📜 Nạp quy tắc chuẩn VN')).toBeInTheDocument();
+
+  // Trigger compliance scan
+  const scanBtn = screen.getByText('🛡 Quét kiểm tra tuân thủ');
+  fireEvent.click(scanBtn);
+
+  await waitFor(() => {
+    expect(mock).toHaveBeenCalledWith('/api/organizations/org-1/payroll/compliance/check/period-1', {}, 'POST');
+  });
+});

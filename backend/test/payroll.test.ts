@@ -44,7 +44,9 @@ class Client {
       this.cookies.set(pair.split('=')[0], pair);
     }
     const text = await r.text();
-    return { status: r.status, body: text ? JSON.parse(text) : null };
+    let parsedBody: any = null;
+    try { parsedBody = text ? JSON.parse(text) : null; } catch { parsedBody = text; }
+    return { status: r.status, body: parsedBody, text };
   }
   async login(email: string) {
     this.csrf = (await this.call('/api/auth/csrf')).body.csrfToken;
@@ -600,5 +602,379 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
       `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`
     );
     expect(blocked.status).toBe(403);
+  });
+
+  it('PAY-003: Chart of Accounts & Posting Rules management and default VAS seeding', async () => {
+    const hr = await actor('hr');
+    const admin = await actor('admin');
+    const emp = await actor('employee');
+
+    // 1. Employee access blocked
+    const empBlocked = await emp.call(`${payrollPath()}/accounting/accounts`);
+    expect(empBlocked.status).toBe(403);
+
+    // 2. Seed standard accounts & rules
+    const seedRes = await hr.call(`${payrollPath()}/accounting/accounts/seed-defaults`, 'POST', {});
+    expect(seedRes.status).toBe(200);
+
+    // 3. List accounts
+    const accList = await hr.call(`${payrollPath()}/accounting/accounts`);
+    expect(accList.status).toBe(200);
+    expect(accList.body.items.length).toBeGreaterThanOrEqual(10);
+    const codes = accList.body.items.map((a: { code: string }) => a.code);
+    expect(codes).toContain('3341');
+    expect(codes).toContain('6422');
+    expect(codes).toContain('1121');
+
+    // 4. Duplicate account rejection
+    const dupRes = await admin.call(`${payrollPath()}/accounting/accounts`, 'POST', {
+      code: '3341',
+      name: 'Duplicate Phải trả người lao động',
+      type: 'LIABILITY',
+    });
+    expect(dupRes.status).toBe(409);
+    expect(dupRes.body.code).toBe('ACCOUNT_CODE_EXISTS');
+
+    // 5. List rules
+    const rulesList = await hr.call(`${payrollPath()}/accounting/rules`);
+    expect(rulesList.status).toBe(200);
+    expect(rulesList.body.items.length).toBeGreaterThanOrEqual(5);
+    const ruleCodes = rulesList.body.items.map((r: { ruleCode: string }) => r.ruleCode);
+    expect(ruleCodes).toContain('BASE_SALARY_EXPENSE');
+  });
+
+  it('PAY-003: Journal entry generation, double-entry balancing, posting and reversal', async () => {
+    const hr = await actor('hr');
+    const admin = await actor('admin');
+
+    // Ensure defaults are seeded and employee has active salary profile
+    await hr.call(`${payrollPath()}/accounting/accounts/seed-defaults`, 'POST', {});
+    await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
+      salaryMode: 'GROSS',
+      baseSalary: 20000000,
+      effectiveFrom: '2026-01-01',
+      components: [],
+    });
+
+    // 1. Create a fresh payroll period
+    const periodCode = `KY-ACC-${Date.now().toString().slice(-6)}`;
+    const createPeriod = await admin.call(`${payrollPath()}/periods`, 'POST', {
+      code: periodCode,
+      name: `Kỳ kế toán ${periodCode}`,
+      startDate: '2026-05-01',
+      endDate: '2026-05-31',
+      standardWorkingDays: 22,
+    });
+    expect(createPeriod.status).toBe(201);
+    const pId = createPeriod.body.id;
+
+    // 2. Generating journal on unapproved/uncalculated period must be rejected
+    const unapprovedGen = await hr.call(`${payrollPath()}/periods/${pId}/accounting/generate`, 'POST', {});
+    expect(unapprovedGen.status).toBe(409);
+    expect(unapprovedGen.body.code).toBe('PAYROLL_PERIOD_NOT_APPROVED_OR_CLOSED');
+
+    // 3. Calculate payroll
+    await hr.call(`${payrollPath()}/periods/${pId}/calculate`, 'POST', {});
+
+    // 4. Transition to APPROVED
+    await hr.call(`${payrollPath()}/periods/${pId}/status`, 'PATCH', { status: 'UNDER_REVIEW' });
+    await hr.call(`${payrollPath()}/periods/${pId}/status`, 'PATCH', { status: 'APPROVED' });
+
+    // 5. Generate journal entry with status POSTED
+    const genRes = await hr.call(`${payrollPath()}/periods/${pId}/accounting/generate?status=POSTED`, 'POST', {});
+    expect(genRes.status).toBe(201);
+    expect(genRes.body.status).toBe('POSTED');
+    expect(genRes.body.totalDebit).toBe(genRes.body.totalCredit);
+    const entryId = genRes.body.id;
+
+    // 6. Fetch entry detail with itemized lines
+    const detailRes = await hr.call(`${payrollPath()}/accounting/entries/${entryId}`);
+    expect(detailRes.status).toBe(200);
+    expect(detailRes.body.entry.entryNumber).toBe(genRes.body.entryNumber);
+    expect(detailRes.body.lines.length).toBeGreaterThanOrEqual(2);
+
+    // Verify Debit = Credit in lines
+    let totalD = 0;
+    let totalC = 0;
+    for (const line of detailRes.body.lines) {
+      totalD += parseFloat(line.debitAmount);
+      totalC += parseFloat(line.creditAmount);
+    }
+    expect(totalD.toFixed(2)).toBe(totalC.toFixed(2));
+
+    // 7. Immutability: database trigger guards posted entry from direct modification
+    await expect(
+      pool.query(`UPDATE payroll_journal_entries SET total_debit = 999999 WHERE id = $1`, [entryId])
+    ).rejects.toThrow(/cannot modify a posted journal entry/);
+
+    // 8. Reversal: creates linked reversal entry
+    const revRes = await hr.call(`${payrollPath()}/accounting/entries/${entryId}/reverse`, 'POST', {});
+    expect(revRes.status).toBe(200);
+    expect(revRes.body.ok).toBe(true);
+    expect(revRes.body.reversalEntryId).toBeDefined();
+
+    // Verify original entry is now REVERSED
+    const origCheck = await hr.call(`${payrollPath()}/accounting/entries/${entryId}`);
+    expect(origCheck.body.entry.status).toBe('REVERSED');
+    expect(origCheck.body.entry.reversalEntryId).toBe(revRes.body.reversalEntryId);
+
+    // Verify reversal entry lines have swapped Debit/Credit
+    const revDetail = await hr.call(`${payrollPath()}/accounting/entries/${revRes.body.reversalEntryId}`);
+    expect(revDetail.body.entry.status).toBe('POSTED');
+    expect(revDetail.body.lines[0].debitAmount).toBe(detailRes.body.lines[0].creditAmount);
+    expect(revDetail.body.lines[0].creditAmount).toBe(detailRes.body.lines[0].debitAmount);
+  });
+
+  it('PAY-003: Disbursements, reconciliation, liabilities, and CSV export', async () => {
+    const hr = await actor('hr');
+    const admin = await actor('admin');
+
+    // Ensure defaults and active salary profile
+    await hr.call(`${payrollPath()}/accounting/accounts/seed-defaults`, 'POST', {});
+    await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
+      salaryMode: 'GROSS',
+      baseSalary: 20000000,
+      effectiveFrom: '2026-01-01',
+      components: [],
+    });
+
+    // 1. Create period & calculate slips
+    const pCode = `KY-REC-${Date.now().toString().slice(-6)}`;
+    const period = (await admin.call(`${payrollPath()}/periods`, 'POST', {
+      code: pCode,
+      name: `Kỳ đối chiếu ${pCode}`,
+      startDate: '2026-06-01',
+      endDate: '2026-06-30',
+      standardWorkingDays: 22,
+    })).body;
+    await hr.call(`${payrollPath()}/periods/${period.id}/calculate`, 'POST', {});
+    await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', { status: 'UNDER_REVIEW' });
+    await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', { status: 'APPROVED' });
+
+    // Read slips to get employee net pay
+    const slips = (await hr.call(`${payrollPath()}/periods/${period.id}/slips`)).body.items;
+    expect(slips.length).toBeGreaterThan(0);
+    const slip = slips[0];
+
+    // 2. Record partial disbursement (underpaid)
+    const disbCode = `DISB-${Date.now().toString().slice(-6)}`;
+    const disbAmount = Math.max(1, Math.floor(parseFloat(slip.netPay) / 2));
+    const disbRes = await hr.call(`${payrollPath()}/periods/${period.id}/disbursements`, 'POST', {
+      items: [
+        {
+          employeeId: slip.employeeId,
+          slipId: slip.id,
+          disbursementCode: disbCode,
+          amount: disbAmount,
+          paymentDate: '2026-07-05',
+          paymentMethod: 'BANK_TRANSFER',
+          bankName: 'Vietcombank',
+          bankAccountNumber: '0123456789',
+        },
+      ],
+    });
+    expect(disbRes.status).toBe(201);
+    expect(disbRes.body.count).toBe(1);
+
+    // Duplicate disbursement code rejected
+    const dupDisb = await hr.call(`${payrollPath()}/periods/${period.id}/disbursements`, 'POST', {
+      items: [
+        {
+          employeeId: slip.employeeId,
+          disbursementCode: disbCode,
+          amount: 1000000,
+          paymentDate: '2026-07-05',
+        },
+      ],
+    });
+    expect(dupDisb.status).toBe(409);
+
+    // 3. Run reconciliation: should detect UNDERPAID discrepancy
+    const recRes = await hr.call(`${payrollPath()}/periods/${period.id}/reconcile`, 'POST', {});
+    expect(recRes.status).toBe(200);
+    expect(recRes.body.status).toBe('DISCREPANCY_DETECTED');
+    expect(recRes.body.discrepancyCount).toBeGreaterThanOrEqual(1);
+    expect(recRes.body.discrepancies[0].type).toBe('UNDERPAID');
+
+    // 4. Resolve discrepancy
+    const discId = recRes.body.discrepancies[0].id || (await hr.call(`${payrollPath()}/periods/${period.id}/reconciliation`)).body.discrepancies[0].id;
+    const resolveRes = await hr.call(`${payrollPath()}/reconciliation/discrepancies/${discId}`, 'PATCH', {
+      resolutionStatus: 'RESOLVED',
+      resolutionNotes: 'Đã bổ sung đợt chi trả bù',
+    });
+    expect(resolveRes.status).toBe(200);
+
+    // Reconciliation status updated to RESOLVED
+    const checkRec = await hr.call(`${payrollPath()}/periods/${period.id}/reconciliation`);
+    expect(checkRec.body.reconciliation.status).toBe('RESOLVED');
+
+    // 5. Liabilities tracking
+    const liabRes = await hr.call(`${payrollPath()}/periods/${period.id}/liabilities`);
+    expect(liabRes.status).toBe(200);
+    expect(liabRes.body.liability).toBeDefined();
+    expect(parseFloat(liabRes.body.liability.paidAmount)).toBe(disbAmount);
+
+    const summaryLiab = await hr.call(`${payrollPath()}/liabilities/summary`);
+    expect(summaryLiab.status).toBe(200);
+    expect(summaryLiab.body.totals.totalPaid).toBeDefined();
+
+    // 6. CSV Export: journal, reconciliation, disbursements
+    const exportJournal = await hr.call(`${payrollPath()}/periods/${period.id}/accounting/export?type=journal&format=json`);
+    expect(exportJournal.status).toBe(200);
+
+    const exportRec = await hr.call(`${payrollPath()}/periods/${period.id}/accounting/export?type=reconciliation&format=json`);
+    expect(exportRec.status).toBe(200);
+    expect(exportRec.body.items.length).toBeGreaterThan(0);
+
+    const exportDisb = await hr.call(`${payrollPath()}/periods/${period.id}/accounting/export?type=disbursements&format=json`);
+    expect(exportDisb.status).toBe(200);
+    expect(exportDisb.body.items.length).toBeGreaterThan(0);
+  });
+
+  it('PAY-004: Statutory compliance rules and employee dependents management', async () => {
+    const hr = await actor('hr');
+    const admin = await actor('admin');
+    const emp = await actor('employee');
+
+    // 1. Seed standard statutory rules (Resolution 954/2020, Decree 73/2024, Decree 74/2024, Circular 111/2013)
+    const seedRes = await hr.call(`${payrollPath()}/compliance/rules/seed-defaults`, 'POST', {});
+    expect(seedRes.status).toBe(201);
+    expect(seedRes.body.seededCount).toBeGreaterThanOrEqual(1);
+
+    // List rules
+    const rulesRes = await hr.call(`${payrollPath()}/compliance/rules`);
+    expect(rulesRes.status).toBe(200);
+    expect(rulesRes.body.rules.length).toBeGreaterThanOrEqual(5);
+    const pitRule = rulesRes.body.rules.find((r: any) => r.ruleType === 'PIT_DEDUCTIONS');
+    expect(pitRule).toBeDefined();
+    expect(pitRule.parameters.personal).toBe(11000000);
+    expect(pitRule.legalReference).toContain('954/2020');
+
+    // 2. Employee registers dependent
+    const depRes = await hr.call(`${payrollPath()}/compliance/dependents`, 'POST', {
+      employeeId,
+      fullName: 'Nguyễn Văn Con',
+      relationship: 'CHILD',
+      taxId: '8888999911',
+      effectiveFrom: '2026-01-01',
+      isVerified: false,
+    });
+    expect(depRes.status).toBe(201);
+    const depId = depRes.body.dependent.id;
+
+    // HR verifies dependent
+    const verifyRes = await hr.call(`${payrollPath()}/compliance/dependents/${depId}/verify`, 'PATCH', {
+      isVerified: true,
+    });
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.isVerified).toBe(true);
+
+    // List dependents
+    const listDeps = await hr.call(`${payrollPath()}/compliance/dependents?employeeId=${employeeId}`);
+    expect(listDeps.status).toBe(200);
+    expect(listDeps.body.dependents.length).toBeGreaterThanOrEqual(1);
+    expect(listDeps.body.dependents[0].isVerified).toBe(true);
+  });
+
+  it('PAY-004: PIT Tax, Social Insurance, HR Cost Analytics and Compliance Engine', async () => {
+    const hr = await actor('hr');
+    const admin = await actor('admin');
+
+    // Ensure rules seeded and employee configured
+    await hr.call(`${payrollPath()}/compliance/rules/seed-defaults`, 'POST', {});
+    await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
+      salaryMode: 'GROSS',
+      baseSalary: 20000000,
+      effectiveFrom: '2026-01-01',
+      components: [],
+    });
+
+    // Create and approve payroll period
+    const pCode = `KY-CMP-${Date.now().toString().slice(-6)}`;
+    const period = (await admin.call(`${payrollPath()}/periods`, 'POST', {
+      code: pCode,
+      name: `Kỳ tuân thủ ${pCode}`,
+      startDate: '2026-07-01',
+      endDate: '2026-07-31',
+      standardWorkingDays: 22,
+    })).body;
+    await hr.call(`${payrollPath()}/periods/${period.id}/calculate`, 'POST', {});
+    await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', { status: 'UNDER_REVIEW' });
+    await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', { status: 'APPROVED' });
+
+    // 1. Personal Income Tax (PIT) report calculation
+    const pitRes = await hr.call(`${payrollPath()}/compliance/pit/period/${period.id}`);
+    expect(pitRes.status).toBe(200);
+    expect(pitRes.body.summary.totalGrossPay).toBe('20000000.00');
+    expect(pitRes.body.summary.totalPersonalDeduction).toBe('11000000.00');
+    expect(pitRes.body.employees.length).toBeGreaterThan(0);
+    // Assessable income = 20M - 11M (personal) - 4.4M (dependent if verified) = 4.6M or 9M
+    expect(parseFloat(pitRes.body.summary.totalAssessableIncome)).toBeGreaterThan(0);
+    expect(parseFloat(pitRes.body.summary.totalCalculatedTax)).toBeGreaterThan(0);
+
+    // 2. Social Insurance report calculation
+    // Ensure active SI profile for employee
+    await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance`, 'PUT', {
+      siCode: 'SI99988877',
+      insuredName: 'Test Employee',
+      enrollmentDate: '2026-01-01',
+      siSalary: 20000000,
+      status: 'ACTIVE',
+    });
+
+    const siRes = await hr.call(`${payrollPath()}/compliance/insurance/period/${period.id}`);
+    expect(siRes.status).toBe(200);
+    expect(siRes.body.summary.totalParticipants).toBeGreaterThanOrEqual(1);
+    expect(parseFloat(siRes.body.summary.totalEmployeePortion)).toBeGreaterThan(0);
+    expect(parseFloat(siRes.body.summary.totalEmployerPortion)).toBeGreaterThan(0);
+    expect(parseFloat(siRes.body.summary.totalTradeUnion)).toBeGreaterThan(0);
+
+    // 3. HR Cost Analytics
+    const analyticsRes = await hr.call(`${payrollPath()}/compliance/analytics/period/${period.id}`);
+    expect(analyticsRes.status).toBe(200);
+    expect(analyticsRes.body.analytics.financialMetrics.accruedExpense).toBeDefined();
+    expect(analyticsRes.body.analytics.financialMetrics.payableLiability).toBeDefined();
+    expect(analyticsRes.body.analytics.departmentDistribution).toBeInstanceOf(Array);
+
+    // 4. Compliance automated scan
+    const checkRes = await hr.call(`${payrollPath()}/compliance/check/${period.id}`, 'POST', {});
+    expect(checkRes.status).toBe(200);
+    expect(checkRes.body.success).toBe(true);
+
+    // 5. Formal Compliance Report Lifecycle & Export
+    const repRes = await hr.call(`${payrollPath()}/compliance/reports/generate`, 'POST', {
+      reportType: 'PIT_MONTHLY',
+      periodId: period.id,
+      title: `Báo cáo thuế TNCN ${period.code}`,
+      summaryData: pitRes.body.summary,
+    });
+    expect(repRes.status).toBe(201);
+    const reportId = repRes.body.report.id;
+    expect(repRes.body.report.status).toBe('DRAFT');
+
+    // Rule: Cannot export DRAFT report
+    const draftExport = await hr.call(`${payrollPath()}/compliance/reports/${reportId}/export`);
+    expect(draftExport.status).toBe(400);
+
+    // Approve report
+    const approveRes = await hr.call(`${payrollPath()}/compliance/reports/${reportId}/approve`, 'POST', {});
+    expect(approveRes.status).toBe(200);
+    expect(approveRes.body.status).toBe('APPROVED');
+
+    // Lock report (Admin only)
+    const lockRes = await admin.call(`${payrollPath()}/compliance/reports/${reportId}/lock`, 'POST', {});
+    expect(lockRes.status).toBe(200);
+    expect(lockRes.body.status).toBe('LOCKED');
+
+    // Database trigger: Cannot modify LOCKED report
+    await expect(
+      pool.query(`UPDATE compliance_reports SET title = 'Changed' WHERE id = $1`, [reportId])
+    ).rejects.toThrow(/Cannot modify a LOCKED compliance report/);
+
+    // Export approved/locked report
+    const exportRes = await hr.call(`${payrollPath()}/compliance/reports/${reportId}/export`);
+    expect(exportRes.status).toBe(200);
+    expect(exportRes.text).toContain('BÁO CÁO TUÂN THỦ:');
+    expect(exportRes.text).toContain('Thu nhập chịu thuế');
   });
 });

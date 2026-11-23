@@ -1,13 +1,17 @@
 {
-  "id": "PAY-001-BHXH",
-  "summary": "Fix BHXH tab data readiness and salary audit attribution",
-  "allowed_scopes": ["backend", "database", "contracts", "tests"],
+  "id": "RPT-001",
+  "summary": "Core HR & Attendance Reporting Center and Shared Reporting Engine (RPT-EMP, RPT-ORG, RPT-ATT, RPT-LEAVE)",
+  "allowed_scopes": ["backend", "database", "tests", "governance", "frontend"],
   "risk": "high",
   "security_review_required": true,
   "acceptance": [
-    "Identify and verify why the BHXH API returns SERVICE_NOT_READY",
-    "Record the authenticated actor for salary adjustment log trigger inserts",
-    "A BHXH profile request succeeds after migration 016 is applied",
-    "Do not apply a database migration without explicit user approval"
+    "Reporting Center with structured report catalog across HR, Organization, Attendance, and Leave modules",
+    "P0 Core HR Report (RPT-EMP-01): Employee headcount, department/position distribution, contract types, tenure",
+    "P0 Organization Structure Report (RPT-ORG-01): Department structure, hierarchy, positions, manager coverage",
+    "P0 Attendance & Shift Summary Report (RPT-ATT-01): Scheduled shifts, work days, late/early minutes, OT hours, attendance rates",
+    "P0 Leave Utilization & Balance Report (RPT-LEAVE-01): Leave allowance, charged days/hours, remaining balances, utilization rate",
+    "Shared Reporting Engine: Unified filters (date range, department, status, search), pagination, sorting, and CSV export with UTF-8 BOM",
+    "Strict tenant isolation, RBAC (HR/Admin company-wide, Manager management scope, Employee self-only), and sensitive export audit logging",
+    "Complete automated test suite passing with high coverage and zero regression"
   ]
 }

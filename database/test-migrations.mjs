@@ -33,12 +33,13 @@ try {
   run('psql', args, readFileSync(join(here, 'verify.sql'), 'utf8'));
   console.log('PASS PostgreSQL migration constraints and rollback verification');
   if (process.env.MIGRATION_TEST_BACKEND === 'true') {
-    const result = spawnSync(process.execPath, [join(here, '../backend/node_modules/vitest/vitest.mjs'), 'run', '--coverage'], {
-      encoding: 'utf8', windowsHide: true, cwd: join(here, '../backend'),
+    const vitestArgs = process.env.VITEST_FILTER
+      ? [join(here, '../backend/node_modules/vitest/vitest.mjs'), 'run', process.env.VITEST_FILTER]
+      : [join(here, '../backend/node_modules/vitest/vitest.mjs'), 'run', '--coverage'];
+    const result = spawnSync(process.execPath, vitestArgs, {
+      stdio: 'inherit', windowsHide: true, cwd: join(here, '../backend'),
       env: { ...process.env, DATABASE_URL: `postgresql://migration_test@127.0.0.1:${port}/postgres`, NODE_ENV: 'test' }
     });
-    process.stdout.write(result.stdout || '');
-    process.stderr.write(result.stderr || '');
     if (result.error || result.status !== 0) throw new Error(`Backend integration test failed: ${result.error || result.status}`);
   }
 } finally {

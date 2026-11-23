@@ -5,6 +5,8 @@ import { fail, type Authed, type Identity } from './types.js';
 import { authorizeMutation } from './authorization.js';
 import { managementScope } from './management-scope.js';
 import { escapeLike, type OrgStructureDeps } from './organization-structure.js';
+import { registerPayrollAccountingRoutes } from './payroll-accounting.js';
+import { registerPayrollComplianceRoutes } from './payroll-compliance.js';
 
 const uuid = z.string().uuid();
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
@@ -114,6 +116,9 @@ const pagingSchema = z.object({
 export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
   const { pool, transaction, requireIdentity, audit } = deps;
   const prefix = '/api/organizations/:organizationId/payroll';
+
+  registerPayrollAccountingRoutes(app, deps);
+  registerPayrollComplianceRoutes(app, deps);
 
   function identityFor(req: Authed): Identity {
     const identity = requireIdentity(req);
