@@ -186,3 +186,96 @@ it('displays export audit tab and table when clicking Nhật ký xuất báo cá
     expect(screen.getByText('admin@acme.test')).toBeInTheDocument();
   });
 });
+
+it('renders PAYROLL category tab and displays payroll summary report data', async () => {
+  const extendedMockReports = [
+    ...mockReports,
+    {
+      id: 'r-5',
+      code: 'RPT-PAY-01',
+      category: 'PAYROLL' as const,
+      name: 'Bảng lương tổng hợp & chi tiết theo kỳ',
+      description: 'Tổng hợp bảng lương chi tiết từng nhân viên theo kỳ...',
+      minRole: 'MANAGER',
+      displayOrder: 5,
+      supportedFilters: ['periodId', 'departmentId', 'status', 'search']
+    },
+    {
+      id: 'r-6',
+      code: 'RPT-ACC-01',
+      category: 'ACCOUNTING' as const,
+      name: 'Báo cáo phân bổ chi phí lương theo phòng ban & đơn vị',
+      description: 'Phân bổ chi phí lương theo đơn vị tổ chức và tài khoản VAS...',
+      minRole: 'HR',
+      displayOrder: 8,
+      supportedFilters: ['periodId', 'departmentId']
+    }
+  ];
+
+  const mockPeriods = [
+    { id: 'p-1', code: 'PR-2026-03', name: 'Kỳ lương Tháng 3/2026', status: 'CLOSED' }
+  ];
+
+  const mockPayrollSummary = {
+    period: { id: 'p-1', code: 'PR-2026-03', name: 'Kỳ lương Tháng 3/2026', status: 'CLOSED' },
+    metrics: {
+      totalGrossPay: '50000000.00',
+      totalNetPay: '43500000.00',
+      totalDeductions: '6500000.00',
+      totalAllowances: '2000000.00',
+      totalBonuses: '3000000.00',
+      slipCount: 2,
+      employeeCount: 2
+    },
+    pagination: { page: 1, pageSize: 20, totalRows: 2, totalPages: 1 },
+    items: [
+      {
+        id: 's-1',
+        employeeCode: 'NV-001',
+        fullName: 'Nguyen Van Dev',
+        departmentName: 'Kỹ thuật',
+        baseSalary: '25000000.00',
+        actualWorkingDays: '22',
+        standardDays: '22',
+        grossPay: '25000000.00',
+        totalAllowances: '1000000.00',
+        totalBonuses: '1500000.00',
+        totalDeductions: '3250000.00',
+        netPay: '21750000.00',
+        status: 'PAID'
+      }
+    ]
+  };
+
+  mock.mockImplementation(async (path: string) => {
+    if (path.includes('/reports/catalog')) return { reports: extendedMockReports } as any;
+    if (path.includes('/payroll/periods')) return { periods: mockPeriods } as any;
+    if (path.includes('/departments')) return { departments: [] } as any;
+    if (path.includes('/reports/payroll-summary')) return mockPayrollSummary as any;
+    return {} as any;
+  });
+
+  render(<ReportingCenter profile={adminProfile} />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Tiền lương (PAY)')).toBeInTheDocument();
+    expect(screen.getByText('Hạch toán & Công nợ (ACC)')).toBeInTheDocument();
+  });
+
+  // Switch to PAYROLL tab
+  fireEvent.click(screen.getByText('Tiền lương (PAY)'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Bảng lương tổng hợp & chi tiết theo kỳ')).toBeInTheDocument();
+  });
+
+  // Click on RPT-PAY-01 card
+  fireEvent.click(screen.getByText('Bảng lương tổng hợp & chi tiết theo kỳ'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Tổng thực lĩnh (Net)')).toBeInTheDocument();
+    expect(screen.getByText('Tổng lương Gross')).toBeInTheDocument();
+    expect(screen.getByText('Nguyen Van Dev')).toBeInTheDocument();
+    expect(screen.getByText('2 phiếu lương')).toBeInTheDocument();
+  });
+});

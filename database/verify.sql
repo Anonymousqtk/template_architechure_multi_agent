@@ -313,6 +313,10 @@ BEGIN
     VALUES ('00000000-0000-0000-0000-000000000185', '00000000-0000-0000-0000-000000000001', 'RPT-EMP-01', 'EXE', 10, '{}'::jsonb, '00000000-0000-0000-0000-000000000002');
     RAISE EXCEPTION 'invalid export format constraint absent';
   EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- 4. RPT-002: Verify 'ACCOUNTING' category in report_catalog
+  INSERT INTO report_catalog(id, organization_id, code, category, name, description, min_role)
+  VALUES ('00000000-0000-0000-0000-000000000186', '00000000-0000-0000-0000-000000000001', 'RPT-ACC-01', 'ACCOUNTING', 'Phân bổ chi phí', 'Mô tả', 'HR');
 END $$;
 ROLLBACK;
 DO $$ BEGIN

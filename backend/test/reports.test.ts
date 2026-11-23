@@ -113,7 +113,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await pool.query(
-    'TRUNCATE report_export_audit_logs, report_saved_templates, report_catalog, attendance_punches, work_schedule, work_shifts, leave_requests, leave_balances, leave_types, employee_contracts, employee_work_history, employee_documents, employees, positions, departments, auth_audit_events, user_sessions, password_reset_tokens, invitations, memberships, users, organizations, auth_rate_limits CASCADE'
+    'TRUNCATE report_export_audit_logs, report_saved_templates, report_catalog, payroll_journal_entry_lines, payroll_journal_entries, accounting_rules, accounting_accounts, payroll_disbursements, payroll_slip_items, payroll_slips, payroll_periods, salary_components, attendance_punches, work_schedule, work_shifts, leave_requests, leave_balances, leave_types, employee_contracts, employee_work_history, employee_documents, employees, positions, departments, auth_audit_events, user_sessions, password_reset_tokens, invitations, memberships, users, organizations, auth_rate_limits CASCADE'
   );
 
   orgA = randomUUID();
@@ -247,19 +247,25 @@ describe('RPT-001: Core HR & Attendance Reporting Center', () => {
 
     const catRes = await admin.request(`/api/organizations/${orgA}/reports/catalog`);
     expect(catRes.status).toBe(200);
-    expect(catRes.body.reports.length).toBe(4);
+    expect(catRes.body.reports.length).toBe(10);
     const codes = catRes.body.reports.map((r: any) => r.code);
     expect(codes).toContain('RPT-EMP-01');
     expect(codes).toContain('RPT-ORG-01');
     expect(codes).toContain('RPT-ATT-01');
     expect(codes).toContain('RPT-LEAVE-01');
+    expect(codes).toContain('RPT-PAY-01');
+    expect(codes).toContain('RPT-PAY-02');
+    expect(codes).toContain('RPT-PAY-03');
+    expect(codes).toContain('RPT-ACC-01');
+    expect(codes).toContain('RPT-ACC-02');
+    expect(codes).toContain('RPT-ACC-03');
 
-    // Manager sees all 4 reports
+    // Manager sees 5 reports (EMP, ORG, ATT, LEAVE, PAY-01)
     const manager = new Client();
     await manager.login('manager@acme.test');
     const mgrCat = await manager.request(`/api/organizations/${orgA}/reports/catalog`);
     expect(mgrCat.status).toBe(200);
-    expect(mgrCat.body.reports.length).toBe(4);
+    expect(mgrCat.body.reports.length).toBe(5);
 
     // Employee sees only attendance and leave reports
     const employee = new Client();
@@ -451,5 +457,488 @@ describe('RPT-001: Core HR & Attendance Reporting Center', () => {
 
     const emptyList = await hr.request(`/api/organizations/${orgA}/reports/templates`);
     expect(emptyList.body.templates.length).toBe(0);
+  });
+
+  // =========================================================================
+  // PAYROLL & ACCOUNTING REPORTING TESTS (RPT-002)
+  // =========================================================================
+
+  async function setupPayrollTestData() {
+    const period1Id = randomUUID();
+    const period2Id = randomUUID();
+
+    // 1. Create Period 1 (Jan 2026) as DRAFT
+    await pool.query(
+      `INSERT INTO payroll_periods (id, organization_id, code, name, start_date, end_date, payment_date, standard_working_days, status)
+       VALUES ($1, $2, 'KY-2026-01', 'Kỳ lương tháng 01/2026', '2026-01-01', '2026-01-31', '2026-02-05', 22.00, 'DRAFT')`,
+      [period1Id, orgA]
+    );
+
+    // 2. Create Salary Components
+    const compLunchId = randomUUID();
+    const compRespId = randomUUID();
+    const compKpiId = randomUUID();
+    const compUnionId = randomUUID();
+    const compSiId = randomUUID();
+
+    await pool.query(
+      `INSERT INTO salary_components (id, organization_id, code, name, type, is_taxable, is_statutory)
+       VALUES ($1, $2, 'ALLOW_LUNCH', 'Phụ cấp ăn trưa', 'ALLOWANCE', false, false),
+              ($3, $2, 'ALLOW_RESP', 'Phụ cấp trách nhiệm', 'ALLOWANCE', true, false),
+              ($4, $2, 'BONUS_KPI', 'Thưởng KPI', 'BONUS', true, false),
+              ($5, $2, 'DED_UNION', 'Đoàn phí công đoàn', 'DEDUCTION', false, false),
+              ($6, $2, 'DED_SI', 'Trừ BHXH bắt buộc', 'DEDUCTION', false, true)`,
+      [compLunchId, orgA, compRespId, compKpiId, compUnionId, compSiId]
+    );
+
+    // 3. Create Slips for Period 1
+    const slip1Id = randomUUID();
+    const slip2Id = randomUUID();
+
+    // Slip 1: Dev Employee (Gross: 25M, Net: 22.9M)
+    await pool.query(
+      `INSERT INTO payroll_slips (id, organization_id, period_id, employee_id, salary_mode, standard_days, actual_working_days, base_salary, prorated_base_salary, total_allowances, total_bonuses, total_deductions, gross_pay, net_pay, status)
+       VALUES ($1, $2, $3, $4, 'GROSS', 22.00, 22.00, 20000000.00, 20000000.00, 2000000.00, 3000000.00, 2100000.00, 25000000.00, 22900000.00, 'PAID')`,
+      [slip1Id, orgA, period1Id, empDevRecordId]
+    );
+
+    // Slip 2: Sales Employee (Gross: 21M, Net: 19.4M)
+    await pool.query(
+      `INSERT INTO payroll_slips (id, organization_id, period_id, employee_id, salary_mode, standard_days, actual_working_days, base_salary, prorated_base_salary, total_allowances, total_bonuses, total_deductions, gross_pay, net_pay, status)
+       VALUES ($1, $2, $3, $4, 'GROSS', 22.00, 22.00, 15000000.00, 15000000.00, 1000000.00, 5000000.00, 1600000.00, 21000000.00, 19400000.00, 'CONFIRMED')`,
+      [slip2Id, orgA, period1Id, empSalesRecordId]
+    );
+
+    // 4. Create Slip Items for Period 1
+    await pool.query(
+      `INSERT INTO payroll_slip_items (id, organization_id, slip_id, component_id, component_name, type, amount)
+       VALUES ($1, $2, $3, $4, 'Phụ cấp ăn trưa', 'ALLOWANCE', 1000000.00),
+              ($5, $2, $3, $6, 'Phụ cấp trách nhiệm', 'ALLOWANCE', 1000000.00),
+              ($7, $2, $3, $8, 'Thưởng KPI', 'BONUS', 3000000.00),
+              ($9, $2, $3, $10, 'Trừ BHXH bắt buộc', 'DEDUCTION', 2100000.00),
+              ($11, $2, $12, $4, 'Phụ cấp ăn trưa', 'ALLOWANCE', 1000000.00),
+              ($13, $2, $12, $8, 'Thưởng KPI', 'BONUS', 5000000.00),
+              ($14, $2, $12, $10, 'Trừ BHXH bắt buộc', 'DEDUCTION', 1600000.00)`,
+      [
+        randomUUID(), orgA, slip1Id, compLunchId,
+        randomUUID(), compRespId,
+        randomUUID(), compKpiId,
+        randomUUID(), compSiId,
+        randomUUID(), slip2Id,
+        randomUUID(),
+        randomUUID()
+      ]
+    );
+
+    // 5. Close Period 1
+    await pool.query(`UPDATE payroll_periods SET status = 'CLOSED' WHERE id = $1`, [period1Id]);
+
+    // 6. Create Period 2 (Feb 2026) as DRAFT
+    await pool.query(
+      `INSERT INTO payroll_periods (id, organization_id, code, name, start_date, end_date, payment_date, standard_working_days, status)
+       VALUES ($1, $2, 'KY-2026-02', 'Kỳ lương tháng 02/2026', '2026-02-01', '2026-02-28', '2026-03-05', 20.00, 'DRAFT')`,
+      [period2Id, orgA]
+    );
+
+    const slip2_1Id = randomUUID();
+    const slip2_2Id = randomUUID();
+
+    // Slip 2.1: Dev (Gross: 22M, Net: 19.9M)
+    await pool.query(
+      `INSERT INTO payroll_slips (id, organization_id, period_id, employee_id, salary_mode, standard_days, actual_working_days, base_salary, prorated_base_salary, total_allowances, total_bonuses, total_deductions, gross_pay, net_pay, status)
+       VALUES ($1, $2, $3, $4, 'GROSS', 20.00, 20.00, 20000000.00, 20000000.00, 2000000.00, 0.00, 2100000.00, 22000000.00, 19900000.00, 'DRAFT')`,
+      [slip2_1Id, orgA, period2Id, empDevRecordId]
+    );
+
+    // Slip 2.2: Sales (Gross: 26M, Net: 23.4M -> net variance from 19.4M to 23.4M is +4M / 19.4M = +20.62% -> ANOMALY)
+    await pool.query(
+      `INSERT INTO payroll_slips (id, organization_id, period_id, employee_id, salary_mode, standard_days, actual_working_days, base_salary, prorated_base_salary, total_allowances, total_bonuses, total_deductions, gross_pay, net_pay, status)
+       VALUES ($1, $2, $3, $4, 'GROSS', 20.00, 20.00, 15000000.00, 15000000.00, 1000000.00, 10000000.00, 2600000.00, 26000000.00, 23400000.00, 'DRAFT')`,
+      [slip2_2Id, orgA, period2Id, empSalesRecordId]
+    );
+
+    // 7. Disbursements in Period 1
+    // Dev Employee: 22,900,000 paid (100% Fully Paid)
+    await pool.query(
+      `INSERT INTO payroll_disbursements (id, organization_id, period_id, slip_id, employee_id, disbursement_code, payment_method, amount, payment_date, status)
+       VALUES ($1, $2, $3, $4, $5, 'DISB-2026-01-001', 'BANK_TRANSFER', 22900000.00, '2026-02-05', 'COMPLETED')`,
+      [randomUUID(), orgA, period1Id, slip1Id, empDevRecordId]
+    );
+
+    // Sales Employee: 10,000,000 paid (Remaining 9,400,000 -> PARTIAL)
+    await pool.query(
+      `INSERT INTO payroll_disbursements (id, organization_id, period_id, slip_id, employee_id, disbursement_code, payment_method, amount, payment_date, status)
+       VALUES ($1, $2, $3, $4, $5, 'DISB-2026-01-002', 'BANK_TRANSFER', 10000000.00, '2026-02-05', 'COMPLETED')`,
+      [randomUUID(), orgA, period1Id, slip2Id, empSalesRecordId]
+    );
+
+    // 8. Chart of Accounts
+    const acc6422Id = randomUUID();
+    const acc6421Id = randomUUID();
+    const acc3341Id = randomUUID();
+    const acc1121Id = randomUUID();
+
+    await pool.query(
+      `INSERT INTO accounting_accounts (id, organization_id, code, name, type)
+       VALUES ($1, $2, '6422', 'Chi phí quản lý doanh nghiệp', 'EXPENSE'),
+              ($3, $2, '6421', 'Chi phí bán hàng', 'EXPENSE'),
+              ($4, $2, '3341', 'Phải trả người lao động', 'LIABILITY'),
+              ($5, $2, '1121', 'Tiền gửi ngân hàng', 'ASSET')`,
+      [acc6422Id, orgA, acc6421Id, acc3341Id, acc1121Id]
+    );
+
+    // 9. Journal Entry in Period 1
+    const entryId = randomUUID();
+    await pool.query(
+      `INSERT INTO payroll_journal_entries (id, organization_id, period_id, entry_number, entry_date, status, total_debit, total_credit, description)
+       VALUES ($1, $2, $3, 'PKT-2026-01-001', '2026-01-31', 'DRAFT', 46000000.00, 46000000.00, 'Hạch toán chi phí lương tháng 01/2026')`,
+      [entryId, orgA, period1Id]
+    );
+
+    // Entry Lines:
+    // Debit 6422: 25,000,000 (Dev dept)
+    // Debit 6421: 21,000,000 (Sales dept)
+    // Credit 3341: 46,000,000
+    await pool.query(
+      `INSERT INTO payroll_journal_entry_lines (id, organization_id, entry_id, account_id, department_id, debit_amount, credit_amount, description, line_order)
+       VALUES ($1, $2, $3, $4, $5, 25000000.00, 0.00, 'Lương bộ phận Dev', 1),
+              ($6, $2, $3, $7, $8, 21000000.00, 0.00, 'Lương bộ phận Sales', 2),
+              ($9, $2, $3, $10, NULL, 0.00, 46000000.00, 'Phải trả người lao động', 3)`,
+      [
+        randomUUID(), orgA, entryId, acc6422Id, deptDevId,
+        randomUUID(), acc6421Id, deptSalesId,
+        randomUUID(), acc3341Id
+      ]
+    );
+
+    // Post the journal entry
+    await pool.query(`UPDATE payroll_journal_entries SET status = 'POSTED' WHERE id = $1`, [entryId]);
+
+    return {
+      period1Id,
+      period2Id,
+      acc6422Id,
+      acc6421Id,
+      acc3341Id,
+      acc1121Id,
+      entryId
+    };
+  }
+
+  it('8. RPT-PAY-01: Payroll Summary & Slip Register (Metrics, Details & Scope)', async () => {
+    const { period1Id } = await setupPayrollTestData();
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+
+    const res = await hr.request(`/api/organizations/${orgA}/reports/payroll-summary?periodId=${period1Id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.period.code).toBe('KY-2026-01');
+    expect(res.body.period.status).toBe('CLOSED');
+    expect(res.body.period.isDraft).toBe(false);
+
+    // Metrics verification (exact numeric arithmetic)
+    expect(res.body.metrics.totalSlips).toBe(2);
+    expect(res.body.metrics.totalGross).toBe('46000000.00');
+    expect(res.body.metrics.totalNet).toBe('42300000.00');
+    expect(res.body.metrics.totalAllowances).toBe('3000000.00');
+    expect(res.body.metrics.totalBonuses).toBe('8000000.00');
+    expect(res.body.metrics.totalDeductions).toBe('3700000.00');
+
+    // Slips verification
+    expect(res.body.items.length).toBe(2);
+    const devSlip = res.body.items.find((s: any) => s.employeeCode === 'EMP001');
+    expect(devSlip).toBeDefined();
+    expect(devSlip.grossPay).toBe('25000000.00');
+    expect(devSlip.netPay).toBe('22900000.00');
+    expect(devSlip.status).toBe('PAID');
+
+    // Department filter verification
+    const filteredRes = await hr.request(`/api/organizations/${orgA}/reports/payroll-summary?periodId=${period1Id}&departmentId=${deptDevId}`);
+    expect(filteredRes.status).toBe(200);
+    expect(filteredRes.body.items.length).toBe(1);
+    expect(filteredRes.body.items[0].employeeCode).toBe('EMP001');
+
+    // Manager role scope restriction: Dev Manager only sees Dev employee!
+    const manager = new Client();
+    await manager.login('manager@acme.test');
+    const mgrRes = await manager.request(`/api/organizations/${orgA}/reports/payroll-summary?periodId=${period1Id}`);
+    expect(mgrRes.status).toBe(200);
+    expect(mgrRes.body.items.length).toBe(1);
+    expect(mgrRes.body.items[0].employeeCode).toBe('EMP001');
+  });
+
+  it('9. RPT-PAY-02: Salary Components & Deductions Breakdown (Taxable vs Non-Taxable)', async () => {
+    const { period1Id } = await setupPayrollTestData();
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+
+    const res = await hr.request(`/api/organizations/${orgA}/reports/payroll-components?periodId=${period1Id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.period.code).toBe('KY-2026-01');
+
+    // Allowances: 2,000,000 lunch (non-taxable) + 1,000,000 resp (taxable) = 3,000,000
+    expect(res.body.metrics.totalAllowances).toBe('3000000.00');
+    expect(res.body.metrics.nonTaxableAllowances).toBe('2000000.00');
+    expect(res.body.metrics.taxableAllowances).toBe('1000000.00');
+    expect(res.body.metrics.totalBonuses).toBe('8000000.00');
+    expect(res.body.metrics.totalDeductions).toBe('3700000.00');
+
+    // Items verification
+    const lunch = res.body.items.find((i: any) => i.componentName === 'Phụ cấp ăn trưa');
+    expect(lunch).toBeDefined();
+    expect(lunch.recipientCount).toBe(2);
+    expect(lunch.totalAmount).toBe('2000000.00');
+    expect(lunch.isTaxable).toBe(false);
+
+    const resp = res.body.items.find((i: any) => i.componentName === 'Phụ cấp trách nhiệm');
+    expect(resp).toBeDefined();
+    expect(resp.recipientCount).toBe(1);
+    expect(resp.totalAmount).toBe('1000000.00');
+    expect(resp.isTaxable).toBe(true);
+  });
+
+  it('10. RPT-PAY-03: Payroll Variance Between Periods & Anomaly Detection', async () => {
+    const { period1Id, period2Id } = await setupPayrollTestData();
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+
+    const res = await hr.request(`/api/organizations/${orgA}/reports/payroll-variance?currentPeriodId=${period2Id}&previousPeriodId=${period1Id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.currentPeriod.code).toBe('KY-2026-02');
+    expect(res.body.previousPeriod.code).toBe('KY-2026-01');
+
+    // Headcount unchanged (2 employees in both periods)
+    expect(res.body.metrics.currentHeadcount).toBe(2);
+    expect(res.body.metrics.previousHeadcount).toBe(2);
+    expect(res.body.metrics.headcountDelta).toBe(0);
+
+    // Current gross: 22M + 26M = 48M. Previous gross: 25M + 21M = 46M. Delta = +2M
+    expect(res.body.metrics.currentGrossTotal).toBe('48000000.00');
+    expect(res.body.metrics.previousGrossTotal).toBe('46000000.00');
+    expect(res.body.metrics.grossDelta).toBe('2000000.00');
+
+    // Check anomalous employee detection:
+    // Sales employee net pay jumped from 19,400,000 to 23,400,000 (+4,000,000 / 19,400,000 = +20.62% >= 20%)
+    expect(res.body.metrics.anomalousCount).toBe(1);
+    const salesVariance = res.body.items.find((i: any) => i.employeeCode === 'EMP002');
+    expect(salesVariance).toBeDefined();
+    expect(salesVariance.previousNetPay).toBe('19400000.00');
+    expect(salesVariance.currentNetPay).toBe('23400000.00');
+    expect(salesVariance.isAnomalous).toBe(true);
+
+    const devVariance = res.body.items.find((i: any) => i.employeeCode === 'EMP001');
+    expect(devVariance).toBeDefined();
+    expect(devVariance.isAnomalous).toBe(false);
+  });
+
+  it('11. RPT-ACC-01: Cost Allocation by Department & VAS Accounts', async () => {
+    const { period1Id } = await setupPayrollTestData();
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+
+    const res = await hr.request(`/api/organizations/${orgA}/reports/cost-allocation?periodId=${period1Id}`);
+    expect(res.status).toBe(200);
+
+    // Total gross: 46,000,000
+    // Total employer statutory (21.5% of 46M): 9,890,000.00
+    // Total trade union (2% of 46M): 920,000.00
+    // Total CTC: 46M + 9.89M + 0.92M = 56,810,000.00
+    expect(res.body.metrics.totalGrossSalary).toBe('46000000.00');
+    expect(res.body.metrics.totalEmployerStatutory).toBe('9890000.00');
+    expect(res.body.metrics.totalTradeUnion).toBe('920000.00');
+    expect(res.body.metrics.totalCompanyCost).toBe('56810000.00');
+
+    // Allocations check
+    expect(res.body.allocations.length).toBe(2);
+    const devAlloc = res.body.allocations.find((a: any) => a.departmentCode === 'DEV');
+    expect(devAlloc.vasAccount).toBe('6422'); // Admin / General management
+    expect(devAlloc.grossSalary).toBe('25000000.00');
+    expect(devAlloc.employerStatutory).toBe('5375000.00'); // 21.5% of 25M
+    expect(devAlloc.tradeUnion).toBe('500000.00'); // 2% of 25M
+    expect(devAlloc.totalCostToCompany).toBe('30875000.00');
+
+    const salesAlloc = res.body.allocations.find((a: any) => a.departmentCode === 'SALES');
+    expect(salesAlloc.vasAccount).toBe('6421'); // Sales expense
+    expect(salesAlloc.grossSalary).toBe('21000000.00');
+    expect(salesAlloc.employerStatutory).toBe('4515000.00'); // 21.5% of 21M
+    expect(salesAlloc.tradeUnion).toBe('420000.00'); // 2% of 21M
+    expect(salesAlloc.totalCostToCompany).toBe('25935000.00');
+  });
+
+  it('12. RPT-ACC-02: Payroll Liabilities & 3-Way Reconciliation', async () => {
+    const { period1Id } = await setupPayrollTestData();
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+
+    const res = await hr.request(`/api/organizations/${orgA}/reports/payroll-liabilities?periodId=${period1Id}`);
+    expect(res.status).toBe(200);
+
+    // Total Payable: 42,300,000.00 (Net pay)
+    // Total Disbursed: 22,900,000 (Dev) + 10,000,000 (Sales) = 32,900,000.00
+    // Remaining Liability: 42,300,000 - 32,900,000 = 9,400,000.00
+    expect(res.body.metrics.payableLiability).toBe('42300000.00');
+    expect(res.body.metrics.disbursedPayment).toBe('32900000.00');
+    expect(res.body.metrics.remainingLiability).toBe('9400000.00');
+    expect(res.body.metrics.disbursementCount).toBe(2);
+
+    // Item statuses
+    const dev = res.body.items.find((i: any) => i.employeeCode === 'EMP001');
+    expect(dev.settlementStatus).toBe('PAID');
+    expect(dev.remainingBalance).toBe('0.00');
+
+    const sales = res.body.items.find((i: any) => i.employeeCode === 'EMP002');
+    expect(sales.settlementStatus).toBe('PARTIAL');
+    expect(sales.remainingBalance).toBe('9400000.00');
+
+    // Status filter
+    const partialOnly = await hr.request(`/api/organizations/${orgA}/reports/payroll-liabilities?periodId=${period1Id}&status=PARTIAL`);
+    expect(partialOnly.status).toBe(200);
+    expect(partialOnly.body.items.length).toBe(1);
+    expect(partialOnly.body.items[0].employeeCode).toBe('EMP002');
+  });
+
+  it('13. RPT-ACC-03: General Ledger Journal Entries (Double-Entry Balance Audit)', async () => {
+    const { period1Id } = await setupPayrollTestData();
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+
+    const res = await hr.request(`/api/organizations/${orgA}/reports/journal-entries?periodId=${period1Id}`);
+    expect(res.status).toBe(200);
+
+    // Metrics verification
+    expect(res.body.metrics.totalEntries).toBe(1);
+    expect(res.body.metrics.postedEntries).toBe(1);
+    expect(res.body.metrics.totalDebit).toBe('46000000.00');
+    expect(res.body.metrics.totalCredit).toBe('46000000.00');
+    expect(res.body.metrics.isBalanced).toBe(true);
+
+    // Entry details
+    const entry = res.body.items[0];
+    expect(entry.entryNumber).toBe('PKT-2026-01-001');
+    expect(entry.status).toBe('POSTED');
+    expect(entry.lines.length).toBe(3);
+
+    // Verify lines
+    const lineDev = entry.lines.find((l: any) => l.accountCode === '6422');
+    expect(lineDev.debitAmount).toBe('25000000.00');
+    expect(lineDev.creditAmount).toBe('0.00');
+
+    const lineSales = entry.lines.find((l: any) => l.accountCode === '6421');
+    expect(lineSales.debitAmount).toBe('21000000.00');
+    expect(lineSales.creditAmount).toBe('0.00');
+
+    const linePayable = entry.lines.find((l: any) => l.accountCode === '3341');
+    expect(linePayable.creditAmount).toBe('46000000.00');
+  });
+
+  it('14. CSV Export for Payroll & Accounting Reports (UTF-8 BOM & Audit Logging)', async () => {
+    const { period1Id, period2Id } = await setupPayrollTestData();
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+
+    // 1. Export RPT-PAY-01
+    const expPay01 = await hr.request(`/api/organizations/${orgA}/reports/export`, 'POST', {
+      reportCode: 'RPT-PAY-01',
+      format: 'CSV',
+      filters: { periodId: period1Id }
+    });
+    expect(expPay01.status).toBe(200);
+    expect(expPay01.text).toContain('BÁO CÁO BẢNG LƯƠNG TỔNG HỢP & CHI TIẾT THEO KỲ');
+    expect(expPay01.text).toContain('EMP001,Dev Employee');
+    expect(expPay01.text).toContain('25000000.00');
+
+    // 2. Export RPT-PAY-02
+    const expPay02 = await hr.request(`/api/organizations/${orgA}/reports/export`, 'POST', {
+      reportCode: 'RPT-PAY-02',
+      format: 'CSV',
+      filters: { periodId: period1Id }
+    });
+    expect(expPay02.status).toBe(200);
+    expect(expPay02.text).toContain('BÁO CÁO CƠ CẤU PHỤ CẤP, THƯỞNG & KHẤU TRỪ');
+    expect(expPay02.text).toContain('Phụ cấp ăn trưa,ALLOWANCE');
+
+    // 3. Export RPT-PAY-03
+    const expPay03 = await hr.request(`/api/organizations/${orgA}/reports/export`, 'POST', {
+      reportCode: 'RPT-PAY-03',
+      format: 'CSV',
+      filters: { currentPeriodId: period2Id, previousPeriodId: period1Id }
+    });
+    expect(expPay03.status).toBe(200);
+    expect(expPay03.text).toContain('BÁO CÁO BIẾN ĐỘNG QUỸ LƯƠNG GIỮA CÁC KỲ');
+    expect(expPay03.text).toContain('EMP002,Sales Employee');
+
+    // 4. Export RPT-ACC-01
+    const expAcc01 = await hr.request(`/api/organizations/${orgA}/reports/export`, 'POST', {
+      reportCode: 'RPT-ACC-01',
+      format: 'CSV',
+      filters: { periodId: period1Id }
+    });
+    expect(expAcc01.status).toBe(200);
+    expect(expAcc01.text).toContain('BÁO CÁO PHÂN BỔ CHI PHÍ LƯƠNG THEO PHÒNG BAN & TÀI KHOẢN KẾ TOÁN');
+    expect(expAcc01.text).toContain('6422');
+    expect(expAcc01.text).toContain('6421');
+
+    // 5. Export RPT-ACC-02
+    const expAcc02 = await hr.request(`/api/organizations/${orgA}/reports/export`, 'POST', {
+      reportCode: 'RPT-ACC-02',
+      format: 'CSV',
+      filters: { periodId: period1Id }
+    });
+    expect(expAcc02.status).toBe(200);
+    expect(expAcc02.text).toContain('BÁO CÁO CÔNG NỢ LƯƠNG & ĐỐI CHIẾU THANH TOÁN');
+    expect(expAcc02.text).toContain('Đã thanh toán đủ');
+    expect(expAcc02.text).toContain('Thanh toán một phần');
+
+    // 6. Export RPT-ACC-03
+    const expAcc03 = await hr.request(`/api/organizations/${orgA}/reports/export`, 'POST', {
+      reportCode: 'RPT-ACC-03',
+      format: 'CSV',
+      filters: { periodId: period1Id }
+    });
+    expect(expAcc03.status).toBe(200);
+    expect(expAcc03.text).toContain('BÁO CÁO SỔ NHẬT KÝ BÚT TOÁN KẾ TOÁN LƯƠNG');
+    expect(expAcc03.text).toContain('PKT-2026-01-001');
+
+    // Verify audit logs generated for each
+    const auditRes = await hr.request(`/api/organizations/${orgA}/reports/export-audit`);
+    expect(auditRes.status).toBe(200);
+    const codes = auditRes.body.auditLogs.map((l: any) => l.reportCode);
+    expect(codes).toContain('RPT-PAY-01');
+    expect(codes).toContain('RPT-PAY-02');
+    expect(codes).toContain('RPT-PAY-03');
+    expect(codes).toContain('RPT-ACC-01');
+    expect(codes).toContain('RPT-ACC-02');
+    expect(codes).toContain('RPT-ACC-03');
+  });
+
+  it('15. RBAC & Tenant Isolation for Payroll/Accounting Reporting', async () => {
+    const { period1Id } = await setupPayrollTestData();
+
+    // Employee cannot access payroll summary (minRole is MANAGER) -> 403
+    const emp = new Client();
+    await emp.login('dev@acme.test');
+    const empRes = await emp.request(`/api/organizations/${orgA}/reports/payroll-summary?periodId=${period1Id}`);
+    expect(empRes.status).toBe(403);
+
+    // Employee cannot export payroll report -> 403
+    const empExport = await emp.request(`/api/organizations/${orgA}/reports/export`, 'POST', {
+      reportCode: 'RPT-PAY-01',
+      format: 'CSV',
+      filters: { periodId: period1Id }
+    });
+    expect(empExport.status).toBe(403);
+
+    // Manager cannot access journal entries (minRole is HR) -> 403
+    const mgr = new Client();
+    await mgr.login('manager@acme.test');
+    const mgrJournal = await mgr.request(`/api/organizations/${orgA}/reports/journal-entries?periodId=${period1Id}`);
+    expect(mgrJournal.status).toBe(403);
+
+    // Org B user cannot access Org A payroll data
+    const orgBAdmin = await createUser('admin@beta.test', orgB, 'ADMIN', 'Beta Admin');
+    const bClient = new Client();
+    await bClient.login('admin@beta.test');
+    const crossOrgRes = await bClient.request(`/api/organizations/${orgB}/reports/payroll-summary?periodId=${period1Id}`);
+    expect(crossOrgRes.status).toBe(404);
   });
 });

@@ -353,5 +353,31 @@ All reporting endpoints enforce tenant isolation, role-based access control (RBA
 
 Migration `020_reporting_center_engine.sql` creates `report_catalog`, `report_saved_templates`, and `report_export_audit_logs`.
 
+## RPT-002 — Payroll & Accounting Reporting
+
+Base path: `/api/organizations/:organizationId/reports`
+
+Integrated with Reporting Center (RPT-001) and inherits PAY-001, PAY-002, and PAY-003 data structures. Enforces exact BigInt cents currency arithmetic (no floating-point rounding errors), tenant isolation, strict RBAC, and department/management scoping.
+
+### Payroll Reports (Category: PAYROLL)
+| Method | Relative path | Access | Operation |
+|---|---|---|---|
+| GET | `/payroll-summary` | Admin, HR, Manager (scoped), Employee (self-only) | **RPT-PAY-01**: Bảng lương tổng hợp & chi tiết theo kỳ. Returns Gross, Net, statutory deductions, allowances, bonuses, working days, status. Highlights draft vs closed period snapshot. |
+| GET | `/payroll-components` | Admin, HR, Manager (scoped), Employee (self-only) | **RPT-PAY-02**: Báo cáo cơ cấu phụ cấp, thưởng & khấu trừ. Breakdowns non-taxable allowances, taxable allowances, bonuses, statutory employee insurance (8% BHXH, 1.5% BHYT, 1% BHTN), PIT deduction, and net pay. |
+| GET | `/payroll-variance` | Admin, HR, Manager (scoped) | **RPT-PAY-03**: Báo cáo biến động quỹ lương giữa các kỳ. MoM net pay variance percentage and delta, headcount delta, average pay variance per employee, individual employee delta, and anomalous variance flags ($\ge 20\%$). |
+
+### Accounting & Liability Reports (Category: ACCOUNTING)
+| Method | Relative path | Access | Operation |
+|---|---|---|---|
+| GET | `/cost-allocation` | Admin, HR, Manager (scoped) | **RPT-ACC-01**: Báo cáo phân bổ chi phí lương theo phòng ban & đơn vị. Distributes gross salary, employer statutory insurance (21.5%), trade union fee (2%), and Total Cost to Company (CTC) mapped to Vietnamese Accounting Standards (VAS 6421 Chi phí bán hàng, VAS 6422 Chi phí quản lý doanh nghiệp). |
+| GET | `/payroll-liabilities` | Admin, HR | **RPT-ACC-02**: Báo cáo công nợ lương & đối chiếu thanh toán. 3-way reconciliation between payable liabilities (TK 3341), verified disbursements (TK 1121/1111), and remaining balance; employee bank account details; settlement status (SETTLED, PARTIAL, UNPAID). |
+| GET | `/journal-entries` | Admin, HR | **RPT-ACC-03**: Báo cáo sổ nhật ký bút toán kế toán lương. General ledger journal entries with multi-line debit/credit accounts, double-entry balance check (Total Debit = Total Credit), posted timestamp, reversal traceability (`reversalEntryNumber`). |
+
+### Export & Audit Trail
+All 6 reports (`RPT-PAY-01` through `RPT-PAY-03`, `RPT-ACC-01` through `RPT-ACC-03`) are fully supported by the unified export engine (`POST /export`), generating standard RFC 4180 CSV with UTF-8 BOM for Microsoft Excel compatibility and recording immutable audit entries in `report_export_audit_logs`.
+
+Migration `021_payroll_accounting_reporting.sql` updates `report_catalog_category_check` to include `'ACCOUNTING'` and adds composite performance indexes on `payroll_slips`, `payroll_slip_items`, `payroll_disbursements`, and `payroll_journal_entries`.
+
+
 
 

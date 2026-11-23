@@ -5,7 +5,7 @@ import './reporting.css';
 export interface ReportItem {
   id?: string;
   code: string;
-  category: 'EMPLOYEE' | 'ORGANIZATION' | 'ATTENDANCE' | 'LEAVE' | 'PAYROLL' | 'COMPLIANCE' | 'OTHER';
+  category: 'EMPLOYEE' | 'ORGANIZATION' | 'ATTENDANCE' | 'LEAVE' | 'PAYROLL' | 'ACCOUNTING' | 'COMPLIANCE' | 'OTHER';
   name: string;
   description: string;
   minRole: string;
@@ -31,6 +31,12 @@ export interface SavedTemplate {
   templateName: string;
   filters: any;
   createdAt: string;
+}
+
+function formatVND(val: number | string | undefined | null) {
+  if (val === undefined || val === null || val === '') return '0 ₫';
+  const num = typeof val === 'string' ? parseFloat(val) : val;
+  return isNaN(num) ? '0 ₫' : num.toLocaleString('vi-VN') + ' ₫';
 }
 
 interface Props {
@@ -63,6 +69,12 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
   const defaultEnd = now.toISOString().slice(0, 10);
   const [startDate, setStartDate] = useState<string>(defaultStart);
   const [endDate, setEndDate] = useState<string>(defaultEnd);
+
+  // Payroll & Accounting filters
+  const [payrollPeriods, setPayrollPeriods] = useState<Array<{ id: string; code: string; name: string; status: string }>>([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
+  const [comparePeriodId, setComparePeriodId] = useState<string>('');
+  const [filterSettlementStatus, setFilterSettlementStatus] = useState<string>('');
 
   // Data & Execution State
   const [reportData, setReportData] = useState<any>(null);
@@ -103,6 +115,25 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
     void loadInitial();
   }, [orgId, initialReportCode]);
 
+  // Load payroll periods for PAY and ACC reports
+  useEffect(() => {
+    async function loadPeriods() {
+      try {
+        const res = await request<{ periods: Array<{ id: string; code: string; name: string; status: string }> }>(
+          `/api/organizations/${orgId}/payroll/periods`
+        );
+        const pList = res.periods || [];
+        setPayrollPeriods(pList);
+        if (pList.length > 0 && !selectedPeriodId) {
+          setSelectedPeriodId(pList[0].id);
+        }
+      } catch {
+        // Silently catch if payroll periods endpoint is unavailable
+      }
+    }
+    void loadPeriods();
+  }, [orgId, selectedPeriodId]);
+
   // Load report data when activeReport or filters change
   useEffect(() => {
     if (!activeReport) return;
@@ -135,6 +166,28 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
           endpoint = `/api/organizations/${orgId}/reports/leave-summary`;
           queryParams.set('startDate', startDate);
           queryParams.set('endDate', endDate);
+        } else if (activeReport?.code === 'RPT-PAY-01') {
+          endpoint = `/api/organizations/${orgId}/reports/payroll-summary`;
+          if (selectedPeriodId) queryParams.set('periodId', selectedPeriodId);
+          if (filterStatus) queryParams.set('status', filterStatus);
+        } else if (activeReport?.code === 'RPT-PAY-02') {
+          endpoint = `/api/organizations/${orgId}/reports/payroll-components`;
+          if (selectedPeriodId) queryParams.set('periodId', selectedPeriodId);
+        } else if (activeReport?.code === 'RPT-PAY-03') {
+          endpoint = `/api/organizations/${orgId}/reports/payroll-variance`;
+          if (selectedPeriodId) queryParams.set('periodId', selectedPeriodId);
+          if (comparePeriodId) queryParams.set('comparePeriodId', comparePeriodId);
+        } else if (activeReport?.code === 'RPT-ACC-01') {
+          endpoint = `/api/organizations/${orgId}/reports/cost-allocation`;
+          if (selectedPeriodId) queryParams.set('periodId', selectedPeriodId);
+        } else if (activeReport?.code === 'RPT-ACC-02') {
+          endpoint = `/api/organizations/${orgId}/reports/payroll-liabilities`;
+          if (selectedPeriodId) queryParams.set('periodId', selectedPeriodId);
+          if (filterSettlementStatus) queryParams.set('settlementStatus', filterSettlementStatus);
+        } else if (activeReport?.code === 'RPT-ACC-03') {
+          endpoint = `/api/organizations/${orgId}/reports/journal-entries`;
+          if (selectedPeriodId) queryParams.set('periodId', selectedPeriodId);
+          if (filterStatus) queryParams.set('status', filterStatus);
         }
 
         if (endpoint) {
@@ -152,7 +205,7 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
 
     void fetchReport();
     return () => { cancelled = true; };
-  }, [activeReport, orgId, page, pageSize, filterDept, filterStatus, filterContractType, filterSearch, startDate, endDate]);
+  }, [activeReport, orgId, page, pageSize, filterDept, filterStatus, filterContractType, filterSearch, startDate, endDate, selectedPeriodId, comparePeriodId, filterSettlementStatus]);
 
   // Load audit logs if AUDIT tab selected
   useEffect(() => {
@@ -207,6 +260,9 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
         filters.startDate = startDate;
         filters.endDate = endDate;
       }
+      if (selectedPeriodId) filters.periodId = selectedPeriodId;
+      if (comparePeriodId && activeReport.code === 'RPT-PAY-03') filters.comparePeriodId = comparePeriodId;
+      if (filterSettlementStatus && activeReport.code === 'RPT-ACC-02') filters.settlementStatus = filterSettlementStatus;
 
       const response = await fetch(`/api/organizations/${orgId}/reports/export`, {
         method: 'POST',
@@ -255,7 +311,10 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
         status: filterStatus,
         contractType: filterContractType,
         startDate,
-        endDate
+        endDate,
+        periodId: selectedPeriodId,
+        comparePeriodId,
+        settlementStatus: filterSettlementStatus
       };
 
       await request(`/api/organizations/${orgId}/reports/templates`, {
@@ -282,6 +341,9 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
     if (tpl.filters.contractType !== undefined) setFilterContractType(tpl.filters.contractType);
     if (tpl.filters.startDate !== undefined) setStartDate(tpl.filters.startDate);
     if (tpl.filters.endDate !== undefined) setEndDate(tpl.filters.endDate);
+    if (tpl.filters.periodId !== undefined) setSelectedPeriodId(tpl.filters.periodId);
+    if (tpl.filters.comparePeriodId !== undefined) setComparePeriodId(tpl.filters.comparePeriodId);
+    if (tpl.filters.settlementStatus !== undefined) setFilterSettlementStatus(tpl.filters.settlementStatus);
     setNotice(`Đã áp dụng mẫu bộ lọc: ${tpl.templateName}`);
   }
 
@@ -296,7 +358,7 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
       <div className="rpt-header">
         <div>
           <h1>Trung tâm báo cáo & Thống kê nhân sự</h1>
-          <p>Báo cáo nhân sự, cơ cấu tổ chức, chấm công, ca làm việc và số dư nghỉ phép.</p>
+          <p>Báo cáo nhân sự, cơ cấu tổ chức, chấm công, ca làm việc, tiền lương và kế toán công nợ.</p>
         </div>
         {activeReport && (
           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -376,6 +438,20 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
               onClick={() => setSelectedCategory('LEAVE')}
             >
               Nghỉ phép (LEAVE)
+            </button>
+            <button
+              type="button"
+              className={`rpt-tab-btn ${selectedCategory === 'PAYROLL' ? 'active' : ''}`}
+              onClick={() => setSelectedCategory('PAYROLL')}
+            >
+              Tiền lương (PAY)
+            </button>
+            <button
+              type="button"
+              className={`rpt-tab-btn ${selectedCategory === 'ACCOUNTING' ? 'active' : ''}`}
+              onClick={() => setSelectedCategory('ACCOUNTING')}
+            >
+              Hạch toán & Công nợ (ACC)
             </button>
             {isPrivileged && (
               <button
@@ -510,6 +586,35 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
               </>
             )}
 
+            {/* Period Filter for Payroll & Accounting */}
+            {activeReport.supportedFilters.includes('periodId') && (
+              <div className="rpt-filter-group">
+                <label>Kỳ lương</label>
+                <select value={selectedPeriodId} onChange={e => { setSelectedPeriodId(e.target.value); setPage(1); }}>
+                  {payrollPeriods.length === 0 ? (
+                    <option value="">(Chưa có kỳ lương)</option>
+                  ) : (
+                    payrollPeriods.map(p => (
+                      <option key={p.id} value={p.id}>{p.code} - {p.name} ({p.status})</option>
+                    ))
+                  )}
+                </select>
+              </div>
+            )}
+
+            {/* Compare Period for RPT-PAY-03 */}
+            {activeReport.code === 'RPT-PAY-03' && (
+              <div className="rpt-filter-group">
+                <label>Kỳ đối chiếu</label>
+                <select value={comparePeriodId} onChange={e => { setComparePeriodId(e.target.value); setPage(1); }}>
+                  <option value="">Kỳ liền kề trước (Mặc định)</option>
+                  {payrollPeriods.filter(p => p.id !== selectedPeriodId).map(p => (
+                    <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Department Filter */}
             {activeReport.supportedFilters.includes('departmentId') && (
               <div className="rpt-filter-group">
@@ -545,6 +650,45 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
                   <option value="LATE">Đi muộn</option>
                   <option value="EARLY_LEAVE">Về sớm</option>
                   <option value="ABSENT">Vắng mặt</option>
+                </select>
+              </div>
+            )}
+
+            {/* Settlement Status for RPT-ACC-02 */}
+            {activeReport.code === 'RPT-ACC-02' && (
+              <div className="rpt-filter-group">
+                <label>Trạng thái thanh toán</label>
+                <select value={filterSettlementStatus} onChange={e => { setFilterSettlementStatus(e.target.value); setPage(1); }}>
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="SETTLED">Đã thanh toán đủ (SETTLED)</option>
+                  <option value="PARTIAL">Thanh toán một phần (PARTIAL)</option>
+                  <option value="UNPAID">Chưa thanh toán (UNPAID)</option>
+                </select>
+              </div>
+            )}
+
+            {/* Journal Entry Status for RPT-ACC-03 */}
+            {activeReport.code === 'RPT-ACC-03' && (
+              <div className="rpt-filter-group">
+                <label>Trạng thái bút toán</label>
+                <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}>
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="POSTED">Đã ghi sổ (POSTED)</option>
+                  <option value="DRAFT">Dự thảo (DRAFT)</option>
+                  <option value="REVERSED">Đã đảo sổ (REVERSED)</option>
+                </select>
+              </div>
+            )}
+
+            {/* Slip Status for RPT-PAY-01 */}
+            {activeReport.code === 'RPT-PAY-01' && (
+              <div className="rpt-filter-group">
+                <label>Trạng thái phiếu lương</label>
+                <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}>
+                  <option value="">Tất cả</option>
+                  <option value="DRAFT">Nháp (DRAFT)</option>
+                  <option value="CONFIRMED">Đã xác nhận (CONFIRMED)</option>
+                  <option value="PAID">Đã thanh toán (PAID)</option>
                 </select>
               </div>
             )}
@@ -600,7 +744,7 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
                       required
                       value={templateNameInput}
                       onChange={e => setTemplateNameInput(e.target.value)}
-                      placeholder="VD: Nhân sự phòng Dev tháng này"
+                      placeholder="VD: Báo cáo lương tháng này"
                       style={{ width: '100%', marginTop: '0.3rem', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                     />
                   </label>
@@ -712,6 +856,168 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
                     <div className="rpt-kpi-title">Tỷ lệ sử dụng phép</div>
                     <div className="rpt-kpi-value">{reportData.metrics.overallUtilizationRate}%</div>
                     <div className="rpt-kpi-sub">{reportData.metrics.approvedRequests} đơn đã duyệt</div>
+                  </div>
+                </>
+              )}
+
+              {activeReport.code === 'RPT-PAY-01' && (
+                <>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Tổng thực lĩnh (Net)</div>
+                    <div className="rpt-kpi-value" style={{ color: '#16a34a' }}>{formatVND(reportData.metrics.totalNetPay)}</div>
+                    <div className="rpt-kpi-sub">{reportData.metrics.slipCount} phiếu lương</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Tổng lương Gross</div>
+                    <div className="rpt-kpi-value">{formatVND(reportData.metrics.totalGrossPay)}</div>
+                    <div className="rpt-kpi-sub">Lương gộp trước khấu trừ</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Tổng khấu trừ</div>
+                    <div className="rpt-kpi-value" style={{ color: '#dc2626' }}>{formatVND(reportData.metrics.totalDeductions)}</div>
+                    <div className="rpt-kpi-sub">Bảo hiểm & Thuế TNCN</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Phụ cấp & Thưởng</div>
+                    <div className="rpt-kpi-value" style={{ color: '#2563eb' }}>{formatVND(reportData.metrics.totalAllowances)}</div>
+                    <div className="rpt-kpi-sub">Thưởng: {formatVND(reportData.metrics.totalBonuses)}</div>
+                  </div>
+                </>
+              )}
+
+              {activeReport.code === 'RPT-PAY-02' && (
+                <>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Phụ cấp miễn thuế</div>
+                    <div className="rpt-kpi-value" style={{ color: '#16a34a' }}>{formatVND(reportData.metrics.totalNonTaxableAllowances)}</div>
+                    <div className="rpt-kpi-sub">Ăn ca, điện thoại, trang phục...</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Phụ cấp tính thuế</div>
+                    <div className="rpt-kpi-value">{formatVND(reportData.metrics.totalTaxableAllowances)}</div>
+                    <div className="rpt-kpi-sub">Chức vụ, trách nhiệm...</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Khấu trừ bảo hiểm NLĐ (10.5%)</div>
+                    <div className="rpt-kpi-value" style={{ color: '#dc2626' }}>{formatVND(reportData.metrics.totalStatutoryDeductions)}</div>
+                    <div className="rpt-kpi-sub">BHXH 8%, BHYT 1.5%, BHTN 1%</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Thuế TNCN khấu trừ</div>
+                    <div className="rpt-kpi-value" style={{ color: '#d97706' }}>{formatVND(reportData.metrics.totalPitDeductions)}</div>
+                    <div className="rpt-kpi-sub">Thưởng: {formatVND(reportData.metrics.totalBonuses)}</div>
+                  </div>
+                </>
+              )}
+
+              {activeReport.code === 'RPT-PAY-03' && (
+                <>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Biến động quỹ lương Net</div>
+                    <div className="rpt-kpi-value" style={{ color: reportData.metrics.netPayVariancePct >= 0 ? '#dc2626' : '#16a34a' }}>
+                      {reportData.metrics.netPayVariancePct >= 0 ? '+' : ''}{reportData.metrics.netPayVariancePct}%
+                    </div>
+                    <div className="rpt-kpi-sub">Chênh lệch: {formatVND(reportData.metrics.netPayDelta)}</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Biến động nhân sự</div>
+                    <div className="rpt-kpi-value" style={{ color: '#2563eb' }}>
+                      {reportData.metrics.headcountDelta >= 0 ? '+' : ''}{reportData.metrics.headcountDelta} <span style={{ fontSize: '0.9rem' }}>người</span>
+                    </div>
+                    <div className="rpt-kpi-sub">So với kỳ trước</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Bình quân chênh lệch/NV</div>
+                    <div className="rpt-kpi-value">{formatVND(reportData.metrics.avgPayDeltaPerEmployee)}</div>
+                    <div className="rpt-kpi-sub">Mức tăng/giảm TB</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Cảnh báo biến động &ge;20%</div>
+                    <div className="rpt-kpi-value" style={{ color: reportData.metrics.anomalousCount > 0 ? '#d97706' : '#16a34a' }}>
+                      {reportData.metrics.anomalousCount} <span style={{ fontSize: '0.9rem' }}>nhân sự</span>
+                    </div>
+                    <div className="rpt-kpi-sub">Cần rà soát biến động lớn</div>
+                  </div>
+                </>
+              )}
+
+              {activeReport.code === 'RPT-ACC-01' && (
+                <>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Tổng chi phí nhân sự (CTC)</div>
+                    <div className="rpt-kpi-value" style={{ color: '#2563eb' }}>{formatVND(reportData.metrics.totalCostToCompany)}</div>
+                    <div className="rpt-kpi-sub">{reportData.metrics.departmentCount} phòng ban</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Lương Gross ghi nhận</div>
+                    <div className="rpt-kpi-value">{formatVND(reportData.metrics.totalGrossPay)}</div>
+                    <div className="rpt-kpi-sub">Chi phí lương nhân viên</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">BHXH/YT/TN Doanh nghiệp (21.5%)</div>
+                    <div className="rpt-kpi-value" style={{ color: '#d97706' }}>{formatVND(reportData.metrics.totalEmployerSocialInsurance)}</div>
+                    <div className="rpt-kpi-sub">Khoản bắt buộc người SDLĐ</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Kinh phí công đoàn (2%)</div>
+                    <div className="rpt-kpi-value" style={{ color: '#64748b' }}>{formatVND(reportData.metrics.totalTradeUnionFee)}</div>
+                    <div className="rpt-kpi-sub">Đóng theo quy định</div>
+                  </div>
+                </>
+              )}
+
+              {activeReport.code === 'RPT-ACC-02' && (
+                <>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Lương phải trả (TK 3341)</div>
+                    <div className="rpt-kpi-value">{formatVND(reportData.metrics.totalNetPayable)}</div>
+                    <div className="rpt-kpi-sub">Tổng nghĩa vụ chi trả</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Đã chi trả thực tế</div>
+                    <div className="rpt-kpi-value" style={{ color: '#16a34a' }}>{formatVND(reportData.metrics.totalDisbursed)}</div>
+                    <div className="rpt-kpi-sub">TK 1121 / 1111</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Còn phải trả (Dư Có TK 3341)</div>
+                    <div className="rpt-kpi-value" style={{ color: reportData.metrics.totalRemainingBalance > 0 ? '#dc2626' : '#16a34a' }}>
+                      {formatVND(reportData.metrics.totalRemainingBalance)}
+                    </div>
+                    <div className="rpt-kpi-sub">Chưa thanh toán hoàn tất</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Tỷ lệ thanh toán</div>
+                    <div className="rpt-kpi-value" style={{ color: '#2563eb' }}>{reportData.metrics.settlementRate}%</div>
+                    <div className="rpt-kpi-sub">{reportData.metrics.settledSlipsCount} đã trả / {reportData.metrics.unsettledSlipsCount} chưa trả</div>
+                  </div>
+                </>
+              )}
+
+              {activeReport.code === 'RPT-ACC-03' && (
+                <>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Tổng phát sinh Nợ</div>
+                    <div className="rpt-kpi-value">{formatVND(reportData.metrics.totalDebit)}</div>
+                    <div className="rpt-kpi-sub">TK 6421, 6422, 334...</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Tổng phát sinh Có</div>
+                    <div className="rpt-kpi-value">{formatVND(reportData.metrics.totalCredit)}</div>
+                    <div className="rpt-kpi-sub">TK 334, 338, 1121...</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Cân đối Nợ = Có</div>
+                    <div className="rpt-kpi-value" style={{ color: reportData.metrics.isBalanced ? '#16a34a' : '#dc2626' }}>
+                      {reportData.metrics.isBalanced ? '✓ CÂN ĐỐI' : '⚠ LỆCH'}
+                    </div>
+                    <div className="rpt-kpi-sub">Chênh lệch: {formatVND(reportData.metrics.balanceDelta)}</div>
+                  </div>
+                  <div className="rpt-kpi-card">
+                    <div className="rpt-kpi-title">Bút toán đã ghi sổ</div>
+                    <div className="rpt-kpi-value" style={{ color: '#2563eb' }}>
+                      {reportData.metrics.postedEntriesCount} / {reportData.metrics.totalEntriesCount}
+                    </div>
+                    <div className="rpt-kpi-sub">Trạng thái POSTED</div>
                   </div>
                 </>
               )}
@@ -868,6 +1174,279 @@ export function ReportingCenter({ profile, onNavigate, initialReportCode }: Prop
                             <td><span style={{ color: '#2563eb', fontWeight: 600 }}>{b.chargedDays}</span></td>
                             <td><strong style={{ color: '#16a34a' }}>{b.remainingDays}</strong></td>
                             <td>{b.utilizationRate}%</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* RPT-PAY-01 Table */}
+                {activeReport.code === 'RPT-PAY-01' && (
+                  <table className="rpt-table">
+                    <thead>
+                      <tr>
+                        <th>Mã NV</th>
+                        <th>Họ và tên</th>
+                        <th>Phòng ban</th>
+                        <th>Lương cơ bản</th>
+                        <th>Ngày công</th>
+                        <th>Lương Gross</th>
+                        <th>Phụ cấp</th>
+                        <th>Thưởng</th>
+                        <th>Khấu trừ</th>
+                        <th>Thực lĩnh (Net)</th>
+                        <th>Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData?.items?.length === 0 ? (
+                        <tr><td colSpan={11} style={{ textAlign: 'center', padding: '2rem' }}>Không có dữ liệu phiếu lương trong kỳ này.</td></tr>
+                      ) : (
+                        reportData?.items?.map((item: any) => (
+                          <tr key={item.id || item.employeeCode}>
+                            <td><strong>{item.employeeCode}</strong></td>
+                            <td>{item.fullName}</td>
+                            <td>{item.departmentName}</td>
+                            <td>{formatVND(item.baseSalary)}</td>
+                            <td>{item.actualWorkingDays} / {item.standardDays}</td>
+                            <td><strong>{formatVND(item.grossPay)}</strong></td>
+                            <td>{formatVND(item.totalAllowances)}</td>
+                            <td>{formatVND(item.totalBonuses)}</td>
+                            <td style={{ color: '#dc2626' }}>{formatVND(item.totalDeductions)}</td>
+                            <td><strong style={{ color: '#16a34a' }}>{formatVND(item.netPay)}</strong></td>
+                            <td><span className={`rpt-status-pill rpt-status-${(item.status || 'draft').toLowerCase()}`}>{item.status}</span></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* RPT-PAY-02 Table */}
+                {activeReport.code === 'RPT-PAY-02' && (
+                  <table className="rpt-table">
+                    <thead>
+                      <tr>
+                        <th>Mã NV</th>
+                        <th>Họ và tên</th>
+                        <th>Phòng ban</th>
+                        <th>PC miễn thuế</th>
+                        <th>PC tính thuế</th>
+                        <th>Thưởng</th>
+                        <th>BHXH/YT/TN NLĐ</th>
+                        <th>Thuế TNCN</th>
+                        <th>Khấu trừ khác</th>
+                        <th>Lương Gross</th>
+                        <th>Thực lĩnh (Net)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData?.items?.length === 0 ? (
+                        <tr><td colSpan={11} style={{ textAlign: 'center', padding: '2rem' }}>Không có dữ liệu cơ cấu lương.</td></tr>
+                      ) : (
+                        reportData?.items?.map((item: any) => (
+                          <tr key={item.employeeCode}>
+                            <td><strong>{item.employeeCode}</strong></td>
+                            <td>{item.fullName}</td>
+                            <td>{item.departmentName}</td>
+                            <td>{formatVND(item.nonTaxableAllowances)}</td>
+                            <td>{formatVND(item.taxableAllowances)}</td>
+                            <td>{formatVND(item.totalBonuses)}</td>
+                            <td style={{ color: '#dc2626' }}>{formatVND(item.statutoryDeductions)}</td>
+                            <td style={{ color: '#d97706' }}>{formatVND(item.pitDeduction)}</td>
+                            <td>{formatVND(item.otherDeductions)}</td>
+                            <td><strong>{formatVND(item.grossPay)}</strong></td>
+                            <td><strong style={{ color: '#16a34a' }}>{formatVND(item.netPay)}</strong></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* RPT-PAY-03 Table */}
+                {activeReport.code === 'RPT-PAY-03' && (
+                  <table className="rpt-table">
+                    <thead>
+                      <tr>
+                        <th>Mã NV</th>
+                        <th>Họ và tên</th>
+                        <th>Phòng ban</th>
+                        <th>Kỳ trước (Net)</th>
+                        <th>Kỳ này (Net)</th>
+                        <th>Chênh lệch (VNĐ)</th>
+                        <th>Tỷ lệ (%)</th>
+                        <th>Cảnh báo biến động</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData?.items?.length === 0 ? (
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>Không có dữ liệu biến động giữa hai kỳ.</td></tr>
+                      ) : (
+                        reportData?.items?.map((item: any) => (
+                          <tr key={item.employeeCode}>
+                            <td><strong>{item.employeeCode}</strong></td>
+                            <td>{item.fullName}</td>
+                            <td>{item.departmentName}</td>
+                            <td>{formatVND(item.compareNetPay)}</td>
+                            <td><strong>{formatVND(item.currentNetPay)}</strong></td>
+                            <td style={{ color: item.varianceAmount >= 0 ? '#16a34a' : '#dc2626' }}>
+                              {item.varianceAmount >= 0 ? '+' : ''}{formatVND(item.varianceAmount)}
+                            </td>
+                            <td>
+                              {item.variancePct >= 0 ? '+' : ''}{item.variancePct}%
+                            </td>
+                            <td>
+                              {item.isAnomalous ? (
+                                <span className="rpt-status-pill rpt-status-late" style={{ fontWeight: 700 }}>
+                                  ⚠ Biến động &ge; 20%
+                                </span>
+                              ) : (
+                                <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Bình thường</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* RPT-ACC-01 Table */}
+                {activeReport.code === 'RPT-ACC-01' && (
+                  <table className="rpt-table">
+                    <thead>
+                      <tr>
+                        <th>Mã PB</th>
+                        <th>Tên phòng ban</th>
+                        <th>Tài khoản VAS</th>
+                        <th>Nhân sự</th>
+                        <th>Lương Gross</th>
+                        <th>BH bắt buộc DN (21.5%)</th>
+                        <th>Kinh phí CĐ (2%)</th>
+                        <th>Tổng chi phí CTC</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(reportData?.departments || reportData?.items || []).length === 0 ? (
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>Không có dữ liệu phân bổ chi phí.</td></tr>
+                      ) : (
+                        (reportData?.departments || reportData?.items || []).map((item: any) => (
+                          <tr key={item.departmentCode || item.departmentId}>
+                            <td><strong>{item.departmentCode}</strong></td>
+                            <td>{item.departmentName}</td>
+                            <td><span className="rpt-badge accounting">{item.vasAccountFull || item.vasAccount}</span></td>
+                            <td>{item.headcount} người</td>
+                            <td>{formatVND(item.grossSalary || item.grossPay)}</td>
+                            <td>{formatVND(item.employerInsurance || item.employerStatutory)}</td>
+                            <td>{formatVND(item.employerUnion || item.tradeUnion)}</td>
+                            <td><strong style={{ color: '#2563eb' }}>{formatVND(item.totalCostToCompany)}</strong></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* RPT-ACC-02 Table */}
+                {activeReport.code === 'RPT-ACC-02' && (
+                  <table className="rpt-table">
+                    <thead>
+                      <tr>
+                        <th>Mã NV</th>
+                        <th>Họ và tên</th>
+                        <th>Phòng ban</th>
+                        <th>Ngân hàng</th>
+                        <th>Số tài khoản</th>
+                        <th>Phải trả (TK 3341)</th>
+                        <th>Đã chi trả thực tế</th>
+                        <th>Còn phải trả</th>
+                        <th>Trạng thái thanh toán</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData?.items?.length === 0 ? (
+                        <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem' }}>Không có dữ liệu công nợ lương.</td></tr>
+                      ) : (
+                        reportData?.items?.map((item: any) => (
+                          <tr key={item.employeeCode}>
+                            <td><strong>{item.employeeCode}</strong></td>
+                            <td>{item.fullName}</td>
+                            <td>{item.departmentName}</td>
+                            <td>{item.bankName}</td>
+                            <td><code>{item.bankAccountNumber}</code></td>
+                            <td><strong>{formatVND(item.netPayable)}</strong></td>
+                            <td style={{ color: '#16a34a' }}>{formatVND(item.totalPaid)}</td>
+                            <td>
+                              <strong style={{ color: item.remainingBalance > 0 ? '#dc2626' : '#16a34a' }}>
+                                {formatVND(item.remainingBalance)}
+                              </strong>
+                            </td>
+                            <td>
+                              <span className={`rpt-status-pill rpt-status-${(item.settlementStatus || 'unpaid').toLowerCase()}`}>
+                                {item.settlementStatus}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* RPT-ACC-03 Table */}
+                {activeReport.code === 'RPT-ACC-03' && (
+                  <table className="rpt-table">
+                    <thead>
+                      <tr>
+                        <th>Số bút toán</th>
+                        <th>Ngày ghi sổ</th>
+                        <th>Diễn giải</th>
+                        <th>Định khoản chi tiết (Nợ / Có)</th>
+                        <th>Tổng phát sinh</th>
+                        <th>Trạng thái</th>
+                        <th>Người ghi sổ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData?.items?.length === 0 ? (
+                        <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}>Không có dữ liệu sổ nhật ký bút toán.</td></tr>
+                      ) : (
+                        reportData?.items?.map((entry: any) => (
+                          <tr key={entry.id}>
+                            <td><strong>{entry.entryNumber}</strong></td>
+                            <td>{entry.entryDate}</td>
+                            <td>{entry.description}</td>
+                            <td style={{ minWidth: '280px' }}>
+                              {entry.lines?.map((line: any, idx: number) => (
+                                <div key={idx} style={{ fontSize: '0.8rem', lineHeight: '1.4', padding: '2px 0' }}>
+                                  {parseFloat(line.debitAmount) > 0 ? (
+                                    <span><strong>Nợ {line.accountCode}</strong> ({line.accountName}): {formatVND(line.debitAmount)}</span>
+                                  ) : (
+                                    <span style={{ paddingLeft: '1rem' }}>Có {line.accountCode} ({line.accountName}): {formatVND(line.creditAmount)}</span>
+                                  )}
+                                </div>
+                              ))}
+                            </td>
+                            <td>
+                              <div>Nợ: <strong>{formatVND(entry.totalDebit)}</strong></div>
+                              <div>Có: <strong>{formatVND(entry.totalCredit)}</strong></div>
+                            </td>
+                            <td>
+                              <span className={`rpt-status-pill rpt-status-${(entry.status || 'draft').toLowerCase()}`}>
+                                {entry.status}
+                              </span>
+                              {entry.reversalEntryNumber && (
+                                <div style={{ fontSize: '0.75rem', color: '#dc2626' }}>
+                                  Đảo bởi: {entry.reversalEntryNumber}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div>{entry.postedByName}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{entry.postedAt ? new Date(entry.postedAt).toLocaleDateString('vi-VN') : ''}</div>
+                            </td>
                           </tr>
                         ))
                       )}
