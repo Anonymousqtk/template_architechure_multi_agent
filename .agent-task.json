@@ -1,17 +1,16 @@
 {
-  "id": "RPT-002",
-  "summary": "Payroll & Accounting Reporting Center integration (payroll summary & slips, allowances/bonuses/deductions, payroll variance, departmental allocation, liabilities & reconciliation, journal entries)",
-  "allowed_scopes": ["backend", "database", "tests", "governance", "frontend"],
+  "id": "FE-I18N-001",
+  "summary": "Add Vietnamese and English localization and maintainable frontend formatting and skill guidance",
+  "allowed_scopes": [
+    "frontend",
+    "governance"
+  ],
   "risk": "high",
   "security_review_required": true,
   "acceptance": [
-    "Integration of Payroll & Accounting reports into the centralized Reporting Center catalog",
-    "Payroll Summary & Detail Report (RPT-PAY-01): Gross pay, prorated salary, allowances, bonuses, deductions, net pay, period status indicator (draft vs closed)",
-    "Salary Components & Deductions Breakdown (RPT-PAY-02): Aggregation by component type, taxable vs non-taxable allowances, statutory deductions",
-    "Payroll Variance & MoM Trend Report (RPT-PAY-03): Period-over-period headcount and payroll fund fluctuation, variance percentage",
-    "Departmental Cost Allocation & Accrual (RPT-ACC-01): Cost allocation by department and unit, expense accounts (VAS 6421, 6422), employer overheads",
-    "Payroll Liabilities & Reconciliation (RPT-ACC-02): Payable liability (3341), disbursed payments (1121/1111), remaining balance, unpaid slips",
-    "General Ledger Journal Entries Report (RPT-ACC-03): Debit/Credit balance audit, posted vs draft entries, reversal traceability",
-    "Strict tenant isolation, RBAC (Admin/HR full company, Manager scoped, Employee self-only payslips), exact decimal arithmetic, CSV export with UTF-8 BOM and audit logging"
+    "Add accessible persistent language selection and translations",
+    "Move user-facing fixed text into translation resources",
+    "Preserve authentication behavior and existing user data",
+    "Document i18n for future frontend work and run relevant checks"
   ]
 }

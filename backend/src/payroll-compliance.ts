@@ -616,6 +616,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
 
       res.json({
         period,
+        verificationStatus: 'NOT_VERIFIED',
         summary: {
           totalEmployees: slipsRes.rows.length,
           totalGrossPay: fromCents(totalGrossCents),
@@ -754,6 +755,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
 
       res.json({
         period,
+        verificationStatus: 'NOT_VERIFIED',
         summary: {
           totalParticipants: profilesRes.rows.length,
           totalSiSalaryFund: fromCents(totalSiFundCents),
@@ -1381,6 +1383,12 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       // Enforce business rule: Cannot export DRAFT report officially!
       if (rep.status !== 'APPROVED' && rep.status !== 'LOCKED') {
         fail(400, 'REPORT_NOT_APPROVED_FOR_EXPORT');
+      }
+
+      // Legacy statutory exports use unverified fixed rates and do not reconcile
+      // to a closed payroll snapshot. Fail closed until these are verified.
+      if (rep.report_type.startsWith('PIT') || rep.report_type.startsWith('SI')) {
+        fail(409, 'STATUTORY_EXPORT_NOT_VERIFIED');
       }
 
       // Record export in audit log and increment counter

@@ -15,7 +15,8 @@ description: Use for React, Next.js, TypeScript UI or frontend accessibility imp
 1. Inspect project framework and installed versions first; prefer matching vendor documentation.
 2. Work only on affected UI files; preserve existing design system.
 3. Apply accessible labels, keyboard focus and error messaging appropriate to change.
-4. Run existing targeted typecheck, lint and UI tests; do not claim accessibility is fully certified.
+4. For every new page or feature, put user-facing fixed text in the shared translation resources and supply Vietnamese and English translations, including labels, errors and accessibility text. Use interpolation for dynamic values; do not translate user data or internal identifiers. Format changed code consistently and readably.
+5. Run existing targeted typecheck, lint and UI tests; do not claim accessibility is fully certified.
 
 ## Output contract
 Give changed paths or findings, evidence, commands actually executed, result, risk and next action. Keep it short. No fabricated test results.

@@ -905,6 +905,7 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     // 1. Personal Income Tax (PIT) report calculation
     const pitRes = await hr.call(`${payrollPath()}/compliance/pit/period/${period.id}`);
     expect(pitRes.status).toBe(200);
+    expect(pitRes.body.verificationStatus).toBe('NOT_VERIFIED');
     expect(pitRes.body.summary.totalGrossPay).toBe('20000000.00');
     expect(pitRes.body.summary.totalPersonalDeduction).toBe('11000000.00');
     expect(pitRes.body.employees.length).toBeGreaterThan(0);
@@ -924,6 +925,7 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
 
     const siRes = await hr.call(`${payrollPath()}/compliance/insurance/period/${period.id}`);
     expect(siRes.status).toBe(200);
+    expect(siRes.body.verificationStatus).toBe('NOT_VERIFIED');
     expect(siRes.body.summary.totalParticipants).toBeGreaterThanOrEqual(1);
     expect(parseFloat(siRes.body.summary.totalEmployeePortion)).toBeGreaterThan(0);
     expect(parseFloat(siRes.body.summary.totalEmployerPortion)).toBeGreaterThan(0);
@@ -971,10 +973,18 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
       pool.query(`UPDATE compliance_reports SET title = 'Changed' WHERE id = $1`, [reportId])
     ).rejects.toThrow(/Cannot modify a LOCKED compliance report/);
 
-    // Export approved/locked report
+    // Unverified statutory exports must fail before recording an export.
     const exportRes = await hr.call(`${payrollPath()}/compliance/reports/${reportId}/export`);
-    expect(exportRes.status).toBe(200);
-    expect(exportRes.text).toContain('BÁO CÁO TUÂN THỦ:');
-    expect(exportRes.text).toContain('Thu nhập chịu thuế');
+    expect(exportRes.status).toBe(409);
+    expect(exportRes.body.code).toBe('STATUTORY_EXPORT_NOT_VERIFIED');
+    const audit = await pool.query(
+      `SELECT count(*)::int AS count FROM compliance_audit_logs
+       WHERE organization_id = $1 AND target_id = $2 AND action = 'EXPORT_OFFICIAL_REPORT'`,
+      [org, reportId]
+    );
+    expect(audit.rows[0].count).toBe(0);
+
+    const employee = await actor('employee');
+    expect((await employee.call(`${payrollPath()}/compliance/reports/${reportId}/export`)).status).toBe(403);
   });
 });

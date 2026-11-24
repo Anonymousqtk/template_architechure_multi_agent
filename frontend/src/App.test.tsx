@@ -2,7 +2,7 @@ import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import type { Profile } from './api';
+import type { Profile } from './services/api';
 
 const profile: Profile = { user: { id: 'user-1', email: 'member@example.test', fullName: 'Test Member' }, organization: { id: 'org-1', name: 'Test Company', role: 'ADMIN' }, permissions: { invite: true, grantHR: true }, deliveryMode: 'DEV_ONLY' };
 const calls: { path: string; init?: RequestInit }[] = [];
@@ -43,6 +43,50 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('authentication screens', () => {
+  it('switches invitation management labels while preserving permitted roles', async () => {
+    localStorage.removeItem('managerhr.locale');
+    signedIn = { ...profile, organization: { ...profile.organization, role: 'HR' }, permissions: { invite: true, grantHR: false } };
+    const { container } = await mount('/admin/invitations');
+    await screen.findByRole('heading', { name: 'Lời mời tham gia' });
+    fireEvent.change(screen.getByLabelText('Ngôn ngữ'), { target: { value: 'en' } });
+    expect(screen.getByRole('heading', { name: 'Invitations' })).toBeVisible();
+    expect(screen.getByLabelText('Work email')).toBeVisible();
+    expect(container.querySelectorAll('form select option')).toHaveLength(1);
+    fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'vi' } });
+  });
+  it('switches invitation acceptance form language without adding role selection', async () => {
+    localStorage.removeItem('managerhr.locale');
+    const secret = 'C'.repeat(43);
+    const { container } = await mount(`/invite/accept?token=${secret}`);
+    await screen.findByLabelText('Họ và tên');
+    fireEvent.change(screen.getByLabelText('Ngôn ngữ'), { target: { value: 'en' } });
+    expect(screen.getByRole('heading', { name: 'Ready for a new start' })).toBeVisible();
+    expect(screen.getByLabelText('Full name')).toBeVisible();
+    expect(container.querySelector('form select')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'vi' } });
+  });
+  it('translates a displayed password reset request confirmation', async () => {
+    localStorage.removeItem('managerhr.locale');
+    const { container } = await mount('/forgot-password');
+    fireEvent.change(await screen.findByLabelText('Email công việc'), { target: { value: 'member@example.test' } });
+    fireEvent.submit(container.querySelector('form')!);
+    await screen.findByText(/Nếu tài khoản tồn tại/);
+    fireEvent.change(screen.getByLabelText('Ngôn ngữ'), { target: { value: 'en' } });
+    expect(screen.getByRole('heading', { name: 'Forgot password?' })).toBeVisible();
+    expect(screen.getByText(/If the account exists/)).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'vi' } });
+  });
+  it('switches login form language before signing in', async () => {
+    localStorage.removeItem('managerhr.locale');
+    await mount('/login');
+    fireEvent.change(await screen.findByLabelText('Ngôn ngữ'), { target: { value: 'en' } });
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    expect(screen.getByLabelText('Work email')).toBeVisible();
+    expect(screen.getByLabelText('Password')).toBeVisible();
+    expect(screen.getByText('Internal portal')).toBeVisible();
+    expect(screen.getByText('No actual email is sent in this mode.')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'vi' } });
+  });
   it('login has labeled controls, generic focused errors, CSRF header and no public registration', async () => {
     const { container } = await mount('/login');
     const email = await screen.findByLabelText(/Email/);
@@ -96,7 +140,7 @@ describe('authentication screens', () => {
     const secret = 'C'.repeat(43); const { container } = await mount(`/invite/accept?token=${secret}`);
     fireEvent.change(await screen.findByLabelText(/Họ và tên/), { target: { value: 'Invited Member' } });
     fireEvent.change(container.querySelector('input[name="password"]')!, { target: { value: 'new sufficiently long password' } });
-    expect(container.querySelector('select')).toBeNull(); fireEvent.submit(container.querySelector('form')!);
+    expect(container.querySelector('form select')).toBeNull(); fireEvent.submit(container.querySelector('form')!);
     await screen.findByRole('heading', { level: 1, name: /Chào mừng bạn/ });
     expect(JSON.parse(String(calls.find(call => call.path === '/api/auth/invitations/accept')!.init?.body))).toEqual({ token: secret, fullName: 'Invited Member', password: 'new sufficiently long password' });
     expect(window.location.search).toBe('');
@@ -112,14 +156,14 @@ describe('authentication screens', () => {
     signedIn = { ...profile, organization: { ...profile.organization, role: 'EMPLOYEE' }, permissions: { invite: false, grantHR: false } };
     const { container } = await mount('/admin/invitations');
     await screen.findByRole('heading', { level: 1, name: /Không có quyền truy cập/ });
-    expect(container.querySelector('form')).toBeNull(); expect(container.querySelector('select')).toBeNull();
+    expect(container.querySelector('form')).toBeNull();
   });
   it('HR invitation form offers employee only and submits own organization', async () => {
     signedIn = { ...profile, organization: { ...profile.organization, role: 'HR' }, permissions: { invite: true, grantHR: false } };
     const { container } = await mount('/admin/invitations');
     const email = await screen.findByLabelText(/Email/);
     await waitFor(() => expect(email).not.toBeDisabled());
-    expect(container.querySelectorAll('select option')).toHaveLength(1);
+    expect(container.querySelectorAll('form select option')).toHaveLength(1);
     fireEvent.change(email, { target: { value: 'new@example.test' } }); fireEvent.submit(container.querySelector('form')!);
     await waitFor(() => expect(calls.some(call => call.path === '/api/organizations/org-1/invitations' && call.init?.method === 'POST')).toBe(true));
     expect(JSON.parse(String(calls.find(call => call.path === '/api/organizations/org-1/invitations' && call.init?.method === 'POST')!.init?.body))).toEqual({ email: 'new@example.test', role: 'EMPLOYEE' });
