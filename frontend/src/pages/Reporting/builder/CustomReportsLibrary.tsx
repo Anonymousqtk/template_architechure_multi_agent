@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Locale } from '../../../i18n';
 import type { ReportBuilderMessages } from '../reportBuilderMessages';
 import { reportBuilderGuideMessages } from '../reportBuilderGuideMessages';
+import { ReportLibraryCard, ReportCardArrow } from './ReportLibraryCard';
 import type { CustomReportRecord, EntityMeta, PrebuiltTemplate } from './reportBuilderTypes';
 
 type LibrarySection = 'MY' | 'SHARED' | 'TEMPLATES' | 'FAVORITES' | 'RECENT';
@@ -192,40 +193,25 @@ export function CustomReportsLibrary({
               {filteredTemplates.map((tpl) => {
                 const entity = entityMap.get(tpl.definition.primaryEntity);
                 return (
-                  <article key={tpl.code} className="rbs-lib-card">
-                    <div>
-                      <div className="rbs-lib-card-head">
-                        <h3 className="rbs-lib-card-title">
-                          {locale === 'en' ? tpl.nameEn : tpl.nameVi}
-                        </h3>
-                        <span className="rbs-pill rbs-pill-brand">
-                          {msg.canvas.views[tpl.visualizationType]}
-                        </span>
-                      </div>
-                      <p className="rbs-lib-card-desc">
-                        {locale === 'en' ? tpl.descriptionEn : tpl.descriptionVi}
-                      </p>
-                    </div>
-                    <div>
-                      <div className="rbs-lib-meta">
-                        <span className="rbs-pill">{tpl.category}</span>
-                        {entity && (
-                          <span className="rbs-pill">
-                            {locale === 'en' ? entity.labelEn : entity.labelVi}
-                          </span>
-                        )}
-                      </div>
-                      <div className="rbs-lib-actions" style={{ marginTop: '0.65rem' }}>
-                        <button
-                          type="button"
-                          className="rbs-btn primary sm"
-                          onClick={() => onUseTemplate(tpl)}
-                        >
-                          {msg.library.useTemplate}
-                        </button>
-                      </div>
-                    </div>
-                  </article>
+                  <ReportLibraryCard
+                    key={tpl.code}
+                    locale={locale}
+                    title={locale === 'en' ? tpl.nameEn : tpl.nameVi}
+                    description={locale === 'en' ? tpl.descriptionEn : tpl.descriptionVi}
+                    source={
+                      entity ? (locale === 'en' ? entity.labelEn : entity.labelVi) : undefined
+                    }
+                    visualization={msg.canvas.views[tpl.visualizationType]}
+                  >
+                    <button
+                      type="button"
+                      className="rbs-btn rbs-card-cta"
+                      onClick={() => onUseTemplate(tpl)}
+                    >
+                      {msg.library.useTemplate}
+                      <ReportCardArrow />
+                    </button>
+                  </ReportLibraryCard>
                 );
               })}
             </div>
@@ -249,75 +235,72 @@ export function CustomReportsLibrary({
               {filteredReports.map((rep) => {
                 const entity = entityMap.get(rep.primaryEntity);
                 return (
-                  <article key={rep.id} className="rbs-lib-card">
-                    <div>
-                      <div className="rbs-lib-card-head">
-                        <h3 className="rbs-lib-card-title">{rep.name}</h3>
+                  <ReportLibraryCard
+                    key={rep.id}
+                    locale={locale}
+                    title={rep.name}
+                    description={rep.description ?? undefined}
+                    source={
+                      entity ? (locale === 'en' ? entity.labelEn : entity.labelVi) : undefined
+                    }
+                    visualization={msg.canvas.views[rep.visualizationType] ?? rep.visualizationType}
+                    headingAction={
+                      <button
+                        type="button"
+                        className="rbs-btn rbs-card-favorite"
+                        aria-pressed={rep.isFavorite}
+                        onClick={() => onToggleFavorite(rep)}
+                        aria-label={
+                          rep.isFavorite ? msg.library.favoriteRemove : msg.library.favoriteAdd
+                        }
+                        title={
+                          rep.isFavorite ? msg.library.favoriteRemove : msg.library.favoriteAdd
+                        }
+                      >
+                        {rep.isFavorite ? '★' : '☆'}
+                      </button>
+                    }
+                    metadata={
+                      <>
+                        <span>{getVisibilityLabel(rep.visibility)}</span>
+                        <span>{`${msg.library.versionBadge} v${rep.version}`}</span>
+                      </>
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="rbs-btn rbs-card-cta"
+                      onClick={() => onOpenReport(rep)}
+                    >
+                      {msg.library.openBtn}
+                      <ReportCardArrow />
+                    </button>
+                    <button
+                      type="button"
+                      className="rbs-btn"
+                      onClick={() => onDuplicateReport(rep)}
+                    >
+                      {msg.library.duplicateBtn}
+                    </button>
+                    {rep.createdBy === currentUserId && (
+                      <>
                         <button
                           type="button"
-                          className="rbs-btn sm icon-only"
-                          onClick={() => onToggleFavorite(rep)}
-                          aria-label={
-                            rep.isFavorite ? msg.library.favoriteRemove : msg.library.favoriteAdd
-                          }
-                          title={
-                            rep.isFavorite ? msg.library.favoriteRemove : msg.library.favoriteAdd
-                          }
+                          className="rbs-btn"
+                          onClick={() => onShareReport(rep)}
                         >
-                          {rep.isFavorite ? '★' : '☆'}
-                        </button>
-                      </div>
-                      {rep.description && <p className="rbs-lib-card-desc">{rep.description}</p>}
-                    </div>
-                    <div>
-                      <div className="rbs-lib-meta">
-                        <span className="rbs-pill rbs-pill-brand">
-                          {msg.canvas.views[rep.visualizationType] ?? rep.visualizationType}
-                        </span>
-                        <span className="rbs-pill">{getVisibilityLabel(rep.visibility)}</span>
-                        <span className="rbs-pill">{`${msg.library.versionBadge} v${rep.version}`}</span>
-                        {entity && (
-                          <span className="rbs-pill">
-                            {locale === 'en' ? entity.labelEn : entity.labelVi}
-                          </span>
-                        )}
-                      </div>
-                      <div className="rbs-lib-actions" style={{ marginTop: '0.65rem' }}>
-                        <button
-                          type="button"
-                          className="rbs-btn primary sm"
-                          onClick={() => onOpenReport(rep)}
-                        >
-                          {msg.library.openBtn}
+                          {msg.library.shareBtn}
                         </button>
                         <button
                           type="button"
-                          className="rbs-btn sm"
-                          onClick={() => onDuplicateReport(rep)}
+                          className="rbs-btn rbs-card-danger"
+                          onClick={() => onDeleteReport(rep)}
                         >
-                          {msg.library.duplicateBtn}
+                          {msg.library.deleteBtn}
                         </button>
-                        {rep.createdBy === currentUserId && (
-                          <>
-                            <button
-                              type="button"
-                              className="rbs-btn sm"
-                              onClick={() => onShareReport(rep)}
-                            >
-                              {msg.library.shareBtn}
-                            </button>
-                            <button
-                              type="button"
-                              className="rbs-btn sm"
-                              onClick={() => onDeleteReport(rep)}
-                            >
-                              {msg.library.deleteBtn}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </article>
+                      </>
+                    )}
+                  </ReportLibraryCard>
                 );
               })}
             </div>

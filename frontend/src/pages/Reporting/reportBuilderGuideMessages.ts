@@ -2,6 +2,7 @@ import type { Locale } from '../../i18n';
 
 const vi = {
   introTitle: 'Báo cáo theo nhu cầu của bạn',
+  reportType: 'Loại báo cáo',
   introBody:
     'Chọn thông tin, kết hợp dữ liệu liên quan và tổng hợp để trả lời câu hỏi của bạn. Không cần biết công thức hay lập trình.',
   templates: 'Bắt đầu từ mẫu',
@@ -129,6 +130,7 @@ const vi = {
 type GuideMessages = { [K in keyof typeof vi]: string };
 const en: GuideMessages = {
   introTitle: 'Reports built around your questions',
+  reportType: 'Report type',
   introBody:
     'Choose information, combine related data and summarize it to answer your question. No formulas or coding required.',
   templates: 'Start from a template',

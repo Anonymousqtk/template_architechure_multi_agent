@@ -1,10 +1,12 @@
 {
-  "id": "RBS-STEPS-001",
-  "summary": "Make all five report creation steps visible without horizontal scrolling on mobile and tablet; compact the guide header",
+  "id": "RBS-LIBRARY-DESIGN-001",
+  "summary": "Refine reusable report library cards, move visualization information out of pills and align contextual actions",
   "allowed_scopes": ["frontend"],
   "risk": "normal",
   "security_review_required": false,
   "acceptance": [
+    "Template and saved-report cards share readable source/type information without squeezing titles or exposing duplicate source codes",
+    "Card actions align consistently with responsive sizing and appropriate emphasis for open, template and destructive actions",
     "All five labeled steps remain visible at 320px, mobile and tablet widths without clipping or horizontal scrolling",
     "Differentiate completed, current and upcoming steps with accessible state labels in Vietnamese and English",
     "Use a compact back link and introduction while preserving workflow state and validation",
