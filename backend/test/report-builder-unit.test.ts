@@ -9,6 +9,22 @@ import { getAuthorizedMetadata } from '../src/report-builder-metadata.js';
 import { renderReportExport, sanitizeSpreadsheetText } from '../src/report-builder-export.js';
 import { ReportDefinitionSchema } from '../src/report-builder-engine.js';
 
+describe('report definition SQL identifiers', () => {
+  it('rejects quoted measure identifiers while accepting generated identifiers', () => {
+    const valid = ReportDefinitionSchema.safeParse({
+      primaryEntity: 'employees',
+      values: [{ id: 'm_emp.status_lq4f3z_1', fieldId: 'emp.id', aggregation: 'COUNT' }],
+    });
+    const invalid = ReportDefinitionSchema.safeParse({
+      primaryEntity: 'employees',
+      values: [{ id: 'measure"alias', fieldId: 'emp.id', aggregation: 'COUNT' }],
+    });
+
+    expect(valid.success).toBe(true);
+    expect(invalid.success).toBe(false);
+  });
+});
+
 describe('RPT-002 Formula Parser & Evaluator', () => {
   const fieldTypes = new Map<string, FormulaValueType>([
     ['slip.gross_pay', 'number'],

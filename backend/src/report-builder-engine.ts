@@ -73,6 +73,11 @@ const FILTER_OPERATORS = [
 ] as const;
 
 const DATE_GRANULARITIES = ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] as const;
+const SAFE_SQL_IDENTIFIER = /^[a-zA-Z0-9_.-]+$/;
+
+function quoteSqlIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
 
 export const FilterRuleSchema = z.object({
   id: z.string().min(1).max(64).optional(),
@@ -99,11 +104,7 @@ export const FilterGroupSchema: z.ZodType<FilterGroupInput> = z.lazy(() =>
 );
 
 export const CalculatedFieldSchema = z.object({
-  id: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-zA-Z0-9_.-]+$/),
+  id: z.string().min(1).max(64).regex(SAFE_SQL_IDENTIFIER),
   label: z.string().trim().min(1).max(120),
   formula: z.string().trim().min(1).max(1000),
   format: z
@@ -158,7 +159,7 @@ export const ReportDefinitionSchema = z.object({
   values: z
     .array(
       z.object({
-        id: z.string().min(1).max(64),
+        id: z.string().min(1).max(64).regex(SAFE_SQL_IDENTIFIER),
         fieldId: z.string().min(1).max(100),
         aggregation: z.enum(AGGREGATIONS),
         label: z.string().trim().min(1).max(120).optional(),
@@ -1046,7 +1047,7 @@ export async function executeCustomReport(
           fail(400, 'INVALID_AGGREGATION_FOR_FIELD');
         }
         const aggExpr = aggregationSqlExpr(meta, m.aggregation);
-        selectParts.push(`${aggExpr} AS "${m.id}"`);
+        selectParts.push(`${aggExpr} AS ${quoteSqlIdentifier(m.id)}`);
         aliasToSql.set(m.id, aggExpr);
 
         const isPercent = m.aggregation === 'PERCENTAGE' || m.aggregation === 'GROWTH_RATE';
