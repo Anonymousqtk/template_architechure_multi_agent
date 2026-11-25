@@ -1,4 +1,5 @@
 # MANAGERHR — TASK AUTH-004 ACCEPTANCE REPORT
+
 ## Authentication Production Readiness & Security Acceptance
 
 - **Audit Date:** 2026-11-19
@@ -26,6 +27,7 @@
 ## 2. Phạm vi Nghiệm thu (Scope of Acceptance)
 
 Kiểm toán và nghiệm thu toàn diện hệ thống Authentication, RBAC, Session Management, MFA và Audit Log triển khai qua AUTH-001, AUTH-002, và AUTH-003:
+
 1. **AUTH-001 (Core Authentication & Invitations):** Đăng nhập, đăng xuất, luồng lời mời qua HR/Admin, xác minh lời mời, quên mật khẩu và đặt lại mật khẩu.
 2. **AUTH-002 (RBAC & User Management):** Quản lý người dùng, phân quyền theo vai trò (ADMIN, HR, MANAGER, EMPLOYEE), cô lập tenant (multi-tenancy), thu hồi phiên tức thì khi đổi quyền, và Audit Log.
 3. **AUTH-003 (Session Management, MFA & Hardening):** Vòng đời phiên (idle 30m, absolute 8h), thu hồi phiên lẻ/tất cả, TOTP MFA bắt buộc cho ADMIN/HR, mã phục hồi (backup recovery codes), bước xác thực lại (reauthentication), mã hóa bí mật TOTP (AES-256-GCM), chống brute-force và rate limiting.
@@ -34,28 +36,29 @@ Kiểm toán và nghiệm thu toàn diện hệ thống Authentication, RBAC, Se
 
 ## 3. Phân loại Baseline (Baseline Verification)
 
-| Hạng mục | Thành phần | Trạng thái | Bằng chứng kiểm chứng |
-|---|---|---|---|
-| **AUTH-001** | Đăng nhập & Đăng xuất | **VERIFIED** | Tests `AUTH-11`, `AUTH-12`, `AUTH-13`. Cookie HttpOnly, xoay vòng session hash, generic error message. |
-| **AUTH-001** | Đăng ký tài khoản qua thư mời | **VERIFIED** | Tests `AUTH-01`, `AUTH-02`, `AUTH-03`, `AUTH-04`, `AUTH-21`. Không có bootstrap endpoint hay đăng ký công khai; phân cấp ADMIN > HR > EMPLOYEE. |
-| **AUTH-001** | Xác minh lời mời | **VERIFIED** | Tests `AUTH-05`, `AUTH-06`, `AUTH-07`, `AUTH-08`, `AUTH-09`. Chống replay token, khóa transaction chặn race condition accept. |
-| **AUTH-001** | Quên mật khẩu & Đặt lại mật khẩu | **VERIFIED** | Tests `AUTH-14`, `AUTH-15`, `AUTH-16`, `AUTH-17`, `AUTH-22`. Không leak user tồn tại, token hash 30m, thu hồi toàn bộ session khi đổi pass, không auto-login. |
-| **AUTH-002** | Quản lý người dùng | **VERIFIED** | Tests `RBAC-03`, `RBAC-05`, `RBAC-06`. Admin tìm kiếm/lọc, HR chỉ xem Employee, Manager chỉ xem cấp dưới trực tiếp. |
-| **AUTH-002** | RBAC & Authorization | **VERIFIED** | Tests `RBAC-01`, `RBAC-04`, `RBAC-13`. Chặn leo thang quyền, HR không cấp được Admin/HR, thẩm định hai lớp tại DB qua `authorizeMutation`. |
-| **AUTH-002** | Cô lập Tenant (Tenant Isolation) | **VERIFIED** | Tests `AUTH-04`, `RBAC-07`, `RBAC-10`. Mọi mutation và query đều ràng buộc `organization_id`, kiểm tra chéo tenant bị từ chối 403/404. |
-| **AUTH-002** | Thu hồi quyền & Khóa tài khoản | **VERIFIED** | Tests `RBAC-08`, `RBAC-09`, `RBAC-11`, `RBAC-12`, `RBAC-14`, `RBAC-16`. Khóa user hoặc hạ role lập tức vô hiệu hóa phiên; bảo vệ Last Admin. |
-| **AUTH-002** | Audit Log | **VERIFIED** | Test `RBAC-15`. Ghi nhận sự kiện mutation, phân quyền chỉ Admin được đọc, không lưu secret/password vào metadata. |
-| **AUTH-003** | Quản lý phiên (Session Management) | **VERIFIED** | Tests `HARD-01`, `HARD-02`. Lưu session_hash (SHA-256), danh sách phiên người dùng, thu hồi phiên riêng lẻ hoặc all-others. |
-| **AUTH-003** | Hết hạn phiên (Timeout & Revocation) | **VERIFIED** | Test `HARD-01`. Idle timeout 30 phút, absolute timeout 8 giờ, pending session chỉ sống 5 phút nếu chưa verify MFA. |
-| **AUTH-003** | Bảo vệ Brute-force & Rate Limiting | **VERIFIED** | Tests `AUTH-12`, `HARD-10`. Bảng `auth_rate_limits`, gắn IP thực tế từ socket (bỏ qua `X-Forwarded-For` giả mạo), giới hạn theo tài khoản/token. |
-| **AUTH-003** | MFA / TOTP & Recovery Codes | **VERIFIED** | Tests `HARD-03` đến `HARD-18`. TOTP RFC 6238, mã hóa khóa AES-256-GCM với AAD, 10 mã recovery lưu dạng hash một lần dùng, chống replay. |
-| **AUTH-003** | Security Hardening | **VERIFIED** | Helmet CSP `default-src 'self'`, `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, HMAC double-submit CSRF cookie. |
+| Hạng mục     | Thành phần                           | Trạng thái   | Bằng chứng kiểm chứng                                                                                                                                         |
+| ------------ | ------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AUTH-001** | Đăng nhập & Đăng xuất                | **VERIFIED** | Tests `AUTH-11`, `AUTH-12`, `AUTH-13`. Cookie HttpOnly, xoay vòng session hash, generic error message.                                                        |
+| **AUTH-001** | Đăng ký tài khoản qua thư mời        | **VERIFIED** | Tests `AUTH-01`, `AUTH-02`, `AUTH-03`, `AUTH-04`, `AUTH-21`. Không có bootstrap endpoint hay đăng ký công khai; phân cấp ADMIN > HR > EMPLOYEE.               |
+| **AUTH-001** | Xác minh lời mời                     | **VERIFIED** | Tests `AUTH-05`, `AUTH-06`, `AUTH-07`, `AUTH-08`, `AUTH-09`. Chống replay token, khóa transaction chặn race condition accept.                                 |
+| **AUTH-001** | Quên mật khẩu & Đặt lại mật khẩu     | **VERIFIED** | Tests `AUTH-14`, `AUTH-15`, `AUTH-16`, `AUTH-17`, `AUTH-22`. Không leak user tồn tại, token hash 30m, thu hồi toàn bộ session khi đổi pass, không auto-login. |
+| **AUTH-002** | Quản lý người dùng                   | **VERIFIED** | Tests `RBAC-03`, `RBAC-05`, `RBAC-06`. Admin tìm kiếm/lọc, HR chỉ xem Employee, Manager chỉ xem cấp dưới trực tiếp.                                           |
+| **AUTH-002** | RBAC & Authorization                 | **VERIFIED** | Tests `RBAC-01`, `RBAC-04`, `RBAC-13`. Chặn leo thang quyền, HR không cấp được Admin/HR, thẩm định hai lớp tại DB qua `authorizeMutation`.                    |
+| **AUTH-002** | Cô lập Tenant (Tenant Isolation)     | **VERIFIED** | Tests `AUTH-04`, `RBAC-07`, `RBAC-10`. Mọi mutation và query đều ràng buộc `organization_id`, kiểm tra chéo tenant bị từ chối 403/404.                        |
+| **AUTH-002** | Thu hồi quyền & Khóa tài khoản       | **VERIFIED** | Tests `RBAC-08`, `RBAC-09`, `RBAC-11`, `RBAC-12`, `RBAC-14`, `RBAC-16`. Khóa user hoặc hạ role lập tức vô hiệu hóa phiên; bảo vệ Last Admin.                  |
+| **AUTH-002** | Audit Log                            | **VERIFIED** | Test `RBAC-15`. Ghi nhận sự kiện mutation, phân quyền chỉ Admin được đọc, không lưu secret/password vào metadata.                                             |
+| **AUTH-003** | Quản lý phiên (Session Management)   | **VERIFIED** | Tests `HARD-01`, `HARD-02`. Lưu session_hash (SHA-256), danh sách phiên người dùng, thu hồi phiên riêng lẻ hoặc all-others.                                   |
+| **AUTH-003** | Hết hạn phiên (Timeout & Revocation) | **VERIFIED** | Test `HARD-01`. Idle timeout 30 phút, absolute timeout 8 giờ, pending session chỉ sống 5 phút nếu chưa verify MFA.                                            |
+| **AUTH-003** | Bảo vệ Brute-force & Rate Limiting   | **VERIFIED** | Tests `AUTH-12`, `HARD-10`. Bảng `auth_rate_limits`, gắn IP thực tế từ socket (bỏ qua `X-Forwarded-For` giả mạo), giới hạn theo tài khoản/token.              |
+| **AUTH-003** | MFA / TOTP & Recovery Codes          | **VERIFIED** | Tests `HARD-03` đến `HARD-18`. TOTP RFC 6238, mã hóa khóa AES-256-GCM với AAD, 10 mã recovery lưu dạng hash một lần dùng, chống replay.                       |
+| **AUTH-003** | Security Hardening                   | **VERIFIED** | Helmet CSP `default-src 'self'`, `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, HMAC double-submit CSRF cookie.                                   |
 
 ---
 
 ## 4. Kết quả Kiểm thử Tự động (Automated Testing Results)
 
 ### 4.1. Backend Test Suite (Vitest)
+
 - **Tập tin kiểm thử:** `backend/test/auth.test.ts` (58 tests), `backend/test/security.test.ts` (4 tests)
 - **Kết quả:** **62/62 PASS (100%)**, 0 fail
 - **Thời lượng:** ~51s
@@ -71,11 +74,13 @@ Kiểm toán và nghiệm thu toàn diện hệ thống Authentication, RBAC, Se
   - Module `app.ts`: 98.61% Lines / 84.61% Branch
 
 ### 4.2. Frontend Test Suite (Vitest)
+
 - **Tập tin kiểm thử:** 6 suites (`useSlideClose.test.tsx`, `DashboardShell.test.tsx`, `Dashboard.test.tsx`, `AccountSecurity.test.tsx`, `Users.test.tsx`, `App.test.tsx`)
 - **Kết quả:** **66/66 PASS (100%)**, 0 fail
 - **Build & Bundle:** TypeScript (`tsc --noEmit`) không lỗi; Vite build production thành công (`dist/index.html`, CSS, JS bundled).
 
 ### 4.3. Database Migration Testing
+
 - **Kịch bản:** `database/test-migrations.mjs` trên cụm PostgreSQL 18.1 độc lập.
 - **Kết quả:**
   - `001_auth_invitation_schema.sql`: PASS
@@ -86,6 +91,7 @@ Kiểm toán và nghiệm thu toàn diện hệ thống Authentication, RBAC, Se
   - Ràng buộc toàn vẹn và Rollback verification (`verify.sql`): PASS
 
 ### 4.4. Governance & Policy Checks
+
 - `python -m unittest discover -s tests`: **21/21 tests PASS**
 - `scripts/check_token_lean.py`: PASS (Governance V5.3)
 - `scripts/check_model_policy.py`: PASS (7 agents, inherit profile)
@@ -98,21 +104,21 @@ Kiểm toán và nghiệm thu toàn diện hệ thống Authentication, RBAC, Se
 
 Tham chiếu các chuẩn: **OWASP ASVS 5.0.0**, **OWASP Authentication / Session / Authorization Cheat Sheets**, **NIST SP 800-63B-4**.
 
-| # | Nhóm rủi ro | Trạng thái | Đánh giá & Cơ chế kiểm soát kỹ thuật |
-|---|---|---|---|
-| 1 | **Authentication Bypass** | **ĐẠT (PASS)** | Bắt buộc xác thực với email đã verified; mật khẩu băm Argon2id (64MB memory, 3 iterations); dummy hash chống timing attack; MFA bắt buộc cho ADMIN/HR tại API middleware và trong từng mutation transaction. |
-| 2 | **Privilege Escalation** | **ĐẠT (PASS)** | Chặn tự nâng quyền (`SELF_CHANGE_FORBIDDEN`); HR không thể gán quyền Admin hay thay đổi user có đặc quyền; Manager bị chặn chặt chẽ chỉ thao tác trong scope cấp dưới. |
-| 3 | **IDOR / BOLA** | **ĐẠT (PASS)** | Ràng buộc kép ID người dùng và ID tổ chức trong token session; không dùng ID từ client để truy vấn chéo; chặn đổi session của user khác. |
-| 4 | **Cross-Tenant Access** | **ĐẠT (PASS)** | Mọi truy vấn DB bắt buộc mệnh đề `organization_id = $x`; khóa advisory locks phạm vi tổ chức; kiểm tra chéo tổ chức trả về 403 hoặc 404 (không rò rỉ ID tồn tại). |
-| 5 | **Session Fixation & Hijacking** | **ĐẠT (PASS)** | Token phiên ngẫu nhiên CSPRNG 256-bit (`randomBytes(32)`), chỉ lưu SHA-256 hash tại database; bắt buộc xoay vòng session ID (rotate) khi đăng nhập, đặt lại mật khẩu, xác thực MFA, phục hồi và re-auth. |
-| 6 | **Session Timeout & Revocation** | **ĐẠT (PASS)** | Idle timeout 30 phút cập nhật theo `last_seen_at`; Absolute timeout 8 giờ; Pending MFA session giới hạn 5 phút; Thu hồi lập tức khi đổi quyền/khóa tài khoản/đổi mật khẩu. |
-| 7 | **Password Reset Token Reuse** | **ĐẠT (PASS)** | Token reset lưu dạng hash, hạn dùng 30 phút, đánh dấu `consumed_at` nguyên tử trong transaction; thu hồi toàn bộ phiên đăng nhập cũ; không tự động login sau reset. |
-| 8 | **Invitation Token Reuse** | **ĐẠT (PASS)** | Token lưu hash, hạn dùng 48h, chỉ sử dụng 1 lần (`consumed_at = now()`); xử lý đồng thời (concurrency) được bảo vệ bằng `pg_advisory_xact_lock`. |
-| 9 | **MFA Bypass & Replay** | **ĐẠT (PASS)** | Khóa bí mật TOTP mã hóa bằng AES-256-GCM với AAD (User ID); lưu trữ `last_counter` để từ chối OTP replay trong cùng cửa sổ thời gian; 10 mã recovery hash một lần dùng; yêu cầu re-authentication trong vòng 10 phút trước các thao tác nhạy cảm. |
-| 10 | **Brute-Force & Rate-Limit Bypass** | **ĐẠT (PASS)** | Rate limit qua DB bảng `auth_rate_limits`, gắn chặt theo Socket IP thực tế (bỏ qua header `X-Forwarded-For` chống spoofing); đa khóa (IP, email, token); không khóa tài khoản vĩnh viễn (tránh DoS). |
-| 11 | **CSRF, XSS & SQL Injection** | **ĐẠT (PASS)** | CSRF token ký HMAC kép (cookie + header + Origin header check); Helmet bảo vệ CSP `default-src 'self'`; 100% câu lệnh SQL tham số hóa (`$1, $2,...`) kết hợp Zod input validation và `escapeLike`. |
-| 12 | **Cookie Security & Secret Exposure** | **ĐẠT (PASS)** | Cookie `HttpOnly`, `SameSite=Lax`, cờ `Secure` bật ở production kèm prefix `__Host-`; Header `Cache-Control: no-store`; Lỗi hệ thống trả về mã generic; Audit log không ghi mật khẩu/token/OTP. |
-| 13 | **Audit Log Integrity & Access** | **ĐẠT (PASS)** | Ghi nhận tập trung bảng `auth_audit_events`; Phân quyền chỉ vai trò `ADMIN` trong cùng tenant mới có quyền truy cập; Ràng buộc không lưu thông tin nhạy cảm. |
+| #   | Nhóm rủi ro                           | Trạng thái     | Đánh giá & Cơ chế kiểm soát kỹ thuật                                                                                                                                                                                                              |
+| --- | ------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Authentication Bypass**             | **ĐẠT (PASS)** | Bắt buộc xác thực với email đã verified; mật khẩu băm Argon2id (64MB memory, 3 iterations); dummy hash chống timing attack; MFA bắt buộc cho ADMIN/HR tại API middleware và trong từng mutation transaction.                                      |
+| 2   | **Privilege Escalation**              | **ĐẠT (PASS)** | Chặn tự nâng quyền (`SELF_CHANGE_FORBIDDEN`); HR không thể gán quyền Admin hay thay đổi user có đặc quyền; Manager bị chặn chặt chẽ chỉ thao tác trong scope cấp dưới.                                                                            |
+| 3   | **IDOR / BOLA**                       | **ĐẠT (PASS)** | Ràng buộc kép ID người dùng và ID tổ chức trong token session; không dùng ID từ client để truy vấn chéo; chặn đổi session của user khác.                                                                                                          |
+| 4   | **Cross-Tenant Access**               | **ĐẠT (PASS)** | Mọi truy vấn DB bắt buộc mệnh đề `organization_id = $x`; khóa advisory locks phạm vi tổ chức; kiểm tra chéo tổ chức trả về 403 hoặc 404 (không rò rỉ ID tồn tại).                                                                                 |
+| 5   | **Session Fixation & Hijacking**      | **ĐẠT (PASS)** | Token phiên ngẫu nhiên CSPRNG 256-bit (`randomBytes(32)`), chỉ lưu SHA-256 hash tại database; bắt buộc xoay vòng session ID (rotate) khi đăng nhập, đặt lại mật khẩu, xác thực MFA, phục hồi và re-auth.                                          |
+| 6   | **Session Timeout & Revocation**      | **ĐẠT (PASS)** | Idle timeout 30 phút cập nhật theo `last_seen_at`; Absolute timeout 8 giờ; Pending MFA session giới hạn 5 phút; Thu hồi lập tức khi đổi quyền/khóa tài khoản/đổi mật khẩu.                                                                        |
+| 7   | **Password Reset Token Reuse**        | **ĐẠT (PASS)** | Token reset lưu dạng hash, hạn dùng 30 phút, đánh dấu `consumed_at` nguyên tử trong transaction; thu hồi toàn bộ phiên đăng nhập cũ; không tự động login sau reset.                                                                               |
+| 8   | **Invitation Token Reuse**            | **ĐẠT (PASS)** | Token lưu hash, hạn dùng 48h, chỉ sử dụng 1 lần (`consumed_at = now()`); xử lý đồng thời (concurrency) được bảo vệ bằng `pg_advisory_xact_lock`.                                                                                                  |
+| 9   | **MFA Bypass & Replay**               | **ĐẠT (PASS)** | Khóa bí mật TOTP mã hóa bằng AES-256-GCM với AAD (User ID); lưu trữ `last_counter` để từ chối OTP replay trong cùng cửa sổ thời gian; 10 mã recovery hash một lần dùng; yêu cầu re-authentication trong vòng 10 phút trước các thao tác nhạy cảm. |
+| 10  | **Brute-Force & Rate-Limit Bypass**   | **ĐẠT (PASS)** | Rate limit qua DB bảng `auth_rate_limits`, gắn chặt theo Socket IP thực tế (bỏ qua header `X-Forwarded-For` chống spoofing); đa khóa (IP, email, token); không khóa tài khoản vĩnh viễn (tránh DoS).                                              |
+| 11  | **CSRF, XSS & SQL Injection**         | **ĐẠT (PASS)** | CSRF token ký HMAC kép (cookie + header + Origin header check); Helmet bảo vệ CSP `default-src 'self'`; 100% câu lệnh SQL tham số hóa (`$1, $2,...`) kết hợp Zod input validation và `escapeLike`.                                                |
+| 12  | **Cookie Security & Secret Exposure** | **ĐẠT (PASS)** | Cookie `HttpOnly`, `SameSite=Lax`, cờ `Secure` bật ở production kèm prefix `__Host-`; Header `Cache-Control: no-store`; Lỗi hệ thống trả về mã generic; Audit log không ghi mật khẩu/token/OTP.                                                   |
+| 13  | **Audit Log Integrity & Access**      | **ĐẠT (PASS)** | Ghi nhận tập trung bảng `auth_audit_events`; Phân quyền chỉ vai trò `ADMIN` trong cùng tenant mới có quyền truy cập; Ràng buộc không lưu thông tin nhạy cảm.                                                                                      |
 
 ---
 

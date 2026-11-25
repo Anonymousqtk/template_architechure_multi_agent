@@ -1,6 +1,11 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import type { Profile } from '../../services/api';
 import { request, errorText } from '../../services/api';
+import { useTranslation } from '../../i18n';
+import { payrollMessages } from './payrollMessages';
+import { payrollLabels } from './payrollLabels';
+import { SlideDialog } from '../../components/common/SlideDialog';
+import { SearchableSelect } from '../../components/common/SearchableSelect';
 import '../../assets/styles/payroll.css';
 
 export interface SalaryComponent {
@@ -140,7 +145,7 @@ export interface StatutoryRule {
   name: string;
   effectiveFrom: string;
   effectiveTo: string | null;
-  parameters: any;
+  parameters: Record<string, unknown>;
   legalReference: string;
   isVerified: boolean;
   notes: string | null;
@@ -241,12 +246,45 @@ export interface ComplianceReport {
   periodStart: string;
   periodEnd: string;
   status: 'DRAFT' | 'REVIEWED' | 'APPROVED' | 'LOCKED';
-  summaryData: any;
+  summaryData: Record<string, unknown>;
   anomalyCount: number;
   exportCount: number;
   lastExportedAt: string | null;
   createdAt: string;
   createdByName: string;
+}
+
+interface InsuranceReportEmployee {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  siCode: string | null;
+  contractSiSalary: string;
+  cappedBhxhSalary: string;
+  employeePortion: {
+    total: string;
+  };
+  employerPortion: {
+    bhxh: string;
+    bhyt: string;
+    bhtn: string;
+    tradeUnion: string;
+  };
+  totalPayable: string;
+}
+
+interface InsuranceContributionRates {
+  employee: {
+    bhxh: number;
+    bhyt: number;
+    bhtn: number;
+  };
+  employer: {
+    bhxh: number;
+    bhyt: number;
+    bhtn: number;
+    tradeUnion: number;
+  };
 }
 
 const statusLabels: Record<string, string> = {
@@ -277,7 +315,12 @@ export function Payroll({
   profile: Profile;
   view?: 'periods' | 'components' | 'accounting' | 'compliance' | 'my-slips';
 }) {
-  const [activeTab, setActiveTab] = useState<'periods' | 'components' | 'accounting' | 'compliance' | 'my-slips'>(view);
+  const { locale } = useTranslation();
+  const tr = payrollMessages[locale];
+  const label = (text: string) => (locale === 'en' ? (payrollLabels[text] ?? text) : text);
+  const [activeTab, setActiveTab] = useState<
+    'periods' | 'components' | 'accounting' | 'compliance' | 'my-slips'
+  >(view);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -308,13 +351,25 @@ export function Payroll({
   const [discrepancies, setDiscrepancies] = useState<ReconciliationDiscrepancy[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [liability, setLiability] = useState<PayrollLiability | null>(null);
-  const [selectedEntry, setSelectedEntry] = useState<{ entry: JournalEntry; lines: JournalEntryLine[] } | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<{
+    entry: JournalEntry;
+    lines: JournalEntryLine[];
+  } | null>(null);
 
   // Compliance & Reporting state (PAY-004)
-  const [complianceSubTab, setComplianceSubTab] = useState<'pit' | 'insurance' | 'analytics' | 'anomalies' | 'reports' | 'rules'>('pit');
+  const [complianceSubTab, setComplianceSubTab] = useState<
+    'pit' | 'insurance' | 'analytics' | 'anomalies' | 'reports' | 'rules'
+  >('pit');
   const [statutoryRules, setStatutoryRules] = useState<StatutoryRule[]>([]);
-  const [pitData, setPitData] = useState<{ summary: PitSummary; employees: PitEmployeeItem[] } | null>(null);
-  const [siData, setSiData] = useState<{ summary: SiReportSummary; rates: any; employees: any[] } | null>(null);
+  const [pitData, setPitData] = useState<{
+    summary: PitSummary;
+    employees: PitEmployeeItem[];
+  } | null>(null);
+  const [siData, setSiData] = useState<{
+    summary: SiReportSummary;
+    rates: InsuranceContributionRates;
+    employees: InsuranceReportEmployee[];
+  } | null>(null);
   const [analyticsData, setAnalyticsData] = useState<HrAnalyticsSummary | null>(null);
   const [anomalies, setAnomalies] = useState<ComplianceAnomaly[]>([]);
   const [complianceReports, setComplianceReports] = useState<ComplianceReport[]>([]);
@@ -365,14 +420,18 @@ export function Payroll({
       setLoading(true);
       setError(null);
       const [recRes, entriesRes, liabRes] = await Promise.all([
-        request<{ reconciliation: ReconciliationSummary | null; discrepancies: ReconciliationDiscrepancy[] }>(
-          `${orgPath}/periods/${periodId}/reconciliation`
-        ).catch(() => ({ reconciliation: null, discrepancies: [] })),
+        request<{
+          reconciliation: ReconciliationSummary | null;
+          discrepancies: ReconciliationDiscrepancy[];
+        }>(`${orgPath}/periods/${periodId}/reconciliation`).catch(() => ({
+          reconciliation: null,
+          discrepancies: [],
+        })),
         request<{ items: JournalEntry[] }>(
-          `${orgPath}/periods/${periodId}/accounting/entries`
+          `${orgPath}/periods/${periodId}/accounting/entries`,
         ).catch(() => ({ items: [] })),
         request<{ liability: PayrollLiability }>(
-          `${orgPath}/periods/${periodId}/liabilities`
+          `${orgPath}/periods/${periodId}/liabilities`,
         ).catch(() => ({ liability: null })),
       ]);
       setReconciliation(recRes.reconciliation);
@@ -391,12 +450,26 @@ export function Payroll({
       setLoading(true);
       setError(null);
       const [rulesRes, pitRes, siRes, analyticsRes, anomRes, repsRes] = await Promise.all([
-        request<{ rules: StatutoryRule[] }>(`${orgPath}/compliance/rules`).catch(() => ({ rules: [] })),
-        request<{ summary: PitSummary; employees: PitEmployeeItem[] }>(`${orgPath}/compliance/pit/period/${periodId}`).catch(() => null),
-        request<{ summary: SiReportSummary; rates: any; employees: any[] }>(`${orgPath}/compliance/insurance/period/${periodId}`).catch(() => null),
-        request<{ analytics: HrAnalyticsSummary }>(`${orgPath}/compliance/analytics/period/${periodId}`).catch(() => null),
-        request<{ anomalies: ComplianceAnomaly[] }>(`${orgPath}/compliance/anomalies?periodId=${periodId}`).catch(() => ({ anomalies: [] })),
-        request<{ reports: ComplianceReport[] }>(`${orgPath}/compliance/reports`).catch(() => ({ reports: [] })),
+        request<{ rules: StatutoryRule[] }>(`${orgPath}/compliance/rules`).catch(() => ({
+          rules: [],
+        })),
+        request<{ summary: PitSummary; employees: PitEmployeeItem[] }>(
+          `${orgPath}/compliance/pit/period/${periodId}`,
+        ).catch(() => null),
+        request<{
+          summary: SiReportSummary;
+          rates: InsuranceContributionRates;
+          employees: InsuranceReportEmployee[];
+        }>(`${orgPath}/compliance/insurance/period/${periodId}`).catch(() => null),
+        request<{ analytics: HrAnalyticsSummary }>(
+          `${orgPath}/compliance/analytics/period/${periodId}`,
+        ).catch(() => null),
+        request<{ anomalies: ComplianceAnomaly[] }>(
+          `${orgPath}/compliance/anomalies?periodId=${periodId}`,
+        ).catch(() => ({ anomalies: [] })),
+        request<{ reports: ComplianceReport[] }>(`${orgPath}/compliance/reports`).catch(() => ({
+          reports: [],
+        })),
       ]);
       setStatutoryRules(rulesRes.rules || []);
       setPitData(pitRes);
@@ -464,7 +537,10 @@ export function Payroll({
     try {
       setLoading(true);
       setError(null);
-      const res = await request<{ generatedSlips: number }>(`${orgPath}/periods/${selectedPeriod.id}/calculate`, {});
+      const res = await request<{ generatedSlips: number }>(
+        `${orgPath}/periods/${selectedPeriod.id}/calculate`,
+        {},
+      );
       setSuccess(`Đã tính toán xong bảng lương nháp cho ${res.generatedSlips} nhân viên.`);
       await selectPeriod(selectedPeriod);
     } catch (err) {
@@ -479,7 +555,11 @@ export function Payroll({
     try {
       setLoading(true);
       setError(null);
-      const res = await request<{ period: PayrollPeriod }>(`${orgPath}/periods/${selectedPeriod.id}/status`, { status }, 'PATCH');
+      const res = await request<{ period: PayrollPeriod }>(
+        `${orgPath}/periods/${selectedPeriod.id}/status`,
+        { status },
+        'PATCH',
+      );
       setSelectedPeriod(res.period);
       setSuccess(`Đã cập nhật trạng thái kỳ lương sang: ${statusLabels[status]}`);
       await loadPeriods();
@@ -511,7 +591,11 @@ export function Payroll({
     try {
       setLoading(true);
       setError(null);
-      await request(`${orgPath}/periods/${selectedPeriod.id}/accounting/generate?status=POSTED`, {}, 'POST');
+      await request(
+        `${orgPath}/periods/${selectedPeriod.id}/accounting/generate?status=POSTED`,
+        {},
+        'POST',
+      );
       setSuccess('Đã tạo và ghi sổ bút toán kế toán thành công.');
       await loadAccountingData(selectedPeriod.id);
     } catch (err) {
@@ -554,7 +638,9 @@ export function Payroll({
   const handleViewEntry = async (entryId: string) => {
     try {
       setLoading(true);
-      const res = await request<{ entry: JournalEntry; lines: JournalEntryLine[] }>(`${orgPath}/accounting/entries/${entryId}`);
+      const res = await request<{ entry: JournalEntry; lines: JournalEntryLine[] }>(
+        `${orgPath}/accounting/entries/${entryId}`,
+      );
       setSelectedEntry(res);
     } catch (err) {
       setError(errorText(err));
@@ -577,15 +663,22 @@ export function Payroll({
     }
   };
 
-  const handleResolveDiscrepancy = async (discId: string, status: 'RESOLVED' | 'INVESTIGATING' | 'IGNORED') => {
+  const handleResolveDiscrepancy = async (
+    discId: string,
+    status: 'RESOLVED' | 'INVESTIGATING' | 'IGNORED',
+  ) => {
     if (!selectedPeriod) return;
     try {
       setLoading(true);
       setError(null);
-      await request(`${orgPath}/reconciliation/discrepancies/${discId}`, {
-        resolutionStatus: status,
-        resolutionNotes: `Đã xử lý trạng thái sang ${status}`,
-      }, 'PATCH');
+      await request(
+        `${orgPath}/reconciliation/discrepancies/${discId}`,
+        {
+          resolutionStatus: status,
+          resolutionNotes: `Đã xử lý trạng thái sang ${status}`,
+        },
+        'PATCH',
+      );
       setSuccess('Đã cập nhật trạng thái xử lý chênh lệch.');
       await loadAccountingData(selectedPeriod.id);
     } catch (err) {
@@ -597,7 +690,10 @@ export function Payroll({
 
   const handleExportAccounting = (type: 'journal' | 'reconciliation' | 'disbursements') => {
     if (!selectedPeriod) return;
-    window.open(`${orgPath}/periods/${selectedPeriod.id}/accounting/export?type=${type}&format=csv`, '_blank');
+    window.open(
+      `${orgPath}/periods/${selectedPeriod.id}/accounting/export?type=${type}&format=csv`,
+      '_blank',
+    );
   };
 
   // Compliance Actions (PAY-004)
@@ -605,7 +701,11 @@ export function Payroll({
     try {
       setLoading(true);
       setError(null);
-      const res = await request<{ seededCount: number }>(`${orgPath}/compliance/rules/seed-defaults`, {}, 'POST');
+      const res = await request<{ seededCount: number }>(
+        `${orgPath}/compliance/rules/seed-defaults`,
+        {},
+        'POST',
+      );
       setSuccess(`Đã nạp ${res.seededCount} quy tắc tuân thủ pháp luật Việt Nam.`);
       if (selectedPeriod) await loadComplianceData(selectedPeriod.id);
     } catch (err) {
@@ -620,7 +720,11 @@ export function Payroll({
     try {
       setLoading(true);
       setError(null);
-      const res = await request<{ count: number }>(`${orgPath}/compliance/check/${selectedPeriod.id}`, {}, 'POST');
+      const res = await request<{ count: number }>(
+        `${orgPath}/compliance/check/${selectedPeriod.id}`,
+        {},
+        'POST',
+      );
       setSuccess(`Kiểm tra tuân thủ hoàn tất: phát hiện ${res.count} cảnh báo.`);
       await loadComplianceData(selectedPeriod.id);
     } catch (err) {
@@ -630,15 +734,22 @@ export function Payroll({
     }
   };
 
-  const handleResolveAnomaly = async (id: string, status: 'RESOLVED' | 'ACKNOWLEDGED' | 'WAIVED') => {
+  const handleResolveAnomaly = async (
+    id: string,
+    status: 'RESOLVED' | 'ACKNOWLEDGED' | 'WAIVED',
+  ) => {
     if (!selectedPeriod) return;
     try {
       setLoading(true);
       setError(null);
-      await request(`${orgPath}/compliance/anomalies/${id}/resolve`, {
-        status,
-        notes: 'Đã giải trình và xác nhận bởi người phụ trách',
-      }, 'PATCH');
+      await request(
+        `${orgPath}/compliance/anomalies/${id}/resolve`,
+        {
+          status,
+          notes: 'Đã giải trình và xác nhận bởi người phụ trách',
+        },
+        'PATCH',
+      );
       setSuccess('Đã cập nhật trạng thái xử lý bất thường.');
       await loadComplianceData(selectedPeriod.id);
     } catch (err) {
@@ -653,12 +764,20 @@ export function Payroll({
     try {
       setLoading(true);
       setError(null);
-      await request(`${orgPath}/compliance/reports/generate`, {
-        reportType,
-        periodId: selectedPeriod.id,
-        title,
-        summaryData: reportType.startsWith('PIT') ? pitData?.summary : reportType.startsWith('SI') ? siData?.summary : analyticsData,
-      }, 'POST');
+      await request(
+        `${orgPath}/compliance/reports/generate`,
+        {
+          reportType,
+          periodId: selectedPeriod.id,
+          title,
+          summaryData: reportType.startsWith('PIT')
+            ? pitData?.summary
+            : reportType.startsWith('SI')
+              ? siData?.summary
+              : analyticsData,
+        },
+        'POST',
+      );
       setSuccess('Đã lập báo cáo tuân thủ nháp thành công.');
       await loadComplianceData(selectedPeriod.id);
     } catch (err) {
@@ -755,18 +874,19 @@ export function Payroll({
     }
   };
 
-  const filteredSlips = (periodSlips || []).filter(s =>
-    !slipsSearch ||
-    s.fullName.toLowerCase().includes(slipsSearch.toLowerCase()) ||
-    s.employeeCode.toLowerCase().includes(slipsSearch.toLowerCase())
+  const filteredSlips = (periodSlips || []).filter(
+    (s) =>
+      !slipsSearch ||
+      s.fullName.toLowerCase().includes(slipsSearch.toLowerCase()) ||
+      s.employeeCode.toLowerCase().includes(slipsSearch.toLowerCase()),
   );
 
   return (
     <div className="payroll-container">
       <div className="payroll-header">
         <div>
-          <h2>Quản lý Tiền lương & Bảng lương</h2>
-          <p className="text-muted">Hệ thống tính lương, đối chiếu, hạch toán và kiểm soát tuân thủ pháp luật</p>
+          <h2>{tr.title}</h2>
+          <p className="text-muted">{tr.description}</p>
         </div>
       </div>
 
@@ -776,7 +896,7 @@ export function Payroll({
           className={`payroll-tab-button ${activeTab === 'periods' ? 'active' : ''}`}
           onClick={() => setActiveTab('periods')}
         >
-          Kỳ lương & Bảng lương
+          {tr.periods}
         </button>
         {isHR && (
           <button
@@ -784,7 +904,7 @@ export function Payroll({
             className={`payroll-tab-button ${activeTab === 'components' ? 'active' : ''}`}
             onClick={() => setActiveTab('components')}
           >
-            Cấu phần lương & Phụ cấp
+            {tr.components}
           </button>
         )}
         {isHR && (
@@ -796,7 +916,7 @@ export function Payroll({
               if (selectedPeriod) void loadAccountingData(selectedPeriod.id);
             }}
           >
-            Đối chiếu & Hạch toán
+            {tr.accounting}
           </button>
         )}
         {isHR && (
@@ -808,7 +928,7 @@ export function Payroll({
               if (selectedPeriod) void loadComplianceData(selectedPeriod.id);
             }}
           >
-            Tuân thủ & Báo cáo
+            {tr.compliance}
           </button>
         )}
         <button
@@ -816,33 +936,40 @@ export function Payroll({
           className={`payroll-tab-button ${activeTab === 'my-slips' ? 'active' : ''}`}
           onClick={() => setActiveTab('my-slips')}
         >
-          Phiếu lương của tôi
+          {tr.mySlips}
         </button>
       </div>
 
-      {error && <div className="notice error" role="alert">{error}</div>}
-      {success && <div className="notice success" role="status">{success}</div>}
+      {error && (
+        <div className="notice error" role="alert">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="notice success" role="status">
+          {success}
+        </div>
+      )}
 
       {/* VIEW: PERIODS */}
       {activeTab === 'periods' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="payroll-toolbar">
-            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-              <label htmlFor="period-select" style={{ fontWeight: 600 }}>Kỳ lương:</label>
-              <select
+            <div className="payroll-toolbar-control">
+              <label htmlFor="period-select">{tr.periodLabel}</label>
+              <SearchableSelect
                 id="period-select"
                 value={selectedPeriod?.id || ''}
-                onChange={e => {
-                  const found = periods.find(p => p.id === e.target.value);
+                options={periods.map((p) => ({
+                  value: p.id,
+                  label: `${p.name} (${p.code}) — ${statusLabels[p.status]}`,
+                  keywords: `${p.name} ${p.code} ${statusLabels[p.status]}`,
+                }))}
+                onChange={(val) => {
+                  const found = periods.find((p) => p.id === val);
                   if (found) selectPeriod(found);
                 }}
-              >
-                {periods.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.code}) — {statusLabels[p.status]}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             {isHR && (
@@ -852,7 +979,7 @@ export function Payroll({
                   className="button-primary"
                   onClick={() => setShowCreatePeriod(true)}
                 >
-                  + Mở kỳ lương mới
+                  {label('+ Mở kỳ lương mới')}
                 </button>
               </div>
             )}
@@ -862,25 +989,25 @@ export function Payroll({
             <>
               <div className="payroll-summary-cards">
                 <div className="payroll-card">
-                  <span className="payroll-card-label">Trạng thái kỳ</span>
+                  <span className="payroll-card-label">{label('Trạng thái kỳ')}</span>
                   <span className={`payroll-status-badge ${selectedPeriod.status}`}>
                     {statusLabels[selectedPeriod.status]}
                   </span>
                 </div>
                 <div className="payroll-card">
-                  <span className="payroll-card-label">Thời gian</span>
+                  <span className="payroll-card-label">{label('Thời gian')}</span>
                   <strong className="payroll-card-value">
                     {selectedPeriod.startDate} ~ {selectedPeriod.endDate}
                   </strong>
                 </div>
                 <div className="payroll-card">
-                  <span className="payroll-card-label">Tổng quỹ lương Gross</span>
+                  <span className="payroll-card-label">{label('Tổng quỹ lương Gross')}</span>
                   <strong className="payroll-card-value" style={{ color: '#2563eb' }}>
                     {formatVND(periodSummary?.totalGross)}
                   </strong>
                 </div>
                 <div className="payroll-card">
-                  <span className="payroll-card-label">Thực lĩnh chi trả Net</span>
+                  <span className="payroll-card-label">{label('Thực lĩnh chi trả Net')}</span>
                   <strong className="payroll-card-value" style={{ color: '#16a34a' }}>
                     {formatVND(periodSummary?.totalNet)}
                   </strong>
@@ -889,7 +1016,7 @@ export function Payroll({
 
               {isHR && (
                 <div className="payroll-actions-bar">
-                  <span>Thao tác kỳ lương:</span>
+                  <span>{label('Thao tác kỳ lương:')}</span>
                   {selectedPeriod.status !== 'CLOSED' && (
                     <button
                       type="button"
@@ -897,7 +1024,7 @@ export function Payroll({
                       onClick={handleCalculateDraft}
                       disabled={loading}
                     >
-                      ⚡ Tính toán bảng lương nháp
+                      {label('⚡ Tính toán bảng lương nháp')}
                     </button>
                   )}
                   {selectedPeriod.status === 'DRAFT' && (
@@ -907,7 +1034,7 @@ export function Payroll({
                       onClick={() => handleUpdateStatus('UNDER_REVIEW')}
                       disabled={loading}
                     >
-                      Gửi kiểm tra (Review)
+                      {label('Gửi kiểm tra (Review)')}
                     </button>
                   )}
                   {selectedPeriod.status === 'UNDER_REVIEW' && (
@@ -917,7 +1044,7 @@ export function Payroll({
                       onClick={() => handleUpdateStatus('APPROVED')}
                       disabled={loading}
                     >
-                      ✓ Phê duyệt bảng lương
+                      {label('✓ Phê duyệt bảng lương')}
                     </button>
                   )}
                   {selectedPeriod.status === 'APPROVED' && (
@@ -927,7 +1054,7 @@ export function Payroll({
                       onClick={() => handleUpdateStatus('CLOSED')}
                       disabled={loading}
                     >
-                      🔒 Chốt & Khóa kỳ lương vĩnh viễn
+                      {label('🔒 Chốt & Khóa kỳ lương vĩnh viễn')}
                     </button>
                   )}
                 </div>
@@ -935,14 +1062,13 @@ export function Payroll({
 
               {/* Slips table */}
               <div className="payroll-section">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div className="payroll-section-header">
                   <h3>Danh sách phiếu lương ({filteredSlips.length})</h3>
                   <input
                     type="search"
-                    placeholder="Tìm theo tên hoặc mã NV..."
+                    placeholder={label('Tìm theo tên hoặc mã NV...')}
                     value={slipsSearch}
-                    onChange={e => setSlipsSearch(e.target.value)}
-                    style={{ maxWidth: 280 }}
+                    onChange={(e) => setSlipsSearch(e.target.value)}
                   />
                 </div>
 
@@ -950,41 +1076,50 @@ export function Payroll({
                   <table className="payroll-table">
                     <thead>
                       <tr>
-                        <th>Mã NV</th>
-                        <th>Họ và tên</th>
-                        <th>Phòng ban</th>
-                        <th>Lương cơ bản</th>
-                        <th>Ngày công</th>
-                        <th>Lương thực tế</th>
-                        <th>Phụ cấp</th>
-                        <th>Thưởng</th>
-                        <th>Khấu trừ</th>
+                        <th>{label('Mã NV')}</th>
+                        <th>{label('Họ và tên')}</th>
+                        <th>{label('Phòng ban')}</th>
+                        <th>{label('Lương cơ bản')}</th>
+                        <th>{label('Ngày công')}</th>
+                        <th>{label('Lương thực tế')}</th>
+                        <th>{label('Phụ cấp')}</th>
+                        <th>{label('Thưởng')}</th>
+                        <th>{label('Khấu trừ')}</th>
                         <th>Gross</th>
-                        <th>Thực lĩnh (Net)</th>
-                        <th>Chi tiết</th>
+                        <th>{label('Thực lĩnh (Net)')}</th>
+                        <th>{label('Chi tiết')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredSlips.length === 0 ? (
                         <tr>
                           <td colSpan={12} className="text-center text-muted">
-                            Chưa có phiếu lương nào trong kỳ này. Nhấn "Tính toán bảng lương nháp" để bắt đầu.
+                            Chưa có phiếu lương nào trong kỳ này. Nhấn "Tính toán bảng lương nháp"
+                            để bắt đầu.
                           </td>
                         </tr>
                       ) : (
-                        filteredSlips.map(slip => (
+                        filteredSlips.map((slip) => (
                           <tr key={slip.id}>
-                            <td><strong>{slip.employeeCode}</strong></td>
+                            <td>
+                              <strong>{slip.employeeCode}</strong>
+                            </td>
                             <td>{slip.fullName}</td>
                             <td>{slip.departmentName || '—'}</td>
                             <td>{formatVND(slip.baseSalary)}</td>
-                            <td>{slip.actualWorkingDays} / {slip.standardDays}</td>
+                            <td>
+                              {slip.actualWorkingDays} / {slip.standardDays}
+                            </td>
                             <td>{formatVND(slip.proratedBaseSalary)}</td>
                             <td>{formatVND(slip.totalAllowances)}</td>
                             <td>{formatVND(slip.totalBonuses)}</td>
                             <td style={{ color: '#ef4444' }}>-{formatVND(slip.totalDeductions)}</td>
-                            <td><strong>{formatVND(slip.grossPay)}</strong></td>
-                            <td style={{ color: '#16a34a', fontWeight: 'bold' }}>{formatVND(slip.netPay)}</td>
+                            <td>
+                              <strong>{formatVND(slip.grossPay)}</strong>
+                            </td>
+                            <td style={{ color: '#16a34a', fontWeight: 'bold' }}>
+                              {formatVND(slip.netPay)}
+                            </td>
                             <td>
                               <button
                                 type="button"
@@ -992,11 +1127,13 @@ export function Payroll({
                                 style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}
                                 onClick={async () => {
                                   setSelectedSlip(slip);
-                                  const res = await request<{ items: PayrollSlipItem[] }>(`${orgPath}/slips/${slip.id}/items`);
+                                  const res = await request<{ items: PayrollSlipItem[] }>(
+                                    `${orgPath}/slips/${slip.id}/items`,
+                                  );
                                   setSelectedSlipItems(res.items || []);
                                 }}
                               >
-                                Xem
+                                {label('Xem')}
                               </button>
                             </td>
                           </tr>
@@ -1015,13 +1152,13 @@ export function Payroll({
       {activeTab === 'components' && isHR && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="payroll-toolbar">
-            <h3>Danh mục Cấu phần Lương & Phụ cấp</h3>
+            <h3>{label('Danh mục Cấu phần Lương & Phụ cấp')}</h3>
             <button
               type="button"
               className="button-primary"
               onClick={() => setShowCreateComponent(true)}
             >
-              + Thêm cấu phần mới
+              {label('+ Thêm cấu phần mới')}
             </button>
           </div>
 
@@ -1029,21 +1166,25 @@ export function Payroll({
             <table className="payroll-table">
               <thead>
                 <tr>
-                  <th>Mã</th>
-                  <th>Tên cấu phần</th>
-                  <th>Phân loại</th>
-                  <th>Cách tính</th>
-                  <th>Số tiền mặc định</th>
-                  <th>Tính thuế</th>
-                  <th>Đóng BHXH</th>
-                  <th>Trạng thái</th>
+                  <th>{label('Mã')}</th>
+                  <th>{label('Tên cấu phần')}</th>
+                  <th>{label('Phân loại')}</th>
+                  <th>{label('Cách tính')}</th>
+                  <th>{label('Số tiền mặc định')}</th>
+                  <th>{label('Tính thuế')}</th>
+                  <th>{label('Đóng BHXH')}</th>
+                  <th>{label('Trạng thái')}</th>
                 </tr>
               </thead>
               <tbody>
-                {components.map(c => (
+                {components.map((c) => (
                   <tr key={c.id}>
-                    <td><code>{c.code}</code></td>
-                    <td><strong>{c.name}</strong></td>
+                    <td>
+                      <code>{c.code}</code>
+                    </td>
+                    <td>
+                      <strong>{c.name}</strong>
+                    </td>
                     <td>{typeLabels[c.type]}</td>
                     <td>{c.calculationType}</td>
                     <td>{formatVND(c.defaultAmount)}</td>
@@ -1065,47 +1206,60 @@ export function Payroll({
       {/* VIEW: MY SLIPS */}
       {activeTab === 'my-slips' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <h3>Phiếu lương cá nhân</h3>
+          <h3>{label('Phiếu lương cá nhân')}</h3>
           <div className="payroll-table-container">
             <table className="payroll-table">
               <thead>
                 <tr>
-                  <th>Kỳ lương</th>
-                  <th>Thời gian</th>
-                  <th>Lương cơ bản</th>
-                  <th>Ngày công thực tế</th>
-                  <th>Lương thực nhận Gross</th>
-                  <th>Các khoản trừ</th>
-                  <th>THỰC LĨNH (NET)</th>
-                  <th>Thao tác</th>
+                  <th>{label('Kỳ lương')}</th>
+                  <th>{label('Thời gian')}</th>
+                  <th>{label('Lương cơ bản')}</th>
+                  <th>{label('Ngày công thực tế')}</th>
+                  <th>{label('Lương thực nhận Gross')}</th>
+                  <th>{label('Các khoản trừ')}</th>
+                  <th>{label('THỰC LĨNH (NET)')}</th>
+                  <th>{label('Thao tác')}</th>
                 </tr>
               </thead>
               <tbody>
                 {mySlips.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center text-muted">Bạn chưa có phiếu lương nào được công bố.</td>
+                    <td colSpan={8} className="text-center text-muted">
+                      {label('Bạn chưa có phiếu lương nào được công bố.')}
+                    </td>
                   </tr>
                 ) : (
-                  mySlips.map(s => (
+                  mySlips.map((s) => (
                     <tr key={s.id}>
-                      <td><strong>{s.periodName || s.periodCode}</strong></td>
-                      <td>{s.periodStartDate} ~ {s.periodEndDate}</td>
+                      <td>
+                        <strong>{s.periodName || s.periodCode}</strong>
+                      </td>
+                      <td>
+                        {s.periodStartDate} ~ {s.periodEndDate}
+                      </td>
                       <td>{formatVND(s.baseSalary)}</td>
-                      <td>{s.actualWorkingDays} ngày</td>
+                      <td>
+                        {s.actualWorkingDays} {label('ngày')}
+                      </td>
                       <td>{formatVND(s.grossPay)}</td>
                       <td style={{ color: '#ef4444' }}>-{formatVND(s.totalDeductions)}</td>
-                      <td style={{ color: '#16a34a', fontWeight: 'bold' }}>{formatVND(s.netPay)}</td>
+                      <td style={{ color: '#16a34a', fontWeight: 'bold' }}>
+                        {formatVND(s.netPay)}
+                      </td>
                       <td>
                         <button
                           type="button"
                           className="button-secondary"
                           onClick={async () => {
-                            const res = await request<{ slip?: PayrollSlip; items: PayrollSlipItem[] }>(`${orgPath}/slips/${s.id}`);
+                            const res = await request<{
+                              slip?: PayrollSlip;
+                              items: PayrollSlipItem[];
+                            }>(`${orgPath}/slips/${s.id}`);
                             setSelectedSlip(res.slip || s);
                             setSelectedSlipItems(res.items || []);
                           }}
                         >
-                          Xem chi tiết
+                          {label('Xem chi tiết')}
                         </button>
                       </td>
                     </tr>
@@ -1121,25 +1275,24 @@ export function Payroll({
       {activeTab === 'accounting' && isHR && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="payroll-toolbar">
-            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-              <label htmlFor="acc-period-select" style={{ fontWeight: 600 }}>Kỳ đối chiếu & hạch toán:</label>
-              <select
+            <div className="payroll-toolbar-control">
+              <label htmlFor="acc-period-select">{label('Kỳ đối chiếu & hạch toán:')}</label>
+              <SearchableSelect
                 id="acc-period-select"
                 value={selectedPeriod?.id || ''}
-                onChange={e => {
-                  const found = periods.find(p => p.id === e.target.value);
+                options={periods.map((p) => ({
+                  value: p.id,
+                  label: `${p.name} (${p.code}) — ${statusLabels[p.status]}`,
+                  keywords: `${p.name} ${p.code} ${statusLabels[p.status]}`,
+                }))}
+                onChange={(val) => {
+                  const found = periods.find((p) => p.id === val);
                   if (found) {
                     setSelectedPeriod(found);
                     void loadAccountingData(found.id);
                   }
                 }}
-              >
-                {periods.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.code}) — {statusLabels[p.status]}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -1149,7 +1302,7 @@ export function Payroll({
                 onClick={handleSeedAccountingDefaults}
                 disabled={loading}
               >
-                ⚙ Thiết lập tài khoản VAS
+                {label('⚙ Thiết lập tài khoản VAS')}
               </button>
               <button
                 type="button"
@@ -1157,7 +1310,7 @@ export function Payroll({
                 onClick={handleReconcile}
                 disabled={loading || !selectedPeriod}
               >
-                🔍 Chạy đối chiếu
+                {label('🔍 Chạy đối chiếu')}
               </button>
               <button
                 type="button"
@@ -1165,7 +1318,7 @@ export function Payroll({
                 onClick={handleGenerateJournal}
                 disabled={loading || !selectedPeriod}
               >
-                📝 Tạo bút toán kế toán
+                {label('📝 Tạo bút toán kế toán')}
               </button>
             </div>
           </div>
@@ -1175,25 +1328,33 @@ export function Payroll({
               {/* Reconciliation Summary Cards */}
               <div className="payroll-summary-cards">
                 <div className="payroll-card">
-                  <span className="payroll-card-label">Trạng thái đối chiếu</span>
+                  <span className="payroll-card-label">{label('Trạng thái đối chiếu')}</span>
                   <span className={`payroll-status-badge ${reconciliation?.status || 'PENDING'}`}>
-                    {reconciliation?.status === 'RECONCILED' ? 'Khớp 100%' : reconciliation?.status === 'DISCREPANCY_DETECTED' ? 'Có sai lệch' : 'Chưa đối chiếu'}
+                    {reconciliation?.status === 'RECONCILED'
+                      ? 'Khớp 100%'
+                      : reconciliation?.status === 'DISCREPANCY_DETECTED'
+                        ? 'Có sai lệch'
+                        : 'Chưa đối chiếu'}
                   </span>
                 </div>
                 <div className="payroll-card">
-                  <span className="payroll-card-label">Tổng thực lĩnh phải trả</span>
+                  <span className="payroll-card-label">{label('Tổng thực lĩnh phải trả')}</span>
                   <strong className="payroll-card-value" style={{ color: '#2563eb' }}>
-                    {formatVND(reconciliation?.totalExpectedAmount || liability?.incurredAmount || periodSummary?.totalNet)}
+                    {formatVND(
+                      reconciliation?.totalExpectedAmount ||
+                        liability?.incurredAmount ||
+                        periodSummary?.totalNet,
+                    )}
                   </strong>
                 </div>
                 <div className="payroll-card">
-                  <span className="payroll-card-label">Đã thanh toán (Disbursed)</span>
+                  <span className="payroll-card-label">{label('Đã thanh toán (Disbursed)')}</span>
                   <strong className="payroll-card-value" style={{ color: '#16a34a' }}>
                     {formatVND(reconciliation?.totalDisbursedAmount || liability?.paidAmount || 0)}
                   </strong>
                 </div>
                 <div className="payroll-card">
-                  <span className="payroll-card-label">Còn phải trả (Dư nợ)</span>
+                  <span className="payroll-card-label">{label('Còn phải trả (Dư nợ)')}</span>
                   <strong className="payroll-card-value" style={{ color: '#ef4444' }}>
                     {formatVND(liability?.endingBalance || 0)}
                   </strong>
@@ -1202,7 +1363,14 @@ export function Payroll({
 
               {/* Discrepancies Table */}
               <div className="payroll-section">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '1rem',
+                  }}
+                >
                   <h3>Chi tiết sai lệch chi trả ({discrepancies.length})</h3>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
@@ -1210,14 +1378,14 @@ export function Payroll({
                       className="button-secondary"
                       onClick={() => handleExportAccounting('reconciliation')}
                     >
-                      📥 Xuất báo cáo đối chiếu CSV
+                      {label('📥 Xuất báo cáo đối chiếu CSV')}
                     </button>
                     <button
                       type="button"
                       className="button-secondary"
                       onClick={() => handleExportAccounting('disbursements')}
                     >
-                      📥 Xuất lệnh chi CSV
+                      {label('📥 Xuất lệnh chi CSV')}
                     </button>
                   </div>
                 </div>
@@ -1226,38 +1394,48 @@ export function Payroll({
                   <table className="payroll-table">
                     <thead>
                       <tr>
-                        <th>Mã NV</th>
-                        <th>Họ và tên</th>
-                        <th>Loại sai lệch</th>
-                        <th>Số tiền phiếu lương</th>
-                        <th>Số tiền thực chi</th>
-                        <th>Chênh lệch</th>
-                        <th>Trạng thái xử lý</th>
-                        <th>Thao tác</th>
+                        <th>{label('Mã NV')}</th>
+                        <th>{label('Họ và tên')}</th>
+                        <th>{label('Loại sai lệch')}</th>
+                        <th>{label('Số tiền phiếu lương')}</th>
+                        <th>{label('Số tiền thực chi')}</th>
+                        <th>{label('Chênh lệch')}</th>
+                        <th>{label('Trạng thái xử lý')}</th>
+                        <th>{label('Thao tác')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {discrepancies.length === 0 ? (
                         <tr>
                           <td colSpan={8} className="text-center text-muted">
-                            Không phát hiện sai lệch nào giữa bảng lương và danh sách chi trả.
+                            {label(
+                              'Không phát hiện sai lệch nào giữa bảng lương và danh sách chi trả.',
+                            )}
                           </td>
                         </tr>
                       ) : (
-                        discrepancies.map(d => (
+                        discrepancies.map((d) => (
                           <tr key={d.id}>
-                            <td><strong>{d.employeeCode}</strong></td>
+                            <td>
+                              <strong>{d.employeeCode}</strong>
+                            </td>
                             <td>{d.fullName}</td>
                             <td>
-                              <span className={`badge ${d.discrepancyType === 'UNPAID' ? 'badge-danger' : 'badge-warning'}`}>
+                              <span
+                                className={`badge ${d.discrepancyType === 'UNPAID' ? 'badge-danger' : 'badge-warning'}`}
+                              >
                                 {d.discrepancyType}
                               </span>
                             </td>
                             <td>{formatVND(d.expectedAmount)}</td>
                             <td>{formatVND(d.actualAmount)}</td>
-                            <td style={{ color: '#ef4444', fontWeight: 600 }}>{formatVND(d.varianceAmount)}</td>
+                            <td style={{ color: '#ef4444', fontWeight: 600 }}>
+                              {formatVND(d.varianceAmount)}
+                            </td>
                             <td>
-                              <span className={`badge ${d.resolutionStatus === 'RESOLVED' ? 'badge-success' : 'badge-warning'}`}>
+                              <span
+                                className={`badge ${d.resolutionStatus === 'RESOLVED' ? 'badge-success' : 'badge-warning'}`}
+                              >
                                 {d.resolutionStatus}
                               </span>
                             </td>
@@ -1269,7 +1447,7 @@ export function Payroll({
                                   style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}
                                   onClick={() => handleResolveDiscrepancy(d.id, 'RESOLVED')}
                                 >
-                                  Đánh dấu đã xử lý
+                                  {label('Đánh dấu đã xử lý')}
                                 </button>
                               )}
                             </td>
@@ -1283,14 +1461,21 @@ export function Payroll({
 
               {/* Journal Entries Ledger */}
               <div className="payroll-section">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '1rem',
+                  }}
+                >
                   <h3>Sổ nhật ký chứng từ kế toán ({journalEntries.length})</h3>
                   <button
                     type="button"
                     className="button-secondary"
                     onClick={() => handleExportAccounting('journal')}
                   >
-                    📥 Xuất sổ nhật ký CSV
+                    {label('📥 Xuất sổ nhật ký CSV')}
                   </button>
                 </div>
 
@@ -1298,38 +1483,48 @@ export function Payroll({
                   <table className="payroll-table">
                     <thead>
                       <tr>
-                        <th>Số chứng từ</th>
-                        <th>Ngày hạch toán</th>
-                        <th>Diễn giải</th>
-                        <th>Tổng Nợ (Debit)</th>
-                        <th>Tổng Có (Credit)</th>
-                        <th>Cân đối</th>
-                        <th>Trạng thái</th>
-                        <th>Thao tác</th>
+                        <th>{label('Số chứng từ')}</th>
+                        <th>{label('Ngày hạch toán')}</th>
+                        <th>{label('Diễn giải')}</th>
+                        <th>{label('Tổng Nợ (Debit)')}</th>
+                        <th>{label('Tổng Có (Credit)')}</th>
+                        <th>{label('Cân đối')}</th>
+                        <th>{label('Trạng thái')}</th>
+                        <th>{label('Thao tác')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {journalEntries.length === 0 ? (
                         <tr>
                           <td colSpan={8} className="text-center text-muted">
-                            Chưa có chứng từ kế toán nào cho kỳ này. Nhấn "Tạo bút toán kế toán" để sinh tự động.
+                            Chưa có chứng từ kế toán nào cho kỳ này. Nhấn "Tạo bút toán kế toán" để
+                            sinh tự động.
                           </td>
                         </tr>
                       ) : (
-                        journalEntries.map(entry => (
+                        journalEntries.map((entry) => (
                           <tr key={entry.id}>
-                            <td><code>{entry.entryNumber}</code></td>
+                            <td>
+                              <code>{entry.entryNumber}</code>
+                            </td>
                             <td>{entry.entryDate}</td>
                             <td>{entry.description}</td>
                             <td style={{ fontWeight: 600 }}>{formatVND(entry.totalDebit)}</td>
                             <td style={{ fontWeight: 600 }}>{formatVND(entry.totalCredit)}</td>
                             <td>
-                              <span style={{ color: entry.totalDebit === entry.totalCredit ? '#16a34a' : '#ef4444' }}>
+                              <span
+                                style={{
+                                  color:
+                                    entry.totalDebit === entry.totalCredit ? '#16a34a' : '#ef4444',
+                                }}
+                              >
                                 {entry.totalDebit === entry.totalCredit ? '✓ Cân đối' : '✗ Lệch'}
                               </span>
                             </td>
                             <td>
-                              <span className={`badge ${entry.status === 'POSTED' ? 'badge-success' : entry.status === 'REVERSED' ? 'badge-dark' : 'badge-warning'}`}>
+                              <span
+                                className={`badge ${entry.status === 'POSTED' ? 'badge-success' : entry.status === 'REVERSED' ? 'badge-dark' : 'badge-warning'}`}
+                              >
                                 {entry.status}
                               </span>
                             </td>
@@ -1341,7 +1536,7 @@ export function Payroll({
                                   style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}
                                   onClick={() => handleViewEntry(entry.id)}
                                 >
-                                  Xem
+                                  {label('Xem')}
                                 </button>
                                 {entry.status === 'DRAFT' && (
                                   <button
@@ -1350,17 +1545,21 @@ export function Payroll({
                                     style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}
                                     onClick={() => handlePostEntry(entry.id)}
                                   >
-                                    Ghi sổ
+                                    {label('Ghi sổ')}
                                   </button>
                                 )}
                                 {entry.status === 'POSTED' && (
                                   <button
                                     type="button"
                                     className="button-secondary"
-                                    style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem', color: '#ef4444' }}
+                                    style={{
+                                      fontSize: '0.8rem',
+                                      padding: '0.2rem 0.5rem',
+                                      color: '#ef4444',
+                                    }}
                                     onClick={() => handleReverseEntry(entry.id)}
                                   >
-                                    Đảo bút toán
+                                    {label('Đảo bút toán')}
                                   </button>
                                 )}
                               </div>
@@ -1381,28 +1580,29 @@ export function Payroll({
       {activeTab === 'compliance' && isHR && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div role="status" className="payroll-alert">
-            NOT VERIFIED: Số liệu thuế và bảo hiểm chỉ là ước tính, chưa được xác minh theo kỳ và chưa đối chiếu với bảng lương đã chốt. Không sử dụng để kê khai; xuất báo cáo thuế và bảo hiểm đang bị chặn.
+            NOT VERIFIED: Số liệu thuế và bảo hiểm chỉ là ước tính, chưa được xác minh theo kỳ và
+            chưa đối chiếu với bảng lương đã chốt. Không sử dụng để kê khai; xuất báo cáo thuế và
+            bảo hiểm đang bị chặn.
           </div>
           <div className="payroll-toolbar">
-            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-              <label htmlFor="compliance-period-select" style={{ fontWeight: 600 }}>Kỳ báo cáo:</label>
-              <select
+            <div className="payroll-toolbar-control">
+              <label htmlFor="compliance-period-select">{label('Kỳ báo cáo:')}</label>
+              <SearchableSelect
                 id="compliance-period-select"
                 value={selectedPeriod?.id || ''}
-                onChange={e => {
-                  const found = periods.find(p => p.id === e.target.value);
+                options={periods.map((p) => ({
+                  value: p.id,
+                  label: `${p.name} (${p.code}) — ${statusLabels[p.status]}`,
+                  keywords: `${p.name} ${p.code} ${statusLabels[p.status]}`,
+                }))}
+                onChange={(val) => {
+                  const found = periods.find((p) => p.id === val);
                   if (found) {
                     setSelectedPeriod(found);
                     void loadComplianceData(found.id);
                   }
                 }}
-              >
-                {periods.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.code}) — {statusLabels[p.status]}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -1412,7 +1612,7 @@ export function Payroll({
                 onClick={handleSeedComplianceDefaults}
                 disabled={loading}
               >
-                📜 Nạp quy tắc chuẩn VN
+                {label('📜 Nạp quy tắc chuẩn VN')}
               </button>
               <button
                 type="button"
@@ -1420,47 +1620,50 @@ export function Payroll({
                 onClick={handleRunComplianceCheck}
                 disabled={loading || !selectedPeriod}
               >
-                🛡 Quét kiểm tra tuân thủ
+                {label('🛡 Quét kiểm tra tuân thủ')}
               </button>
             </div>
           </div>
 
           {/* Compliance Sub-navigation */}
-          <div className="payroll-tabs" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+          <div
+            className="payroll-tabs"
+            style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}
+          >
             <button
               type="button"
               className={`payroll-tab-button ${complianceSubTab === 'pit' ? 'active' : ''}`}
               onClick={() => setComplianceSubTab('pit')}
             >
-              Thuế TNCN
+              {label('Thuế TNCN')}
             </button>
             <button
               type="button"
               className={`payroll-tab-button ${complianceSubTab === 'insurance' ? 'active' : ''}`}
               onClick={() => setComplianceSubTab('insurance')}
             >
-              Bảo hiểm & KPCĐ
+              {label('Bảo hiểm & KPCĐ')}
             </button>
             <button
               type="button"
               className={`payroll-tab-button ${complianceSubTab === 'analytics' ? 'active' : ''}`}
               onClick={() => setComplianceSubTab('analytics')}
             >
-              Phân tích chi phí CTC
+              {label('Phân tích chi phí CTC')}
             </button>
             <button
               type="button"
               className={`payroll-tab-button ${complianceSubTab === 'anomalies' ? 'active' : ''}`}
               onClick={() => setComplianceSubTab('anomalies')}
             >
-              Cảnh báo tuân thủ ({anomalies.filter(a => a.resolutionStatus === 'OPEN').length})
+              Cảnh báo tuân thủ ({anomalies.filter((a) => a.resolutionStatus === 'OPEN').length})
             </button>
             <button
               type="button"
               className={`payroll-tab-button ${complianceSubTab === 'reports' ? 'active' : ''}`}
               onClick={() => setComplianceSubTab('reports')}
             >
-              Báo cáo chính thức & Ký duyệt
+              {label('Báo cáo chính thức & Ký duyệt')}
             </button>
             <button
               type="button"
@@ -1478,63 +1681,88 @@ export function Payroll({
                 <>
                   <div className="payroll-summary-cards">
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Tổng thu nhập Gross</span>
-                      <strong className="payroll-card-value">{formatVND(pitData.summary.totalGrossPay)}</strong>
+                      <span className="payroll-card-label">{label('Tổng thu nhập Gross')}</span>
+                      <strong className="payroll-card-value">
+                        {formatVND(pitData.summary.totalGrossPay)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Giảm trừ gia cảnh bản thân (11M)</span>
-                      <strong className="payroll-card-value text-muted">{formatVND(pitData.summary.totalPersonalDeduction)}</strong>
+                      <span className="payroll-card-label">
+                        {label('Giảm trừ gia cảnh bản thân (11M)')}
+                      </span>
+                      <strong className="payroll-card-value text-muted">
+                        {formatVND(pitData.summary.totalPersonalDeduction)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Giảm trừ người phụ thuộc (4.4M)</span>
-                      <strong className="payroll-card-value text-muted">{formatVND(pitData.summary.totalDependentDeduction)}</strong>
+                      <span className="payroll-card-label">
+                        {label('Giảm trừ người phụ thuộc (4.4M)')}
+                      </span>
+                      <strong className="payroll-card-value text-muted">
+                        {formatVND(pitData.summary.totalDependentDeduction)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Thu nhập tính thuế TNCN</span>
-                      <strong className="payroll-card-value" style={{ color: '#2563eb' }}>{formatVND(pitData.summary.totalAssessableIncome)}</strong>
+                      <span className="payroll-card-label">{label('Thu nhập tính thuế TNCN')}</span>
+                      <strong className="payroll-card-value" style={{ color: '#2563eb' }}>
+                        {formatVND(pitData.summary.totalAssessableIncome)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Thuế TNCN tính toán (Biểu lũy tiến)</span>
-                      <strong className="payroll-card-value" style={{ color: '#d97706' }}>{formatVND(pitData.summary.totalCalculatedTax)}</strong>
+                      <span className="payroll-card-label">
+                        {label('Thuế TNCN tính toán (Biểu lũy tiến)')}
+                      </span>
+                      <strong className="payroll-card-value" style={{ color: '#d97706' }}>
+                        {formatVND(pitData.summary.totalCalculatedTax)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Thuế TNCN đã khấu trừ</span>
-                      <strong className="payroll-card-value">{formatVND(pitData.summary.totalWithheldTax)}</strong>
+                      <span className="payroll-card-label">{label('Thuế TNCN đã khấu trừ')}</span>
+                      <strong className="payroll-card-value">
+                        {formatVND(pitData.summary.totalWithheldTax)}
+                      </strong>
                     </div>
                   </div>
 
                   <div className="payroll-section">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                      <h4>Bảng kê tính thuế TNCN chi tiết từng nhân viên</h4>
+                    <div className="payroll-section-header">
+                      <h4>{label('Bảng kê tính thuế TNCN chi tiết từng nhân viên')}</h4>
                       <button
                         type="button"
                         className="button-secondary"
-                        onClick={() => handleGenerateComplianceReport('PIT_MONTHLY', `Báo cáo Thuế TNCN Tháng ${selectedPeriod?.code}`)}
+                        onClick={() =>
+                          handleGenerateComplianceReport(
+                            'PIT_MONTHLY',
+                            `Báo cáo Thuế TNCN Tháng ${selectedPeriod?.code}`,
+                          )
+                        }
                       >
-                        📄 Lập báo cáo thuế chính thức
+                        {label('📄 Lập báo cáo thuế chính thức')}
                       </button>
                     </div>
                     <div className="payroll-table-container">
                       <table className="payroll-table">
                         <thead>
                           <tr>
-                            <th>Mã NV</th>
-                            <th>Họ và tên</th>
-                            <th>Phòng ban</th>
+                            <th>{label('Mã NV')}</th>
+                            <th>{label('Họ và tên')}</th>
+                            <th>{label('Phòng ban')}</th>
                             <th>Gross</th>
-                            <th>Giảm trừ bản thân</th>
-                            <th>NPT</th>
-                            <th>Giảm trừ NPT</th>
-                            <th>Thu nhập tính thuế</th>
-                            <th>Thuế tính toán</th>
-                            <th>Thuế đã khấu trừ</th>
-                            <th>Chênh lệch</th>
+                            <th>{label('Giảm trừ bản thân')}</th>
+                            <th>{label('NPT')}</th>
+                            <th>{label('Giảm trừ NPT')}</th>
+                            <th>{label('Thu nhập tính thuế')}</th>
+                            <th>{label('Thuế tính toán')}</th>
+                            <th>{label('Thuế đã khấu trừ')}</th>
+                            <th>{label('Chênh lệch')}</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {pitData.employees.map(e => (
+                          {pitData.employees.map((e) => (
                             <tr key={e.employeeId}>
-                              <td><strong>{e.employeeCode}</strong></td>
+                              <td>
+                                <strong>{e.employeeCode}</strong>
+                              </td>
                               <td>{e.fullName}</td>
                               <td>{e.departmentName}</td>
                               <td>{formatVND(e.grossPay)}</td>
@@ -1542,9 +1770,15 @@ export function Payroll({
                               <td>{e.dependentCount}</td>
                               <td>{formatVND(e.dependentDeduction)}</td>
                               <td style={{ fontWeight: 600 }}>{formatVND(e.assessableIncome)}</td>
-                              <td style={{ color: '#d97706', fontWeight: 600 }}>{formatVND(e.calculatedTax)}</td>
+                              <td style={{ color: '#d97706', fontWeight: 600 }}>
+                                {formatVND(e.calculatedTax)}
+                              </td>
                               <td>{formatVND(e.withheldTax)}</td>
-                              <td style={{ color: parseFloat(e.variance) !== 0 ? '#ef4444' : '#16a34a' }}>
+                              <td
+                                style={{
+                                  color: parseFloat(e.variance) !== 0 ? '#ef4444' : '#16a34a',
+                                }}
+                              >
                                 {formatVND(e.variance)}
                               </td>
                             </tr>
@@ -1555,7 +1789,9 @@ export function Payroll({
                   </div>
                 </>
               ) : (
-                <p className="text-muted">Chưa có dữ liệu tính thuế cho kỳ này hoặc chưa tính bảng lương.</p>
+                <p className="text-muted">
+                  {label('Chưa có dữ liệu tính thuế cho kỳ này hoặc chưa tính bảng lương.')}
+                </p>
               )}
             </div>
           )}
@@ -1567,69 +1803,106 @@ export function Payroll({
                 <>
                   <div className="payroll-summary-cards">
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Số người tham gia BHXH</span>
-                      <strong className="payroll-card-value">{siData.summary.totalParticipants}</strong>
+                      <span className="payroll-card-label">{label('Số người tham gia BHXH')}</span>
+                      <strong className="payroll-card-value">
+                        {siData.summary.totalParticipants}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Quỹ lương đóng BHXH</span>
-                      <strong className="payroll-card-value">{formatVND(siData.summary.totalSiSalaryFund)}</strong>
+                      <span className="payroll-card-label">{label('Quỹ lương đóng BHXH')}</span>
+                      <strong className="payroll-card-value">
+                        {formatVND(siData.summary.totalSiSalaryFund)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">NLĐ đóng (BHXH 8%, BHYT 1.5%, BHTN 1%)</span>
-                      <strong className="payroll-card-value" style={{ color: '#2563eb' }}>{formatVND(siData.summary.totalEmployeePortion)}</strong>
+                      <span className="payroll-card-label">
+                        {label('NLĐ đóng (BHXH 8%, BHYT 1.5%, BHTN 1%)')}
+                      </span>
+                      <strong className="payroll-card-value" style={{ color: '#2563eb' }}>
+                        {formatVND(siData.summary.totalEmployeePortion)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">DN đóng (BHXH 17.5%, BHYT 3%, BHTN 1%)</span>
-                      <strong className="payroll-card-value" style={{ color: '#7c3aed' }}>{formatVND(siData.summary.totalEmployerPortion)}</strong>
+                      <span className="payroll-card-label">
+                        {label('DN đóng (BHXH 17.5%, BHYT 3%, BHTN 1%)')}
+                      </span>
+                      <strong className="payroll-card-value" style={{ color: '#7c3aed' }}>
+                        {formatVND(siData.summary.totalEmployerPortion)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Kinh phí công đoàn (2% DN nộp)</span>
-                      <strong className="payroll-card-value">{formatVND(siData.summary.totalTradeUnion)}</strong>
+                      <span className="payroll-card-label">
+                        {label('Kinh phí công đoàn (2% DN nộp)')}
+                      </span>
+                      <strong className="payroll-card-value">
+                        {formatVND(siData.summary.totalTradeUnion)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">Tổng phải nộp Cơ quan BHXH</span>
-                      <strong className="payroll-card-value" style={{ color: '#dc2626' }}>{formatVND(siData.summary.totalPayableInsuranceAgency)}</strong>
+                      <span className="payroll-card-label">
+                        {label('Tổng phải nộp Cơ quan BHXH')}
+                      </span>
+                      <strong className="payroll-card-value" style={{ color: '#dc2626' }}>
+                        {formatVND(siData.summary.totalPayableInsuranceAgency)}
+                      </strong>
                     </div>
                   </div>
 
                   <div className="payroll-section">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                      <h4>Bảng tổng hợp trích nộp bảo hiểm theo nhân viên</h4>
+                    <div className="payroll-section-header">
+                      <h4>{label('Bảng tổng hợp trích nộp bảo hiểm theo nhân viên')}</h4>
                       <button
                         type="button"
                         className="button-secondary"
-                        onClick={() => handleGenerateComplianceReport('SI_MONTHLY', `Báo cáo BHXH Tháng ${selectedPeriod?.code}`)}
+                        onClick={() =>
+                          handleGenerateComplianceReport(
+                            'SI_MONTHLY',
+                            `Báo cáo BHXH Tháng ${selectedPeriod?.code}`,
+                          )
+                        }
                       >
-                        📄 Lập báo cáo bảo hiểm chính thức
+                        {label('📄 Lập báo cáo bảo hiểm chính thức')}
                       </button>
                     </div>
                     <div className="payroll-table-container">
                       <table className="payroll-table">
                         <thead>
                           <tr>
-                            <th>Mã NV</th>
-                            <th>Họ và tên</th>
-                            <th>Mã BHXH</th>
-                            <th>Lương HĐ</th>
-                            <th>Lương BHXH (Trần 46.8M)</th>
-                            <th>NLĐ đóng (10.5%)</th>
-                            <th>DN đóng (21.5%)</th>
-                            <th>KPCĐ (2%)</th>
-                            <th>Tổng trích nộp</th>
+                            <th>{label('Mã NV')}</th>
+                            <th>{label('Họ và tên')}</th>
+                            <th>{label('Mã BHXH')}</th>
+                            <th>{label('Lương HĐ')}</th>
+                            <th>{label('Lương BHXH (Trần 46.8M)')}</th>
+                            <th>{label('NLĐ đóng (10.5%)')}</th>
+                            <th>{label('DN đóng (21.5%)')}</th>
+                            <th>{label('KPCĐ (2%)')}</th>
+                            <th>{label('Tổng trích nộp')}</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {siData.employees.map((e: any) => (
+                          {siData.employees.map((e) => (
                             <tr key={e.employeeId}>
-                              <td><strong>{e.employeeCode}</strong></td>
+                              <td>
+                                <strong>{e.employeeCode}</strong>
+                              </td>
                               <td>{e.fullName}</td>
                               <td>{e.siCode}</td>
                               <td>{formatVND(e.contractSiSalary)}</td>
                               <td>{formatVND(e.cappedBhxhSalary)}</td>
-                              <td style={{ color: '#2563eb' }}>{formatVND(e.employeePortion.total)}</td>
-                              <td style={{ color: '#7c3aed' }}>{formatVND(e.employerPortion.bhxh + e.employerPortion.bhyt + e.employerPortion.bhtn)}</td>
+                              <td style={{ color: '#2563eb' }}>
+                                {formatVND(e.employeePortion.total)}
+                              </td>
+                              <td style={{ color: '#7c3aed' }}>
+                                {formatVND(
+                                  Number(e.employerPortion.bhxh) +
+                                    Number(e.employerPortion.bhyt) +
+                                    Number(e.employerPortion.bhtn),
+                                )}
+                              </td>
                               <td>{formatVND(e.employerPortion.tradeUnion)}</td>
-                              <td><strong>{formatVND(e.totalPayable)}</strong></td>
+                              <td>
+                                <strong>{formatVND(e.totalPayable)}</strong>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -1638,7 +1911,9 @@ export function Payroll({
                   </div>
                 </>
               ) : (
-                <p className="text-muted">Chưa có dữ liệu bảo hiểm hoặc hồ sơ BHXH chưa được kích hoạt.</p>
+                <p className="text-muted">
+                  {label('Chưa có dữ liệu bảo hiểm hoặc hồ sơ BHXH chưa được kích hoạt.')}
+                </p>
               )}
             </div>
           )}
@@ -1651,50 +1926,110 @@ export function Payroll({
                   <div className="payroll-summary-cards">
                     <div className="payroll-card">
                       <span className="payroll-card-label">Tổng chi phí nhân sự (Total CTC)</span>
-                      <strong className="payroll-card-value" style={{ color: '#0f172a' }}>{formatVND(analyticsData.totalCostToCompany)}</strong>
+                      <strong className="payroll-card-value" style={{ color: '#0f172a' }}>
+                        {formatVND(analyticsData.totalCostToCompany)}
+                      </strong>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">1. Chi phí ghi nhận (Accrued Expense)</span>
-                      <strong className="payroll-card-value" style={{ color: '#2563eb' }}>{formatVND(analyticsData.financialMetrics.accruedExpense)}</strong>
+                      <span className="payroll-card-label">
+                        1. Chi phí ghi nhận (Accrued Expense)
+                      </span>
+                      <strong className="payroll-card-value" style={{ color: '#2563eb' }}>
+                        {formatVND(analyticsData.financialMetrics.accruedExpense)}
+                      </strong>
                       <small className="text-muted">Nợ TK 6422/6421 (Gross + BH DN + KPCĐ)</small>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">2. Công nợ lương phải trả (Payable Liability)</span>
-                      <strong className="payroll-card-value" style={{ color: '#d97706' }}>{formatVND(analyticsData.financialMetrics.payableLiability)}</strong>
+                      <span className="payroll-card-label">
+                        2. Công nợ lương phải trả (Payable Liability)
+                      </span>
+                      <strong className="payroll-card-value" style={{ color: '#d97706' }}>
+                        {formatVND(analyticsData.financialMetrics.payableLiability)}
+                      </strong>
                       <small className="text-muted">Có TK 3341 (Thực lĩnh NLĐ)</small>
                     </div>
                     <div className="payroll-card">
-                      <span className="payroll-card-label">3. Thực tế đã chi trả (Disbursed Payment)</span>
-                      <strong className="payroll-card-value" style={{ color: '#16a34a' }}>{formatVND(analyticsData.financialMetrics.disbursedPayment)}</strong>
+                      <span className="payroll-card-label">
+                        3. Thực tế đã chi trả (Disbursed Payment)
+                      </span>
+                      <strong className="payroll-card-value" style={{ color: '#16a34a' }}>
+                        {formatVND(analyticsData.financialMetrics.disbursedPayment)}
+                      </strong>
                       <small className="text-muted">Có TK 1121/1111 (Ủy nhiệm chi)</small>
                     </div>
                   </div>
 
-                  <div className="payroll-grid-two-cols" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                  <div
+                    className="payroll-grid-two-cols"
+                    style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}
+                  >
                     <div className="payroll-section">
                       <h4>Cơ cấu chi phí theo cấu phần</h4>
                       <ul style={{ listStyle: 'none', padding: 0, margin: '1rem 0' }}>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #f1f5f9' }}>
+                        <li
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '0.5rem 0',
+                            borderBottom: '1px solid #f1f5f9',
+                          }}
+                        >
                           <span>Lương cơ bản theo ngày công:</span>
                           <strong>{formatVND(analyticsData.proratedBaseSalary)}</strong>
                         </li>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #f1f5f9' }}>
+                        <li
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '0.5rem 0',
+                            borderBottom: '1px solid #f1f5f9',
+                          }}
+                        >
                           <span>Tổng phụ cấp:</span>
                           <strong>{formatVND(analyticsData.allowances)}</strong>
                         </li>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #f1f5f9' }}>
+                        <li
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '0.5rem 0',
+                            borderBottom: '1px solid #f1f5f9',
+                          }}
+                        >
                           <span>Tổng thưởng & khen thưởng:</span>
                           <strong>{formatVND(analyticsData.bonuses)}</strong>
                         </li>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #f1f5f9' }}>
+                        <li
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '0.5rem 0',
+                            borderBottom: '1px solid #f1f5f9',
+                          }}
+                        >
                           <span>Lương làm thêm giờ (OT):</span>
                           <strong>{formatVND(analyticsData.overtimePay)}</strong>
                         </li>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #f1f5f9' }}>
+                        <li
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '0.5rem 0',
+                            borderBottom: '1px solid #f1f5f9',
+                          }}
+                        >
                           <span>Bảo hiểm phần Doanh nghiệp đóng (21.5%):</span>
-                          <strong style={{ color: '#7c3aed' }}>{formatVND(analyticsData.employerSocialInsurance)}</strong>
+                          <strong style={{ color: '#7c3aed' }}>
+                            {formatVND(analyticsData.employerSocialInsurance)}
+                          </strong>
                         </li>
-                        <li style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0' }}>
+                        <li
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '0.5rem 0',
+                          }}
+                        >
                           <span>Kinh phí công đoàn (2%):</span>
                           <strong>{formatVND(analyticsData.employerTradeUnion)}</strong>
                         </li>
@@ -1706,16 +2041,18 @@ export function Payroll({
                       <table className="payroll-table">
                         <thead>
                           <tr>
-                            <th>Phòng ban</th>
+                            <th>{label('Phòng ban')}</th>
                             <th>Số nhân sự</th>
                             <th>Chi phí Gross</th>
                             <th>Tỷ trọng (%)</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {analyticsData.departmentDistribution.map(d => (
+                          {analyticsData.departmentDistribution.map((d) => (
                             <tr key={d.departmentName}>
-                              <td><strong>{d.departmentName}</strong></td>
+                              <td>
+                                <strong>{d.departmentName}</strong>
+                              </td>
                               <td>{d.employeeCount}</td>
                               <td>{formatVND(d.grossAmount)}</td>
                               <td>{d.percentOfTotal}%</td>
@@ -1735,7 +2072,9 @@ export function Payroll({
           {/* 4. COMPLIANCE ANOMALIES VIEW */}
           {complianceSubTab === 'anomalies' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
                 <h4>Cảnh báo & Bất thường tuân thủ ({anomalies.length})</h4>
                 <button
                   type="button"
@@ -1749,7 +2088,8 @@ export function Payroll({
 
               {anomalies.length === 0 ? (
                 <div className="notice success" style={{ margin: 0 }}>
-                  ✓ Không phát hiện bất thường nào về mức lương tối thiểu, trần bảo hiểm, hay người phụ thuộc trong kỳ lương này.
+                  ✓ Không phát hiện bất thường nào về mức lương tối thiểu, trần bảo hiểm, hay người
+                  phụ thuộc trong kỳ lương này.
                 </div>
               ) : (
                 <div className="payroll-table-container">
@@ -1761,24 +2101,34 @@ export function Payroll({
                         <th>Nhân viên</th>
                         <th>Mô tả chi tiết</th>
                         <th>Giá trị thực tế / Chuẩn</th>
-                        <th>Trạng thái</th>
+                        <th>{label('Trạng thái')}</th>
                         <th>Thao tác giải trình</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {anomalies.map(a => (
+                      {anomalies.map((a) => (
                         <tr key={a.id}>
                           <td>
-                            <span className={`badge ${a.severity === 'CRITICAL' ? 'badge-danger' : a.severity === 'WARNING' ? 'badge-warning' : 'badge-info'}`}>
+                            <span
+                              className={`badge ${a.severity === 'CRITICAL' ? 'badge-danger' : a.severity === 'WARNING' ? 'badge-warning' : 'badge-info'}`}
+                            >
                               {a.severity}
                             </span>
                           </td>
-                          <td><code>{a.anomalyCode}</code></td>
-                          <td>{a.fullName} ({a.employeeCode})</td>
-                          <td>{a.description}</td>
-                          <td>{a.actualValue} / <span className="text-muted">{a.expectedValue}</span></td>
                           <td>
-                            <span className={`badge ${a.resolutionStatus === 'RESOLVED' ? 'badge-success' : 'badge-warning'}`}>
+                            <code>{a.anomalyCode}</code>
+                          </td>
+                          <td>
+                            {a.fullName} ({a.employeeCode})
+                          </td>
+                          <td>{a.description}</td>
+                          <td>
+                            {a.actualValue} / <span className="text-muted">{a.expectedValue}</span>
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${a.resolutionStatus === 'RESOLVED' ? 'badge-success' : 'badge-warning'}`}
+                            >
                               {a.resolutionStatus}
                             </span>
                           </td>
@@ -1806,13 +2156,20 @@ export function Payroll({
           {/* 5. FORMAL REPORTS LIFECYCLE VIEW */}
           {complianceSubTab === 'reports' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
                 <h4>Danh sách Báo cáo Tuân thủ & Quyết toán Chính thức</h4>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button
                     type="button"
                     className="button-secondary"
-                    onClick={() => handleGenerateComplianceReport('PIT_MONTHLY', `Báo cáo thuế TNCN ${selectedPeriod?.code}`)}
+                    onClick={() =>
+                      handleGenerateComplianceReport(
+                        'PIT_MONTHLY',
+                        `Báo cáo thuế TNCN ${selectedPeriod?.code}`,
+                      )
+                    }
                     disabled={!selectedPeriod}
                   >
                     + Lập báo cáo Thuế TNCN
@@ -1820,7 +2177,12 @@ export function Payroll({
                   <button
                     type="button"
                     className="button-secondary"
-                    onClick={() => handleGenerateComplianceReport('SI_MONTHLY', `Báo cáo BHXH ${selectedPeriod?.code}`)}
+                    onClick={() =>
+                      handleGenerateComplianceReport(
+                        'SI_MONTHLY',
+                        `Báo cáo BHXH ${selectedPeriod?.code}`,
+                      )
+                    }
                     disabled={!selectedPeriod}
                   >
                     + Lập báo cáo Bảo hiểm
@@ -1844,17 +2206,27 @@ export function Payroll({
                   <tbody>
                     {complianceReports.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="text-center text-muted">Chưa có báo cáo tuân thủ chính thức nào được lập.</td>
+                        <td colSpan={7} className="text-center text-muted">
+                          Chưa có báo cáo tuân thủ chính thức nào được lập.
+                        </td>
                       </tr>
                     ) : (
-                      complianceReports.map(r => (
+                      complianceReports.map((r) => (
                         <tr key={r.id}>
-                          <td><strong>{r.reportCode}</strong></td>
-                          <td>{r.title}</td>
-                          <td><code>{r.reportType}</code></td>
-                          <td>{r.periodStart} ~ {r.periodEnd}</td>
                           <td>
-                            <span className={`badge ${r.status === 'LOCKED' ? 'badge-dark' : r.status === 'APPROVED' ? 'badge-success' : 'badge-warning'}`}>
+                            <strong>{r.reportCode}</strong>
+                          </td>
+                          <td>{r.title}</td>
+                          <td>
+                            <code>{r.reportType}</code>
+                          </td>
+                          <td>
+                            {r.periodStart} ~ {r.periodEnd}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${r.status === 'LOCKED' ? 'badge-dark' : r.status === 'APPROVED' ? 'badge-success' : 'badge-warning'}`}
+                            >
                               {r.status}
                             </span>
                           </td>
@@ -1875,7 +2247,12 @@ export function Payroll({
                                 <button
                                   type="button"
                                   className="button-secondary"
-                                  style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem', background: '#334155', color: '#fff' }}
+                                  style={{
+                                    fontSize: '0.8rem',
+                                    padding: '0.2rem 0.5rem',
+                                    background: '#334155',
+                                    color: '#fff',
+                                  }}
                                   onClick={() => handleLockReport(r.id)}
                                 >
                                   🔒 Khóa vĩnh viễn
@@ -1905,7 +2282,9 @@ export function Payroll({
           {/* 6. STATUTORY RULES VIEW */}
           {complianceSubTab === 'rules' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
                 <h4>Hệ thống Quy tắc Tuân thủ Pháp luật Việt Nam</h4>
                 <button
                   type="button"
@@ -1921,7 +2300,7 @@ export function Payroll({
                   <thead>
                     <tr>
                       <th>Loại quy tắc</th>
-                      <th>Mã</th>
+                      <th>{label('Mã')}</th>
                       <th>Tên quy tắc</th>
                       <th>Căn cứ pháp lý (Đã xác minh)</th>
                       <th>Ngày hiệu lực</th>
@@ -1929,15 +2308,30 @@ export function Payroll({
                     </tr>
                   </thead>
                   <tbody>
-                    {statutoryRules.map(rule => (
+                    {statutoryRules.map((rule) => (
                       <tr key={rule.id}>
-                        <td><code>{rule.ruleType}</code></td>
-                        <td><strong>{rule.ruleCode}</strong></td>
+                        <td>
+                          <code>{rule.ruleType}</code>
+                        </td>
+                        <td>
+                          <strong>{rule.ruleCode}</strong>
+                        </td>
                         <td>{rule.name}</td>
                         <td style={{ color: '#0369a1', fontWeight: 600 }}>{rule.legalReference}</td>
-                        <td>{rule.effectiveFrom} ~ {rule.effectiveTo || 'Hiện hành'}</td>
                         <td>
-                          <pre style={{ margin: 0, fontSize: '0.75rem', maxHeight: 80, overflow: 'auto', background: '#f8fafc', padding: '0.25rem' }}>
+                          {rule.effectiveFrom} ~ {rule.effectiveTo || 'Hiện hành'}
+                        </td>
+                        <td>
+                          <pre
+                            style={{
+                              margin: 0,
+                              fontSize: '0.75rem',
+                              maxHeight: 80,
+                              overflow: 'auto',
+                              background: '#f8fafc',
+                              padding: '0.25rem',
+                            }}
+                          >
                             {JSON.stringify(rule.parameters, null, 2)}
                           </pre>
                         </td>
@@ -1953,13 +2347,19 @@ export function Payroll({
 
       {/* MODAL: JOURNAL ENTRY DETAIL */}
       {selectedEntry && (
-        <dialog open className="dialog-modal" style={{ maxWidth: 750 }}>
+        <SlideDialog label={tr.entryDetail} onClose={() => setSelectedEntry(null)}>
           <div className="payroll-slip-detail-header">
             <div>
-              <h3>Chứng từ kế toán: {selectedEntry.entry.entryNumber}</h3>
-              <p className="text-muted">{selectedEntry.entry.description} | Ngày: {selectedEntry.entry.entryDate}</p>
+              <h3>
+                {tr.entryDetail}: {selectedEntry.entry.entryNumber}
+              </h3>
+              <p className="text-muted">
+                {selectedEntry.entry.description} | Ngày: {selectedEntry.entry.entryDate}
+              </p>
             </div>
-            <span className={`badge ${selectedEntry.entry.status === 'POSTED' ? 'badge-success' : 'badge-warning'}`}>
+            <span
+              className={`badge ${selectedEntry.entry.status === 'POSTED' ? 'badge-success' : 'badge-warning'}`}
+            >
               {selectedEntry.entry.status}
             </span>
           </div>
@@ -1972,13 +2372,15 @@ export function Payroll({
                   <th>Tên tài khoản</th>
                   <th>Nợ (Debit)</th>
                   <th>Có (Credit)</th>
-                  <th>Diễn giải</th>
+                  <th>{label('Diễn giải')}</th>
                 </tr>
               </thead>
               <tbody>
-                {selectedEntry.lines.map(line => (
+                {selectedEntry.lines.map((line) => (
                   <tr key={line.id}>
-                    <td><code>{line.accountCode}</code></td>
+                    <td>
+                      <code>{line.accountCode}</code>
+                    </td>
                     <td>{line.accountName}</td>
                     <td style={{ fontWeight: parseFloat(line.debitAmount) > 0 ? 600 : 400 }}>
                       {parseFloat(line.debitAmount) > 0 ? formatVND(line.debitAmount) : '—'}
@@ -1996,30 +2398,36 @@ export function Payroll({
                   <td style={{ color: '#2563eb' }}>{formatVND(selectedEntry.entry.totalDebit)}</td>
                   <td style={{ color: '#2563eb' }}>{formatVND(selectedEntry.entry.totalCredit)}</td>
                   <td>
-                    {selectedEntry.entry.totalDebit === selectedEntry.entry.totalCredit ? '✓ Cân đối' : '✗ Lệch'}
+                    {selectedEntry.entry.totalDebit === selectedEntry.entry.totalCredit
+                      ? '✓ Cân đối'
+                      : '✗ Lệch'}
                   </td>
                 </tr>
               </tfoot>
             </table>
           </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-            <button
-              type="button"
-              className="button-primary"
-              onClick={() => setSelectedEntry(null)}
-            >
-              Đóng
-            </button>
-          </div>
-        </dialog>
+        </SlideDialog>
       )}
 
       {/* MODAL: CREATE PERIOD */}
       {showCreatePeriod && (
-        <dialog open className="dialog-modal">
-          <h3>Mở kỳ lương mới</h3>
-          <form onSubmit={handleCreatePeriod}>
+        <SlideDialog
+          label={tr.createPeriod}
+          onClose={() => setShowCreatePeriod(false)}
+          closeDisabled={loading}
+          action={
+            <button
+              type="submit"
+              form="create-payroll-period"
+              className="button-primary"
+              disabled={loading}
+            >
+              {locale === 'vi' ? 'Khởi tạo kỳ lương' : 'Create payroll period'}
+            </button>
+          }
+        >
+          <h3>{tr.createPeriod}</h3>
+          <form id="create-payroll-period" onSubmit={handleCreatePeriod}>
             <div className="field">
               <label htmlFor="period-code">Mã kỳ (VD: KY-2026-02):</label>
               <input id="period-code" name="code" required />
@@ -2045,38 +2453,44 @@ export function Payroll({
               </div>
               <div className="field">
                 <label htmlFor="period-std">Ngày công tiêu chuẩn:</label>
-                <input id="period-std" name="standardWorkingDays" type="number" defaultValue={22} min={1} max={31} required />
+                <input
+                  id="period-std"
+                  name="standardWorkingDays"
+                  type="number"
+                  defaultValue={22}
+                  min={1}
+                  max={31}
+                  required
+                />
               </div>
             </div>
             <div className="field">
               <label htmlFor="period-notes">Ghi chú:</label>
               <textarea id="period-notes" name="notes" rows={2} />
             </div>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={() => setShowCreatePeriod(false)}
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                className="button-primary"
-                disabled={loading}
-              >
-                Khởi tạo kỳ lương
-              </button>
-            </div>
           </form>
-        </dialog>
+        </SlideDialog>
       )}
 
       {/* MODAL: CREATE COMPONENT */}
       {showCreateComponent && (
-        <dialog open className="dialog-modal">
-          <h3>Thêm cấu phần lương mới</h3>
-          <form onSubmit={handleCreateComponent}>
+        <SlideDialog
+          label={tr.createComponent}
+          onClose={() => setShowCreateComponent(false)}
+          closeDisabled={loading}
+          action={
+            <button
+              type="submit"
+              form="create-pay-component"
+              className="button-primary"
+              disabled={loading}
+            >
+              {locale === 'vi' ? 'Lưu cấu phần' : 'Save component'}
+            </button>
+          }
+        >
+          <h3>{tr.createComponent}</h3>
+          <form id="create-pay-component" onSubmit={handleCreateComponent}>
             <div className="field">
               <label htmlFor="comp-code">Mã cấu phần (VD: PHU_CAP_AN_TRUA):</label>
               <input id="comp-code" name="code" required />
@@ -2089,10 +2503,10 @@ export function Payroll({
               <div className="field">
                 <label htmlFor="comp-type">Phân loại:</label>
                 <select id="comp-type" name="type" required>
-                  <option value="ALLOWANCE">Phụ cấp</option>
-                  <option value="BONUS">Thưởng</option>
-                  <option value="DEDUCTION">Khấu trừ</option>
-                  <option value="BASE_SALARY">Lương cơ bản</option>
+                  <option value="ALLOWANCE">{label('Phụ cấp')}</option>
+                  <option value="BONUS">{label('Thưởng')}</option>
+                  <option value="DEDUCTION">{label('Khấu trừ')}</option>
+                  <option value="BASE_SALARY">{label('Lương cơ bản')}</option>
                 </select>
               </div>
               <div className="field">
@@ -2106,9 +2520,19 @@ export function Payroll({
             </div>
             <div className="field">
               <label htmlFor="comp-amt">Số tiền mặc định (VND):</label>
-              <input id="comp-amt" name="defaultAmount" type="number" defaultValue={0} min={0} required />
+              <input
+                id="comp-amt"
+                name="defaultAmount"
+                type="number"
+                defaultValue={0}
+                min={0}
+                required
+              />
             </div>
-            <div className="field-checkboxes" style={{ display: 'flex', gap: '1.5rem', margin: '0.75rem 0' }}>
+            <div
+              className="field-checkboxes"
+              style={{ display: 'flex', gap: '1.5rem', margin: '0.75rem 0' }}
+            >
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <input name="isTaxable" type="checkbox" defaultChecked />
                 Tính thuế TNCN
@@ -2122,37 +2546,29 @@ export function Payroll({
               <label htmlFor="comp-desc">Mô tả / Căn cứ:</label>
               <textarea id="comp-desc" name="description" rows={2} />
             </div>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={() => setShowCreateComponent(false)}
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                className="button-primary"
-                disabled={loading}
-              >
-                Lưu cấu phần
-              </button>
-            </div>
           </form>
-        </dialog>
+        </SlideDialog>
       )}
 
       {/* MODAL: SLIP DETAIL */}
       {selectedSlip && (
-        <dialog open className="dialog-modal" style={{ maxWidth: 650 }}>
+        <SlideDialog
+          label={tr.slipDetail}
+          onClose={() => setSelectedSlip(null)}
+          action={
+            <button type="button" className="button-primary" onClick={() => window.print()}>
+              {locale === 'vi' ? '🖨 In phiếu lương' : '🖨 Print payslip'}
+            </button>
+          }
+        >
           <div className="payroll-slip-detail-header">
             <div>
               <h3>Phiếu lương: {selectedSlip.fullName}</h3>
-              <p className="text-muted">{selectedSlip.departmentName} — {selectedSlip.positionTitle}</p>
+              <p className="text-muted">
+                {selectedSlip.departmentName} — {selectedSlip.positionTitle}
+              </p>
             </div>
-            <span className="payroll-status-badge APPROVED">
-              Chế độ: {selectedSlip.salaryMode}
-            </span>
+            <span className="payroll-status-badge APPROVED">Chế độ: {selectedSlip.salaryMode}</span>
           </div>
 
           <div className="payroll-slip-breakdown">
@@ -2167,53 +2583,47 @@ export function Payroll({
               <span>{formatVND(selectedSlip.baseSalary)}</span>
             </div>
             <div className="payroll-item-row">
-              <span>Lương thực tế (theo {selectedSlip.actualWorkingDays}/{selectedSlip.standardDays} ngày công):</span>
+              <span>
+                Lương thực tế (theo {selectedSlip.actualWorkingDays}/{selectedSlip.standardDays}{' '}
+                ngày công):
+              </span>
               <strong>{formatVND(selectedSlip.proratedBaseSalary)}</strong>
             </div>
 
-            {selectedSlipItems.map(item => (
+            {selectedSlipItems.map((item) => (
               <div key={item.id} className="payroll-item-row">
                 <span>
                   {item.componentName}
-                  {item.notes && <small style={{ display: 'block', color: '#64748b' }}>{item.notes}</small>}
+                  {item.notes && (
+                    <small style={{ display: 'block', color: '#64748b' }}>{item.notes}</small>
+                  )}
                 </span>
                 <span style={{ color: item.type === 'DEDUCTION' ? '#ef4444' : '#0f172a' }}>
-                  {item.type === 'DEDUCTION' ? '-' : '+'}{formatVND(item.amount)}
+                  {item.type === 'DEDUCTION' ? '-' : '+'}
+                  {formatVND(item.amount)}
                 </span>
               </div>
             ))}
 
-            <div className="payroll-item-row" style={{ borderTop: '1px solid #cbd5e1', paddingTop: '0.5rem' }}>
+            <div
+              className="payroll-item-row"
+              style={{ borderTop: '1px solid #cbd5e1', paddingTop: '0.5rem' }}
+            >
               <span>Tổng thu nhập Gross:</span>
               <strong>{formatVND(selectedSlip.grossPay)}</strong>
             </div>
             <div className="payroll-item-row">
               <span>Tổng các khoản giảm trừ:</span>
-              <strong style={{ color: '#ef4444' }}>-{formatVND(selectedSlip.totalDeductions)}</strong>
+              <strong style={{ color: '#ef4444' }}>
+                -{formatVND(selectedSlip.totalDeductions)}
+              </strong>
             </div>
             <div className="payroll-item-row total">
               <span>THỰC LĨNH (NET):</span>
               <span style={{ color: '#16a34a' }}>{formatVND(selectedSlip.netPay)}</span>
             </div>
           </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', gap: '0.5rem' }}>
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={() => window.print()}
-            >
-              🖨 In phiếu lương
-            </button>
-            <button
-              type="button"
-              className="button-primary"
-              onClick={() => setSelectedSlip(null)}
-            >
-              Đã hiểu
-            </button>
-          </div>
-        </dialog>
+        </SlideDialog>
       )}
     </div>
   );

@@ -2,24 +2,24 @@
 
 API prefix: `/api/auth` and `/api/organizations/:organizationId/invitations`. JSON responses; session cookies; all changing endpoints require appropriate CSRF defense. Server must validate org membership on every call. Error responses use stable error codes; avoid leaking account existence.
 
-| Verb | Path | Auth | Operation |
-|---|---|---|---|
-| POST | `/api/auth/login` | Public, rate-limited | `{email,password}` → session cookie and safe user profile |
-| POST | `/api/auth/logout` | Session | Invalidate session; clear cookie |
-| GET | `/api/auth/me` | Session | Identity, active organization and permissions |
-| GET | `/api/auth/profile/avatar` | Session | Current account avatar URL or `null`; independent of employee linkage |
-| POST | `/api/auth/profile/avatar` | Session + CSRF (and MFA when required) | `{fileName,mimeType,contentBase64}` → save the current user's JPG/PNG avatar (max 10MB) |
-| GET | `/api/auth/profile/avatar/content` | Session | Stream only the signed-in user's private avatar |
-| POST | `/api/auth/forgot-password` | Public, rate-limited | `{email}` → `202 {message:"If the account exists, instructions will be sent."}` |
-| POST | `/api/auth/reset-password` | Public, rate-limited | `{token,newPassword}` → 204, invalidate other sessions |
-| GET | `/api/auth/invitations/validate?token=...` | Public, rate-limited | Return only safe status: valid/invalid/expired (no email enumeration) |
-| POST | `/api/auth/invitations/accept` | Token possession | `{token,fullName,password}` for new account; existing-account acceptance must require verified matching user session |
-| POST | `/api/organizations/:organizationId/invitations` | HR/Admin in same org | `{email,role}` → 202; one-time link via email adapter |
-| GET | `/api/organizations/:organizationId/invitations` | HR/Admin in same org | Paginated invitations without token/hash; includes an avatar URL only when the invitee is an active member of that organization |
-| POST | `/api/organizations/:organizationId/invitations/:id/revoke` | HR/Admin in same org | Revoke pending invitation |
-| POST | `/api/organizations/:organizationId/invitations/:id/resend` | HR/Admin in same org | Reissue token, invalidating previous |
+| Verb | Path                                                        | Auth                                   | Operation                                                                                                                       |
+| ---- | ----------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| POST | `/api/auth/login`                                           | Public, rate-limited                   | `{email,password}` → session cookie and safe user profile                                                                       |
+| POST | `/api/auth/logout`                                          | Session                                | Invalidate session; clear cookie                                                                                                |
+| GET  | `/api/auth/me`                                              | Session                                | Identity, active organization and permissions                                                                                   |
+| GET  | `/api/auth/profile/avatar`                                  | Session                                | Current account avatar URL or `null`; independent of employee linkage                                                           |
+| POST | `/api/auth/profile/avatar`                                  | Session + CSRF (and MFA when required) | `{fileName,mimeType,contentBase64}` → save the current user's JPG/PNG avatar (max 10MB)                                         |
+| GET  | `/api/auth/profile/avatar/content`                          | Session                                | Stream only the signed-in user's private avatar                                                                                 |
+| POST | `/api/auth/forgot-password`                                 | Public, rate-limited                   | `{email}` → `202 {message:"If the account exists, instructions will be sent."}`                                                 |
+| POST | `/api/auth/reset-password`                                  | Public, rate-limited                   | `{token,newPassword}` → 204, invalidate other sessions                                                                          |
+| GET  | `/api/auth/invitations/validate?token=...`                  | Public, rate-limited                   | Return only safe status: valid/invalid/expired (no email enumeration)                                                           |
+| POST | `/api/auth/invitations/accept`                              | Token possession                       | `{token,fullName,password}` for new account; existing-account acceptance must require verified matching user session            |
+| POST | `/api/organizations/:organizationId/invitations`            | HR/Admin in same org                   | `{email,role}` → 202; one-time link via email adapter                                                                           |
+| GET  | `/api/organizations/:organizationId/invitations`            | HR/Admin in same org                   | Paginated invitations without token/hash; includes an avatar URL only when the invitee is an active member of that organization |
+| POST | `/api/organizations/:organizationId/invitations/:id/revoke` | HR/Admin in same org                   | Revoke pending invitation                                                                                                       |
+| POST | `/api/organizations/:organizationId/invitations/:id/resend` | HR/Admin in same org                   | Reissue token, invalidating previous                                                                                            |
 
-No public `POST /api/auth/register`; public account creation requires invitation acceptance. The organization and role in an invitation cannot be overridden by request payloads. User cannot self-assign HR or ADMIN. 
+No public `POST /api/auth/register`; public account creation requires invitation acceptance. The organization and role in an invitation cannot be overridden by request payloads. User cannot self-assign HR or ADMIN.
 
 Use HTTP 400 for invalid input, 401 for unauthenticated, 403 for unauthorized, 409 for existing/incompatible membership where no information leaks to anonymous callers, 410 for expired/used invite (when safe), and 429 for rate limiting. Schema validation errors may include `fields`, an array of invalid field paths, but must never include submitted values. HTTP status choices may be adapted to the selected framework provided security invariants remain intact.
 
@@ -29,14 +29,14 @@ Use HTTP 400 for invalid input, 401 for unauthenticated, 403 for unauthorized, 4
 
 The CSRF bootstrap response advertises `passkeysAvailable` for HTTPS origins and local `localhost` development. Passkeys are available to active Admin and HR memberships with an enrolled Authenticator.
 
-| Verb | Path | Requirement and result |
-|---|---|---|
-| POST | `/api/auth/passkeys/login/options` | Public and rate-limited. Returns discoverable WebAuthn request options. |
-| POST | `/api/auth/passkeys/login/verify` | Accepts `{challenge,response}`. Issues a verified session and the usual profile after a valid assertion. |
-| GET | `/api/auth/passkeys` | Verified owner. Returns `{items}` with credential IDs and creation/last-use timestamps for the current relying party. |
-| POST | `/api/auth/passkeys/register/options` | Verified owner with recent reauthentication. Returns WebAuthn creation options. |
-| POST | `/api/auth/passkeys/register/verify` | Same requirement. Accepts `{challenge,response}` and returns 204 after registration. |
-| POST | `/api/auth/passkeys/remove` | Same requirement. Accepts `{id}`, withdraws that passkey and revokes other sessions. Returns 204. |
+| Verb | Path                                  | Requirement and result                                                                                                |
+| ---- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| POST | `/api/auth/passkeys/login/options`    | Public and rate-limited. Returns discoverable WebAuthn request options.                                               |
+| POST | `/api/auth/passkeys/login/verify`     | Accepts `{challenge,response}`. Issues a verified session and the usual profile after a valid assertion.              |
+| GET  | `/api/auth/passkeys`                  | Verified owner. Returns `{items}` with credential IDs and creation/last-use timestamps for the current relying party. |
+| POST | `/api/auth/passkeys/register/options` | Verified owner with recent reauthentication. Returns WebAuthn creation options.                                       |
+| POST | `/api/auth/passkeys/register/verify`  | Same requirement. Accepts `{challenge,response}` and returns 204 after registration.                                  |
+| POST | `/api/auth/passkeys/remove`           | Same requirement. Accepts `{id}`, withdraws that passkey and revokes other sessions. Returns 204.                     |
 
 The server verifies the origin, relying-party ID and device user verification. Challenges expire after five minutes, are bound to the requesting browser and operation, and are consumed atomically. Registration also binds the challenge to the current session. Password plus Authenticator and recovery codes remain available. Resetting the Authenticator through MFA recovery revokes the account's associated passkeys.
 
@@ -53,16 +53,16 @@ The server verifies the origin, relying-party ID and device user verification. C
 
 All routes below use `/api/organizations/:organizationId/attendance`. Use the same session and CSRF rules as the other organization APIs. Employee resolution and review scope are tenant-bound. Admin/HR configure catalogs and schedules. Managers review within their existing management scope. Employees record their own punches. A reviewer cannot approve or reject their own request or a request they submitted on behalf of someone else.
 
-| Method | Relative path | Operation |
-|---|---|---|
-| GET | `/employees?q=&page=` · `/catalog` | Scope-filtered employee list and attendance catalogs. |
-| GET | `/employees/:employeeId/ledger?from=&to=&timeZone=` | Calendar (shift local dates), raw/effective punches, correction history, leave (requested time zone, UTC default), and balances. |
-| PUT | `/shifts/:id` · `/leave-types/:id` | Create with `new` or replace the named configuration. |
-| PUT/DELETE | `/employees/:employeeId/schedule/:id` | Add (`new`), replace or remove future, unpunched shift/off assignments. Shifts snapshot their hours, time zone and thresholds. Ambiguous local times require an explicit ISO offset. |
-| POST | `/punches/:scheduleId` | `{action:"IN"\|"OUT"}` only. Server provides time and checks eligibility. |
-| POST | `/corrections/:scheduleId` · `/corrections/:id/review` | Propose an effective in/out pair after shift end, or approve/reject with a reason. Raw punches stay intact. |
-| PUT | `/employees/:employeeId/balances/:leaveTypeId` | Set total authorized allowance minutes with a reason. |
-| POST | `/employees/:employeeId/leave` · `/leave/:id/review` · `/leave/:id/cancel` | Submit an explicit time interval, approve/reject, or cancel with a reason. Pending cancellation is available to the requester/employee and scoped reviewers. Approved cancellation requires a different authorized reviewer with recent authentication. |
+| Method     | Relative path                                                              | Operation                                                                                                                                                                                                                                               |
+| ---------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET        | `/employees?q=&page=` · `/catalog`                                         | Scope-filtered employee list and attendance catalogs.                                                                                                                                                                                                   |
+| GET        | `/employees/:employeeId/ledger?from=&to=&timeZone=`                        | Calendar (shift local dates), raw/effective punches, correction history, leave (requested time zone, UTC default), and balances.                                                                                                                        |
+| PUT        | `/shifts/:id` · `/leave-types/:id`                                         | Create with `new` or replace the named configuration.                                                                                                                                                                                                   |
+| PUT/DELETE | `/employees/:employeeId/schedule/:id`                                      | Add (`new`), replace or remove future, unpunched shift/off assignments. Shifts snapshot their hours, time zone and thresholds. Ambiguous local times require an explicit ISO offset.                                                                    |
+| POST       | `/punches/:scheduleId`                                                     | `{action:"IN"\|"OUT"}` only. Server provides time and checks eligibility.                                                                                                                                                                               |
+| POST       | `/corrections/:scheduleId` · `/corrections/:id/review`                     | Propose an effective in/out pair after shift end, or approve/reject with a reason. Raw punches stay intact.                                                                                                                                             |
+| PUT        | `/employees/:employeeId/balances/:leaveTypeId`                             | Set total authorized allowance minutes with a reason.                                                                                                                                                                                                   |
+| POST       | `/employees/:employeeId/leave` · `/leave/:id/review` · `/leave/:id/cancel` | Submit an explicit time interval, approve/reject, or cancel with a reason. Pending cancellation is available to the requester/employee and scoped reviewers. Approved cancellation requires a different authorized reviewer with recent authentication. |
 
 Late, early departure and after-shift overtime indicators are computed only when their respective shift thresholds are configured. Recorded minutes describe elapsed timestamps. Break deductions, payroll rounding, overtime payment, accrual, holidays, expiry and carryover require approved business rules. Tracked leave approval requires an explicit `chargeMinutes`; available minutes are allowance minus approved charges, so replay cannot double-charge and cancellation releases the allocation. Existing scheduled work stays visible under approved leave. Worked time and approved leave conflicts are exposed for reconciliation.
 
@@ -147,36 +147,37 @@ Errors also include `UNIT_ADMIN_UNAVAILABLE`, `FORBIDDEN`, `MFA_REQUIRED`, `REAU
 
 All payroll endpoints operate under `/api/organizations/:organizationId/payroll`. Tenant isolation is strictly enforced via `organization_id` on all tables, operations, and foreign keys. All monetary calculations use fixed-point decimal arithmetic (PostgreSQL `numeric(15, 2)` and exact integer cent mathematics) to prevent any floating-point inaccuracies. No speculative tax or insurance rates are assumed without approved policy.
 
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/catalog` | Admin, HR | List active salary components for payroll configuration. |
-| GET | `/components` | Admin, HR | Paginated salary components with search (`q`) and type filter (`type`). |
-| POST | `/components` | Admin, HR | Create salary component (`code`, `name`, `type`, `calculationType`, `isTaxable`, `isStatutory`, `defaultAmount`, `active`, `description`). |
-| PUT | `/components/:id` | Admin, HR | Update component attributes. Code is immutable. |
-| GET | `/employees/:employeeId/salary-profile` | Admin, HR, Manager (in scope), Employee (self) | Fetch active employee salary profile, gross/net mode, base salary, and assigned recurring components. |
-| PUT | `/employees/:employeeId/salary-profile` | Admin, HR (reauth) | Create/update employee salary profile and recurring allowance/deduction components. Each save creates a new version preserving history. Sensitive values are never logged to console or audit metadata. |
-| GET | `/periods` | Admin, HR, Manager | Paginated payroll periods with status filter (`DRAFT`, `UNDER_REVIEW`, `APPROVED`, `CLOSED`). |
-| POST | `/periods` | Admin, HR | Create a new payroll period in `DRAFT` status (`code`, `name`, `startDate`, `endDate`, `standardWorkingDays`, `paymentDate`, `notes`). |
-| GET | `/periods/:id` | Admin, HR, Manager | Retrieve period detail and aggregate summary (slips count, total gross, total net, employee count). |
-| POST | `/periods/:id/calculate` | Admin, HR (reauth) | Idempotent draft calculation integrating approved attendance punches, approved leaves, and recurring components. Blocked on `CLOSED` periods (409 `PAYROLL_PERIOD_CLOSED`). |
-| PATCH | `/periods/:id/status` | Admin, HR (reauth) | Lifecycle transition: `DRAFT` → `UNDER_REVIEW` → `APPROVED` → `CLOSED`. Setting `CLOSED` permanently locks the period and its slips via database trigger and application check. |
-| GET | `/periods/:id/slips` | Admin, HR, Manager (in scope), Employee (self) | Paginated list of payslips within the specified period. Filtered by role and management scope. |
-| GET | `/slips/:id` | Admin, HR, Manager (in scope), Employee (self) | Itemized payslip detail with breakdown lines (base salary, allowances, bonuses, deductions, overtime). |
-| GET | `/my-slips` | Authenticated employee | Self-service payslip history for the logged-in user across all accessible periods. |
+| Method | Relative path                           | Access                                         | Operation                                                                                                                                                                                               |
+| ------ | --------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/catalog`                              | Admin, HR                                      | List active salary components for payroll configuration.                                                                                                                                                |
+| GET    | `/components`                           | Admin, HR                                      | Paginated salary components with search (`q`) and type filter (`type`).                                                                                                                                 |
+| POST   | `/components`                           | Admin, HR                                      | Create salary component (`code`, `name`, `type`, `calculationType`, `isTaxable`, `isStatutory`, `defaultAmount`, `active`, `description`).                                                              |
+| PUT    | `/components/:id`                       | Admin, HR                                      | Update component attributes. Code is immutable.                                                                                                                                                         |
+| GET    | `/employees/:employeeId/salary-profile` | Admin, HR, Manager (in scope), Employee (self) | Fetch active employee salary profile, gross/net mode, base salary, and assigned recurring components.                                                                                                   |
+| PUT    | `/employees/:employeeId/salary-profile` | Admin, HR (reauth)                             | Create/update employee salary profile and recurring allowance/deduction components. Each save creates a new version preserving history. Sensitive values are never logged to console or audit metadata. |
+| GET    | `/periods`                              | Admin, HR, Manager                             | Paginated payroll periods with status filter (`DRAFT`, `UNDER_REVIEW`, `APPROVED`, `CLOSED`).                                                                                                           |
+| POST   | `/periods`                              | Admin, HR                                      | Create a new payroll period in `DRAFT` status (`code`, `name`, `startDate`, `endDate`, `standardWorkingDays`, `paymentDate`, `notes`).                                                                  |
+| GET    | `/periods/:id`                          | Admin, HR, Manager                             | Retrieve period detail and aggregate summary (slips count, total gross, total net, employee count).                                                                                                     |
+| POST   | `/periods/:id/calculate`                | Admin, HR (reauth)                             | Idempotent draft calculation integrating approved attendance punches, approved leaves, and recurring components. Blocked on `CLOSED` periods (409 `PAYROLL_PERIOD_CLOSED`).                             |
+| PATCH  | `/periods/:id/status`                   | Admin, HR (reauth)                             | Lifecycle transition: `DRAFT` → `UNDER_REVIEW` → `APPROVED` → `CLOSED`. Setting `CLOSED` permanently locks the period and its slips via database trigger and application check.                         |
+| GET    | `/periods/:id/slips`                    | Admin, HR, Manager (in scope), Employee (self) | Paginated list of payslips within the specified period. Filtered by role and management scope.                                                                                                          |
+| GET    | `/slips/:id`                            | Admin, HR, Manager (in scope), Employee (self) | Itemized payslip detail with breakdown lines (base salary, allowances, bonuses, deductions, overtime).                                                                                                  |
+| GET    | `/my-slips`                             | Authenticated employee                         | Self-service payslip history for the logged-in user across all accessible periods.                                                                                                                      |
 
 ### PAY-001 Enhancement — Salary History & Social Insurance (BHXH)
 
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/employees/:employeeId/salary-history` | Admin, HR, Manager (in scope), Employee (self) | Paginated history of all salary profile versions for the employee, including effective dates, salary mode, currency, and recurring components. Applied salary (profile) vs. received salary (payslip) are distinct. |
-| GET | `/my-salary-profile` | Authenticated employee | Self-service shortcut: returns current active salary profile, components, and last 6 historical entries for the calling user's linked employee record. |
-| GET | `/employees/:employeeId/adjustment-log` | Admin, HR, Manager (in scope), Employee (self) | Paginated audit log of salary profile saves: action type, effective dates, salary mode, actor name, and reason. No monetary values stored in audit. |
-| GET | `/employees/:employeeId/social-insurance` | Admin, HR, Manager (in scope), Employee (self) | Current BHXH profile (mã BHXH, mã BHYT, ngày tham gia, mức lương đóng, trạng thái) and last 12 monthly contributions. |
-| PUT | `/employees/:employeeId/social-insurance` | Admin, HR (reauth) | Create/update employee BHXH profile. Deactivates the current ACTIVE record and inserts a new one to preserve history. Audit log written (no salary amounts). |
-| GET | `/employees/:employeeId/social-insurance/contributions` | Admin, HR, Manager (in scope), Employee (self) | Full paginated BHXH contribution history (tháng, mức lương đóng, tỷ lệ, số tiền, trạng thái xác nhận). |
-| POST | `/employees/:employeeId/social-insurance/contributions` | Admin, HR (reauth) | Record or update a monthly BHXH contribution. `contributionMonth` must be the first of the month. On conflict for the same month, updates the existing row (supports adjustments). Rates and amounts are entered by HR/Admin; no formula assumed. |
+| Method | Relative path                                           | Access                                         | Operation                                                                                                                                                                                                                                         |
+| ------ | ------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/employees/:employeeId/salary-history`                 | Admin, HR, Manager (in scope), Employee (self) | Paginated history of all salary profile versions for the employee, including effective dates, salary mode, currency, and recurring components. Applied salary (profile) vs. received salary (payslip) are distinct.                               |
+| GET    | `/my-salary-profile`                                    | Authenticated employee                         | Self-service shortcut: returns current active salary profile, components, and last 6 historical entries for the calling user's linked employee record.                                                                                            |
+| GET    | `/employees/:employeeId/adjustment-log`                 | Admin, HR, Manager (in scope), Employee (self) | Paginated audit log of salary profile saves: action type, effective dates, salary mode, actor name, and reason. No monetary values stored in audit.                                                                                               |
+| GET    | `/employees/:employeeId/social-insurance`               | Admin, HR, Manager (in scope), Employee (self) | Current BHXH profile (mã BHXH, mã BHYT, ngày tham gia, mức lương đóng, trạng thái) and last 12 monthly contributions.                                                                                                                             |
+| PUT    | `/employees/:employeeId/social-insurance`               | Admin, HR (reauth)                             | Create/update employee BHXH profile. Deactivates the current ACTIVE record and inserts a new one to preserve history. Audit log written (no salary amounts).                                                                                      |
+| GET    | `/employees/:employeeId/social-insurance/contributions` | Admin, HR, Manager (in scope), Employee (self) | Full paginated BHXH contribution history (tháng, mức lương đóng, tỷ lệ, số tiền, trạng thái xác nhận).                                                                                                                                            |
+| POST   | `/employees/:employeeId/social-insurance/contributions` | Admin, HR (reauth)                             | Record or update a monthly BHXH contribution. `contributionMonth` must be the first of the month. On conflict for the same month, updates the existing row (supports adjustments). Rates and amounts are entered by HR/Admin; no formula assumed. |
 
 **Invariants:**
+
 - Monetary fields use `numeric(15,2)`; never `float`. Rates use `numeric(5,4)`.
 - Salary profiles are append-only (each PUT creates a new row; old rows are retained).
 - BHXH profiles are append-only (PUT deactivates the current record and inserts a new one).
@@ -191,30 +192,31 @@ Migration `016_salary_si_history.sql` (additive) creates `employee_social_insura
 
 All endpoints operate under `/api/organizations/:organizationId/payroll`. Strict RBAC restricts financial accounting and reconciliation mutations to `ADMIN` and `HR`. All monetary figures use exact decimal representation (`numeric(15,2)` in PostgreSQL and integer cents arithmetic in TypeScript).
 
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| POST | `/accounting/accounts/seed-defaults` | Admin, HR | Idempotently seeds default standard chart of accounts (VAS 3341, 6422, 6421, 622, 3383, 3384, 3386, 3382, 3335, 1121, 1111) and posting rules. |
-| GET | `/accounting/accounts` | Admin, HR | Paginated chart of accounts with search (`q`), type filter (`type`), and active status filter (`isActive`). |
-| POST | `/accounting/accounts` | Admin, HR | Create accounting account (`code`, `name`, `type`, `description`, `isActive`). Code is unique per organization. |
-| PUT | `/accounting/accounts/:id` | Admin, HR | Update account attributes (`name`, `description`, `isActive`). Account code and type are immutable once created. |
-| GET | `/accounting/rules` | Admin, HR | List active payroll posting rules with joined account and department details. |
-| POST | `/accounting/rules` | Admin, HR | Create posting rule (`ruleCode`, `name`, `componentType`, `departmentId`, `debitAccountId`, `creditAccountId`, `isActive`). |
-| PUT | `/accounting/rules/:id` | Admin, HR | Update posting rule attributes (`name`, `debitAccountId`, `creditAccountId`, `isActive`). |
-| POST | `/periods/:id/accounting/generate` | Admin, HR | Generate balanced double-entry journal entry from an `APPROVED` or `CLOSED` payroll period. Enforces `totalDebit == totalCredit` balancing. Reject unapproved periods (409 `PAYROLL_PERIOD_NOT_APPROVED_OR_CLOSED`). |
-| GET | `/periods/:id/accounting/entries` | Admin, HR | List journal entries generated for the specified payroll period. |
-| GET | `/accounting/entries/:entryId` | Admin, HR | Detailed journal entry voucher with itemized debit and credit lines, account codes, names, and department allocation. |
-| POST | `/accounting/entries/:entryId/post` | Admin, HR | Transition journal entry from `DRAFT` to `POSTED`. Once posted, entries are locked and immutable via database trigger. |
-| POST | `/accounting/entries/:entryId/reverse` | Admin, HR | Reverse a posted journal entry. Creates a linked reversal entry with opposite Debit/Credit lines, updates original to `REVERSED`, and records audit trail. |
-| POST | `/periods/:id/disbursements` | Admin, HR | Record or import payment disbursements batch for a payroll period with unique transaction codes and bank info. |
-| GET | `/periods/:id/disbursements` | Admin, HR | Paginated list of payment disbursements for the specified period. |
-| POST | `/periods/:id/reconcile` | Admin, HR | Run reconciliation comparing approved payroll slips vs completed disbursements. Detects variances (`MATCHED`, `UNPAID`, `UNDERPAID`, `OVERPAID`, `DUPLICATE`, `ORPHAN_PAYMENT`), updates period liabilities, and saves discrepancy items. |
-| GET | `/periods/:id/reconciliation` | Admin, HR | Retrieve reconciliation summary, totals, and list of discrepancy items. |
-| PATCH | `/reconciliation/discrepancies/:id` | Admin, HR | Update discrepancy resolution status (`PENDING`, `INVESTIGATING`, `ADJUSTED`, `RESOLVED`, `IGNORED`) with resolution notes and audit trail. |
-| GET | `/periods/:id/liabilities` | Admin, HR | Retrieve payroll liabilities snapshot for the period (beginning balance, incurred payable, paid, remaining ending balance, status). |
-| GET | `/liabilities/summary` | Admin, HR | Retrieve historical liabilities ledger across all payroll periods. |
-| GET | `/periods/:id/accounting/export` | Admin, HR | Export accounting data in UTF-8 CSV with BOM for Excel (`type=journal`, `reconciliation`, `liabilities`, `disbursements`). Read-only; does not mutate status. |
+| Method | Relative path                          | Access    | Operation                                                                                                                                                                                                                                 |
+| ------ | -------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/accounting/accounts/seed-defaults`   | Admin, HR | Idempotently seeds default standard chart of accounts (VAS 3341, 6422, 6421, 622, 3383, 3384, 3386, 3382, 3335, 1121, 1111) and posting rules.                                                                                            |
+| GET    | `/accounting/accounts`                 | Admin, HR | Paginated chart of accounts with search (`q`), type filter (`type`), and active status filter (`isActive`).                                                                                                                               |
+| POST   | `/accounting/accounts`                 | Admin, HR | Create accounting account (`code`, `name`, `type`, `description`, `isActive`). Code is unique per organization.                                                                                                                           |
+| PUT    | `/accounting/accounts/:id`             | Admin, HR | Update account attributes (`name`, `description`, `isActive`). Account code and type are immutable once created.                                                                                                                          |
+| GET    | `/accounting/rules`                    | Admin, HR | List active payroll posting rules with joined account and department details.                                                                                                                                                             |
+| POST   | `/accounting/rules`                    | Admin, HR | Create posting rule (`ruleCode`, `name`, `componentType`, `departmentId`, `debitAccountId`, `creditAccountId`, `isActive`).                                                                                                               |
+| PUT    | `/accounting/rules/:id`                | Admin, HR | Update posting rule attributes (`name`, `debitAccountId`, `creditAccountId`, `isActive`).                                                                                                                                                 |
+| POST   | `/periods/:id/accounting/generate`     | Admin, HR | Generate balanced double-entry journal entry from an `APPROVED` or `CLOSED` payroll period. Enforces `totalDebit == totalCredit` balancing. Reject unapproved periods (409 `PAYROLL_PERIOD_NOT_APPROVED_OR_CLOSED`).                      |
+| GET    | `/periods/:id/accounting/entries`      | Admin, HR | List journal entries generated for the specified payroll period.                                                                                                                                                                          |
+| GET    | `/accounting/entries/:entryId`         | Admin, HR | Detailed journal entry voucher with itemized debit and credit lines, account codes, names, and department allocation.                                                                                                                     |
+| POST   | `/accounting/entries/:entryId/post`    | Admin, HR | Transition journal entry from `DRAFT` to `POSTED`. Once posted, entries are locked and immutable via database trigger.                                                                                                                    |
+| POST   | `/accounting/entries/:entryId/reverse` | Admin, HR | Reverse a posted journal entry. Creates a linked reversal entry with opposite Debit/Credit lines, updates original to `REVERSED`, and records audit trail.                                                                                |
+| POST   | `/periods/:id/disbursements`           | Admin, HR | Record or import payment disbursements batch for a payroll period with unique transaction codes and bank info.                                                                                                                            |
+| GET    | `/periods/:id/disbursements`           | Admin, HR | Paginated list of payment disbursements for the specified period.                                                                                                                                                                         |
+| POST   | `/periods/:id/reconcile`               | Admin, HR | Run reconciliation comparing approved payroll slips vs completed disbursements. Detects variances (`MATCHED`, `UNPAID`, `UNDERPAID`, `OVERPAID`, `DUPLICATE`, `ORPHAN_PAYMENT`), updates period liabilities, and saves discrepancy items. |
+| GET    | `/periods/:id/reconciliation`          | Admin, HR | Retrieve reconciliation summary, totals, and list of discrepancy items.                                                                                                                                                                   |
+| PATCH  | `/reconciliation/discrepancies/:id`    | Admin, HR | Update discrepancy resolution status (`PENDING`, `INVESTIGATING`, `ADJUSTED`, `RESOLVED`, `IGNORED`) with resolution notes and audit trail.                                                                                               |
+| GET    | `/periods/:id/liabilities`             | Admin, HR | Retrieve payroll liabilities snapshot for the period (beginning balance, incurred payable, paid, remaining ending balance, status).                                                                                                       |
+| GET    | `/liabilities/summary`                 | Admin, HR | Retrieve historical liabilities ledger across all payroll periods.                                                                                                                                                                        |
+| GET    | `/periods/:id/accounting/export`       | Admin, HR | Export accounting data in UTF-8 CSV with BOM for Excel (`type=journal`, `reconciliation`, `liabilities`, `disbursements`). Read-only; does not mutate status.                                                                             |
 
 **Invariants:**
+
 - Journal entries must balance: total Debit exactly equals total Credit (`numeric(15, 2)`).
 - Posted journal entries are immutable: database trigger `guard_posted_journal_entry` rejects updates and deletes to posted entries and lines (except reversal transition).
 - Reversals never delete or edit posted entries; they create a new reversing entry and link `reversal_entry_id`.
@@ -227,34 +229,38 @@ All endpoints operate under `/api/organizations/:organizationId/payroll`. Strict
 All operations operate under `/api/organizations/:organizationId`. Tenant isolation is strictly enforced via `organization_id` on all tables, operations, and foreign keys. File storage enforces magic-byte inspection (JPEG, PNG, PDF, XLSX, CSV), path sanitization, tenant directory scoping, and role-based authorization. Sensitive personal documents and uploaded files are never publicly accessible. Work history records are permanent and immutable (cannot be deleted).
 
 ### Avatar Management
+
 Personal account avatars are available to every signed-in account, including administrators with no employee profile. JPG/PNG uploads are limited to 10MB, stored under the user ID, and audited as `USER_PROFILE_AVATAR_UPDATED`. The self-service content route is owner-only; organization member-avatar routes apply the existing member visibility rules. Invitation rows include avatar URLs only for active members of that same organization. Migration `015_user_profile_avatar.sql` adds the nullable `users.avatar_url` path.
 
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/employees/me` | Authenticated user | Resolve the current user's linked employee profile and avatar URL in the selected organization. Returns 404 when no employee profile is linked. |
-| POST | `/employees/:employeeId/avatar` | Admin, HR, Employee (self) | Upload avatar (JPEG/PNG, max 5MB). Content passed via base64 `contentBase64`. Magic bytes inspected. |
-| GET | `/employees/:employeeId/avatar` | Admin, HR, Manager (in scope), Employee (self) | Stream employee avatar image with strict tenant isolation. |
+| Method | Relative path                   | Access                                         | Operation                                                                                                                                       |
+| ------ | ------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/employees/me`                 | Authenticated user                             | Resolve the current user's linked employee profile and avatar URL in the selected organization. Returns 404 when no employee profile is linked. |
+| POST   | `/employees/:employeeId/avatar` | Admin, HR, Employee (self)                     | Upload avatar (JPEG/PNG, max 5MB). Content passed via base64 `contentBase64`. Magic bytes inspected.                                            |
+| GET    | `/employees/:employeeId/avatar` | Admin, HR, Manager (in scope), Employee (self) | Stream employee avatar image with strict tenant isolation.                                                                                      |
 
 ### Enriched Work History
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/employees/:employeeId/work-history` | Admin, HR, Manager (in scope), Employee (self) | Retrieve paginated work history timeline with `eventType` (`ASSIGNMENT_CHANGED`, `TRANSFER`, `APPOINTMENT`, `PROMOTION`, `AWARD`, `DISCIPLINE`, etc.), `title`, and `notes`. |
-| POST | `/employees/:employeeId/work-history` | Admin, HR | Record work history event, appointment, promotion, transfer, or award. Deletions are forbidden by database trigger `guard_work_history_delete`. |
+
+| Method | Relative path                         | Access                                         | Operation                                                                                                                                                                    |
+| ------ | ------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/employees/:employeeId/work-history` | Admin, HR, Manager (in scope), Employee (self) | Retrieve paginated work history timeline with `eventType` (`ASSIGNMENT_CHANGED`, `TRANSFER`, `APPOINTMENT`, `PROMOTION`, `AWARD`, `DISCIPLINE`, etc.), `title`, and `notes`. |
+| POST   | `/employees/:employeeId/work-history` | Admin, HR                                      | Record work history event, appointment, promotion, transfer, or award. Deletions are forbidden by database trigger `guard_work_history_delete`.                              |
 
 ### Employee Documents
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/employees/:employeeId/documents` | Admin, HR, Manager (in scope), Employee (self) | List attached employee documents (`id`, `fileName`, `fileSize`, `mimeType`, `documentType`, `description`, `createdAt`). |
-| POST | `/employees/:employeeId/documents` | Admin, HR, Employee (self) | Upload employee document (PDF, JPEG, PNG, XLSX, CSV, max 10MB). Magic bytes validated. |
-| GET | `/employees/:employeeId/documents/:documentId/download` | Admin, HR, Manager (in scope), Employee (self) | Authenticated, secure stream download of employee document. |
-| DELETE | `/employees/:employeeId/documents/:documentId` | Admin, HR | Delete attached document and purge physical disk storage. |
+
+| Method | Relative path                                           | Access                                         | Operation                                                                                                                |
+| ------ | ------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/employees/:employeeId/documents`                      | Admin, HR, Manager (in scope), Employee (self) | List attached employee documents (`id`, `fileName`, `fileSize`, `mimeType`, `documentType`, `description`, `createdAt`). |
+| POST   | `/employees/:employeeId/documents`                      | Admin, HR, Employee (self)                     | Upload employee document (PDF, JPEG, PNG, XLSX, CSV, max 10MB). Magic bytes validated.                                   |
+| GET    | `/employees/:employeeId/documents/:documentId/download` | Admin, HR, Manager (in scope), Employee (self) | Authenticated, secure stream download of employee document.                                                              |
+| DELETE | `/employees/:employeeId/documents/:documentId`          | Admin, HR                                      | Delete attached document and purge physical disk storage.                                                                |
 
 ### Batch Employee Import (Excel / CSV)
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/employees-import/template` | Admin, HR | Download XLSX template (`mau_nhap_nhan_vien.xlsx`) with a data sheet and Vietnamese column guide; the existing CSV import remains supported. |
-| POST | `/employees-import/preview` | Admin, HR | Parse uploaded CSV/XLSX file, validate required fields and dates, check for duplicate employee codes and emails within tenant, return row-level preview. |
-| POST | `/employees-import/execute` | Admin, HR | Atomically batch-insert validated employee rows, creating employee records, initial work history snapshots, and audit events. |
+
+| Method | Relative path                | Access    | Operation                                                                                                                                                |
+| ------ | ---------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/employees-import/template` | Admin, HR | Download XLSX template (`mau_nhap_nhan_vien.xlsx`) with a data sheet and Vietnamese column guide; the existing CSV import remains supported.             |
+| POST   | `/employees-import/preview`  | Admin, HR | Parse uploaded CSV/XLSX file, validate required fields and dates, check for duplicate employee codes and emails within tenant, return row-level preview. |
+| POST   | `/employees-import/execute`  | Admin, HR | Atomically batch-insert validated employee rows, creating employee records, initial work history snapshots, and audit events.                            |
 
 Migration `014_employee_profile_documents_import.sql` adds `avatar_url` to `employees`, adds `event_type`, `title`, and `notes` to `employee_work_history`, adds the `guard_work_history_delete` trigger, and creates the `employee_documents` table with strict MIME type constraints.
 
@@ -262,10 +268,10 @@ Migration `014_employee_profile_documents_import.sql` adds `avatar_url` to `empl
 
 Employees can have associated banking details (bank name, account number, account holder name). The current roster QR is a local-only URL preview: organization ID and employee code are placed in the URL fragment, which is not sent to the server. No public employee-card API is enabled, and the previous predictable employee lookup and unauthenticated avatar routes are removed. A QR scan therefore does not disclose or retrieve employee data. A real public card requires an approved secure-link design and a reachable HTTPS origin.
 
-| Method | Path | Access | Operation |
-|---|---|---|---|
-| POST | `/api/organizations/:organizationId/employees` | Admin, HR | Create employee with optional `bankName`, `bankAccountNumber`, and `bankAccountName`. |
-| PATCH | `/api/organizations/:organizationId/employees/:id` | Admin, HR | Update employee details including `bankName`, `bankAccountNumber`, and `bankAccountName`. |
+| Method | Path                                               | Access    | Operation                                                                                 |
+| ------ | -------------------------------------------------- | --------- | ----------------------------------------------------------------------------------------- |
+| POST   | `/api/organizations/:organizationId/employees`     | Admin, HR | Create employee with optional `bankName`, `bankAccountNumber`, and `bankAccountName`.     |
+| PATCH  | `/api/organizations/:organizationId/employees/:id` | Admin, HR | Update employee details including `bankName`, `bankAccountNumber`, and `bankAccountName`. |
 
 Migration `017_employee_bank_details.sql` adds `bank_name`, `bank_account_number`, and `bank_account_name` to `employees` with an index on `(organization_id, bank_name)`.
 
@@ -274,51 +280,57 @@ Migration `017_employee_bank_details.sql` adds `bank_name`, `bank_account_number
 All compliance operations operate under `/api/organizations/:organizationId/payroll/compliance`. Access to compliance rules, company-wide statutory reports, analytics, and anomaly resolution is restricted to `ADMIN` and `HR`. Employees can only view and manage their own registered dependents.
 
 ### Statutory Compliance Rules Management
+
 Statutory rules (`PIT_DEDUCTIONS`, `PIT_BRACKETS`, `SI_RATES`, `BASE_SALARY_STATUTORY`, `REGIONAL_MIN_WAGE`) are versioned by `effective_from` and `effective_to` dates, with verified Vietnamese legal references.
 
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| POST | `/rules/seed-defaults` | Admin, HR | Seed verified Vietnamese standard rules (Resolution 954/2020, Decree 73/2024, Decree 74/2024, Circular 111/2013). |
-| GET | `/rules` | Admin, HR | List statutory rules filterable by `ruleType` and `activeDate`. |
-| POST | `/rules` | Admin, HR | Create or update statutory rule with legal reference and JSON parameters. |
+| Method | Relative path          | Access    | Operation                                                                                                         |
+| ------ | ---------------------- | --------- | ----------------------------------------------------------------------------------------------------------------- |
+| POST   | `/rules/seed-defaults` | Admin, HR | Seed verified Vietnamese standard rules (Resolution 954/2020, Decree 73/2024, Decree 74/2024, Circular 111/2013). |
+| GET    | `/rules`               | Admin, HR | List statutory rules filterable by `ruleType` and `activeDate`.                                                   |
+| POST   | `/rules`               | Admin, HR | Create or update statutory rule with legal reference and JSON parameters.                                         |
 
 ### Employee Dependents (Giảm trừ gia cảnh)
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/dependents` | Admin, HR, Employee (self-only) | List employee registered dependents. Filterable by `employeeId`. |
-| POST | `/dependents` | Admin, HR, Employee (self-only) | Register a dependent (Child, Spouse, Parent, Other). Employee registrations default to unverified. |
-| PATCH | `/dependents/:id/verify` | Admin, HR | Verify or reject dependent tax deduction eligibility. |
+
+| Method | Relative path            | Access                          | Operation                                                                                          |
+| ------ | ------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------- |
+| GET    | `/dependents`            | Admin, HR, Employee (self-only) | List employee registered dependents. Filterable by `employeeId`.                                   |
+| POST   | `/dependents`            | Admin, HR, Employee (self-only) | Register a dependent (Child, Spouse, Parent, Other). Employee registrations default to unverified. |
+| PATCH  | `/dependents/:id/verify` | Admin, HR                       | Verify or reject dependent tax deduction eligibility.                                              |
 
 ### Statutory Tax & Social Insurance Reports
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/pit/period/:periodId` | Admin, HR | Compute Personal Income Tax (PIT) report for payroll period: taxable income, personal and dependent deductions, statutory insurance deductions, assessable income, progressive tax, variance against slips. |
-| GET | `/insurance/period/:periodId` | Admin, HR | Compute Social Insurance (SI/HI/UI/Trade Union) report: employee and employer portions, statutory caps (20x base salary for BHXH/BHYT, 20x regional minimum wage for BHTN). |
-| GET | `/insurance/fluctuations` | Admin, HR | Track insurance participation fluctuations (D02-LT) for a reporting month: new enrollments and terminations. |
+
+| Method | Relative path                 | Access    | Operation                                                                                                                                                                                                   |
+| ------ | ----------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/pit/period/:periodId`       | Admin, HR | Compute Personal Income Tax (PIT) report for payroll period: taxable income, personal and dependent deductions, statutory insurance deductions, assessable income, progressive tax, variance against slips. |
+| GET    | `/insurance/period/:periodId` | Admin, HR | Compute Social Insurance (SI/HI/UI/Trade Union) report: employee and employer portions, statutory caps (20x base salary for BHXH/BHYT, 20x regional minimum wage for BHTN).                                 |
+| GET    | `/insurance/fluctuations`     | Admin, HR | Track insurance participation fluctuations (D02-LT) for a reporting month: new enrollments and terminations.                                                                                                |
 
 ### HR Cost Analytics & Dashboard
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/analytics/period/:periodId` | Admin, HR | Total Cost to Company (CTC) breakdown by salary components, employer insurance and union fees; MoM variance; departmental distribution; three-way distinction between `accruedExpense`, `payableLiability`, and `disbursedPayment`. |
+
+| Method | Relative path                 | Access    | Operation                                                                                                                                                                                                                           |
+| ------ | ----------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/analytics/period/:periodId` | Admin, HR | Total Cost to Company (CTC) breakdown by salary components, employer insurance and union fees; MoM variance; departmental distribution; three-way distinction between `accruedExpense`, `payableLiability`, and `disbursedPayment`. |
 
 ### Compliance Engine & Anomaly Detection
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| POST | `/check/:periodId` | Admin, HR | Execute automated compliance scan: minimum wage violations, missing insurance profiles, unverified dependent tax IDs, anomalous MoM wage fluctuations (>30%). |
-| GET | `/anomalies` | Admin, HR | List detected compliance anomalies filterable by `periodId` and `resolutionStatus`. |
-| PATCH | `/anomalies/:id/resolve` | Admin, HR | Acknowledge, resolve, or waive a compliance anomaly with audit notes. |
+
+| Method | Relative path            | Access    | Operation                                                                                                                                                     |
+| ------ | ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/check/:periodId`       | Admin, HR | Execute automated compliance scan: minimum wage violations, missing insurance profiles, unverified dependent tax IDs, anomalous MoM wage fluctuations (>30%). |
+| GET    | `/anomalies`             | Admin, HR | List detected compliance anomalies filterable by `periodId` and `resolutionStatus`.                                                                           |
+| PATCH  | `/anomalies/:id/resolve` | Admin, HR | Acknowledge, resolve, or waive a compliance anomaly with audit notes.                                                                                         |
 
 ### Formal Reports Lifecycle & Export
+
 Compliance reports follow a formal lifecycle (`DRAFT` -> `APPROVED` -> `LOCKED`). Only `APPROVED` or `LOCKED` reports can be exported to official CSV/Excel format. `LOCKED` reports are strictly immutable via database trigger.
 
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| POST | `/reports/generate` | Admin, HR | Generate formal compliance report (DRAFT) for tax, insurance, or cost analytics. |
-| GET | `/reports` | Admin, HR | List formal compliance reports. |
-| POST | `/reports/:id/approve` | Admin, HR | Formally approve report. |
-| POST | `/reports/:id/lock` | Admin | Permanently lock report (trigger prevents further modifications). |
-| GET | `/reports/:id/export` | Admin, HR | Export official report in UTF-8 CSV with Excel BOM. Returns 400 if report is still DRAFT. |
-| GET | `/audit-logs` | Admin, HR | Retrieve compliance audit trail logs. |
+| Method | Relative path          | Access    | Operation                                                                                 |
+| ------ | ---------------------- | --------- | ----------------------------------------------------------------------------------------- |
+| POST   | `/reports/generate`    | Admin, HR | Generate formal compliance report (DRAFT) for tax, insurance, or cost analytics.          |
+| GET    | `/reports`             | Admin, HR | List formal compliance reports.                                                           |
+| POST   | `/reports/:id/approve` | Admin, HR | Formally approve report.                                                                  |
+| POST   | `/reports/:id/lock`    | Admin     | Permanently lock report (trigger prevents further modifications).                         |
+| GET    | `/reports/:id/export`  | Admin, HR | Export official report in UTF-8 CSV with Excel BOM. Returns 400 if report is still DRAFT. |
+| GET    | `/audit-logs`          | Admin, HR | Retrieve compliance audit trail logs.                                                     |
 
 Migration `019_payroll_compliance_reporting.sql` creates `compliance_statutory_rules`, `employee_dependents`, `compliance_reports`, `compliance_anomalies`, `compliance_audit_logs`, and the `guard_locked_compliance_report` trigger.
 
@@ -329,27 +341,30 @@ Base path: `/api/organizations/:organizationId/reports`
 All reporting endpoints enforce tenant isolation, role-based access control (RBAC), and management scope. Manager role access is scoped to managed departments and reporting descendants via `managementScope`. Employee role access is strictly self-only where permitted, and forbidden from organization-wide roster/structure reports.
 
 ### Report Catalog & Metadata
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/catalog` | Admin, HR, Manager, Employee | Retrieve accessible report catalog with metadata and supported filters, filtered by user's role. Auto-seeds defaults on first call. |
-| POST | `/catalog/seed-defaults` | Admin, HR | Seed or update standard system report definitions (RPT-EMP-01, RPT-ORG-01, RPT-ATT-01, RPT-LEAVE-01). |
+
+| Method | Relative path            | Access                       | Operation                                                                                                                           |
+| ------ | ------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/catalog`               | Admin, HR, Manager, Employee | Retrieve accessible report catalog with metadata and supported filters, filtered by user's role. Auto-seeds defaults on first call. |
+| POST   | `/catalog/seed-defaults` | Admin, HR                    | Seed or update standard system report definitions (RPT-EMP-01, RPT-ORG-01, RPT-ATT-01, RPT-LEAVE-01).                               |
 
 ### P0 Reports
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/emp-roster` | Admin, HR, Manager (scoped) | RPT-EMP-01: Employee headcount, status distribution, department/contract breakdowns, average tenure, and paginated roster. |
-| GET | `/org-structure` | Admin, HR, Manager (scoped) | RPT-ORG-01: Department tree hierarchy, active positions, manager coverage, and department staffing counts. |
-| GET | `/attendance-summary` | Admin, HR, Manager (scoped), Employee (self-only) | RPT-ATT-01: Attendance & shift metrics, work schedule adherence, on-time rate, late/early minutes, and shift details. |
-| GET | `/leave-summary` | Admin, HR, Manager (scoped), Employee (self-only) | RPT-LEAVE-01: Leave allowances, approved charged hours/days, remaining balances, utilization rate, and recent leave requests. |
+
+| Method | Relative path         | Access                                            | Operation                                                                                                                     |
+| ------ | --------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/emp-roster`         | Admin, HR, Manager (scoped)                       | RPT-EMP-01: Employee headcount, status distribution, department/contract breakdowns, average tenure, and paginated roster.    |
+| GET    | `/org-structure`      | Admin, HR, Manager (scoped)                       | RPT-ORG-01: Department tree hierarchy, active positions, manager coverage, and department staffing counts.                    |
+| GET    | `/attendance-summary` | Admin, HR, Manager (scoped), Employee (self-only) | RPT-ATT-01: Attendance & shift metrics, work schedule adherence, on-time rate, late/early minutes, and shift details.         |
+| GET    | `/leave-summary`      | Admin, HR, Manager (scoped), Employee (self-only) | RPT-LEAVE-01: Leave allowances, approved charged hours/days, remaining balances, utilization rate, and recent leave requests. |
 
 ### Shared Reporting Engine: Export & Templates
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| POST | `/export` | Admin, HR, Manager (scoped), Employee (self-only) | Export report data to CSV with UTF-8 BOM for Microsoft Excel. Automatically records export audit log with row count and filter parameters. |
-| GET | `/templates` | Admin, HR, Manager, Employee | List saved report query/filter presets for current authenticated user. |
-| POST | `/templates` | Admin, HR, Manager, Employee | Save a personalized report filter preset. |
-| DELETE | `/templates/:id` | Admin, HR, Manager, Employee | Delete user-saved report filter preset. |
-| GET | `/export-audit` | Admin, HR | Retrieve sensitive report export audit logs (user, report code, format, row count, filters, IP, timestamp). |
+
+| Method | Relative path    | Access                                            | Operation                                                                                                                                  |
+| ------ | ---------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/export`        | Admin, HR, Manager (scoped), Employee (self-only) | Export report data to CSV with UTF-8 BOM for Microsoft Excel. Automatically records export audit log with row count and filter parameters. |
+| GET    | `/templates`     | Admin, HR, Manager, Employee                      | List saved report query/filter presets for current authenticated user.                                                                     |
+| POST   | `/templates`     | Admin, HR, Manager, Employee                      | Save a personalized report filter preset.                                                                                                  |
+| DELETE | `/templates/:id` | Admin, HR, Manager, Employee                      | Delete user-saved report filter preset.                                                                                                    |
+| GET    | `/export-audit`  | Admin, HR                                         | Retrieve sensitive report export audit logs (user, report code, format, row count, filters, IP, timestamp).                                |
 
 Migration `020_reporting_center_engine.sql` creates `report_catalog`, `report_saved_templates`, and `report_export_audit_logs`.
 
@@ -360,24 +375,55 @@ Base path: `/api/organizations/:organizationId/reports`
 Integrated with Reporting Center (RPT-001) and inherits PAY-001, PAY-002, and PAY-003 data structures. Enforces exact BigInt cents currency arithmetic (no floating-point rounding errors), tenant isolation, strict RBAC, and department/management scoping.
 
 ### Payroll Reports (Category: PAYROLL)
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/payroll-summary` | Admin, HR, Manager (scoped), Employee (self-only) | **RPT-PAY-01**: Bảng lương tổng hợp & chi tiết theo kỳ. Returns Gross, Net, statutory deductions, allowances, bonuses, working days, status. Highlights draft vs closed period snapshot. |
-| GET | `/payroll-components` | Admin, HR, Manager (scoped), Employee (self-only) | **RPT-PAY-02**: Báo cáo cơ cấu phụ cấp, thưởng & khấu trừ. Breakdowns non-taxable allowances, taxable allowances, bonuses, statutory employee insurance (8% BHXH, 1.5% BHYT, 1% BHTN), PIT deduction, and net pay. |
-| GET | `/payroll-variance` | Admin, HR, Manager (scoped) | **RPT-PAY-03**: Báo cáo biến động quỹ lương giữa các kỳ. MoM net pay variance percentage and delta, headcount delta, average pay variance per employee, individual employee delta, and anomalous variance flags ($\ge 20\%$). |
+
+| Method | Relative path         | Access                                            | Operation                                                                                                                                                                                                                     |
+| ------ | --------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/payroll-summary`    | Admin, HR, Manager (scoped), Employee (self-only) | **RPT-PAY-01**: Bảng lương tổng hợp & chi tiết theo kỳ. Returns Gross, Net, statutory deductions, allowances, bonuses, working days, status. Highlights draft vs closed period snapshot.                                      |
+| GET    | `/payroll-components` | Admin, HR, Manager (scoped), Employee (self-only) | **RPT-PAY-02**: Báo cáo cơ cấu phụ cấp, thưởng & khấu trừ. Breakdowns non-taxable allowances, taxable allowances, bonuses, statutory employee insurance (8% BHXH, 1.5% BHYT, 1% BHTN), PIT deduction, and net pay.            |
+| GET    | `/payroll-variance`   | Admin, HR, Manager (scoped)                       | **RPT-PAY-03**: Báo cáo biến động quỹ lương giữa các kỳ. MoM net pay variance percentage and delta, headcount delta, average pay variance per employee, individual employee delta, and anomalous variance flags ($\ge 20\%$). |
 
 ### Accounting & Liability Reports (Category: ACCOUNTING)
-| Method | Relative path | Access | Operation |
-|---|---|---|---|
-| GET | `/cost-allocation` | Admin, HR, Manager (scoped) | **RPT-ACC-01**: Báo cáo phân bổ chi phí lương theo phòng ban & đơn vị. Distributes gross salary, employer statutory insurance (21.5%), trade union fee (2%), and Total Cost to Company (CTC) mapped to Vietnamese Accounting Standards (VAS 6421 Chi phí bán hàng, VAS 6422 Chi phí quản lý doanh nghiệp). |
-| GET | `/payroll-liabilities` | Admin, HR | **RPT-ACC-02**: Báo cáo công nợ lương & đối chiếu thanh toán. 3-way reconciliation between payable liabilities (TK 3341), verified disbursements (TK 1121/1111), and remaining balance; employee bank account details; settlement status (SETTLED, PARTIAL, UNPAID). |
-| GET | `/journal-entries` | Admin, HR | **RPT-ACC-03**: Báo cáo sổ nhật ký bút toán kế toán lương. General ledger journal entries with multi-line debit/credit accounts, double-entry balance check (Total Debit = Total Credit), posted timestamp, reversal traceability (`reversalEntryNumber`). |
+
+| Method | Relative path          | Access                      | Operation                                                                                                                                                                                                                                                                                                  |
+| ------ | ---------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/cost-allocation`     | Admin, HR, Manager (scoped) | **RPT-ACC-01**: Báo cáo phân bổ chi phí lương theo phòng ban & đơn vị. Distributes gross salary, employer statutory insurance (21.5%), trade union fee (2%), and Total Cost to Company (CTC) mapped to Vietnamese Accounting Standards (VAS 6421 Chi phí bán hàng, VAS 6422 Chi phí quản lý doanh nghiệp). |
+| GET    | `/payroll-liabilities` | Admin, HR                   | **RPT-ACC-02**: Báo cáo công nợ lương & đối chiếu thanh toán. 3-way reconciliation between payable liabilities (TK 3341), verified disbursements (TK 1121/1111), and remaining balance; employee bank account details; settlement status (SETTLED, PARTIAL, UNPAID).                                       |
+| GET    | `/journal-entries`     | Admin, HR                   | **RPT-ACC-03**: Báo cáo sổ nhật ký bút toán kế toán lương. General ledger journal entries with multi-line debit/credit accounts, double-entry balance check (Total Debit = Total Credit), posted timestamp, reversal traceability (`reversalEntryNumber`).                                                 |
 
 ### Export & Audit Trail
+
 All 6 reports (`RPT-PAY-01` through `RPT-PAY-03`, `RPT-ACC-01` through `RPT-ACC-03`) are fully supported by the unified export engine (`POST /export`), generating standard RFC 4180 CSV with UTF-8 BOM for Microsoft Excel compatibility and recording immutable audit entries in `report_export_audit_logs`.
 
 Migration `021_payroll_accounting_reporting.sql` updates `report_catalog_category_check` to include `'ACCOUNTING'` and adds composite performance indexes on `payroll_slips`, `payroll_slip_items`, `payroll_disbursements`, and `payroll_journal_entries`.
 
+## RPT-003 — Compliance & Statutory Reporting
 
+Base path: `/api/organizations/:organizationId/reports`
 
+Integrated with Reporting Center (RPT-001) and Compliance engine (PAY-004). Strict role-based access control enforces `minRole: 'HR'` (Admin and HR only). General Managers and Employees are denied access (`403 Forbidden`) due to sensitive tax, national identity (CCCD), and statutory insurance confidentiality. All monetary calculations enforce exact integer cents / decimal arithmetic without floating-point inaccuracies.
 
+### Statutory Legal References & Verified Rules
+
+- **Circular 80/2021/TT-BTC & Circular 111/2013/TT-BTC**: Mẫu 05/KK-TNCN (Tờ khai khấu trừ thuế TNCN định kỳ), Mẫu 05/QTT-TNCN (Tờ khai quyết toán thuế TNCN năm) và Phụ lục 05-1/BK-TNCN.
+- **Resolution 954/2020/UBTVQH14**: Mức giảm trừ gia cảnh thuế TNCN đối với bản thân người nộp thuế là 11,000,000 VNĐ/tháng (132,000,000 VNĐ/năm); mức giảm trừ đối với mỗi người phụ thuộc là 4,400,000 VNĐ/tháng (52,800,000 VNĐ/năm). Biểu thuế lũy tiến từng phần 7 bậc (5% đến 35%).
+- **Decree 73/2024/NĐ-CP**: Mức lương cơ sở 2,340,000 VNĐ; trần đóng BHXH & BHYT tối đa bằng 20 lần mức lương cơ sở = 46,800,000 VNĐ.
+- **Decree 74/2024/NĐ-CP**: Mức lương tối thiểu vùng I là 4,960,000 VNĐ; trần đóng BHTN tối đa bằng 20 lần mức lương tối thiểu vùng = 99,200,000 VNĐ.
+- **Statutory Contribution Rates**: Người lao động 10.5% (BHXH 8%, BHYT 1.5%, BHTN 1%); Doanh nghiệp 21.5% (BHXH 17.5%, BHYT 3%, BHTN 1%); Kinh phí Công đoàn 2% quỹ tiền lương trích nộp theo Nghị định 191/2013/NĐ-CP. Tổng trích nộp là 34%.
+- **Decision 595/QĐ-BHXH & Decision 490/QĐ-BHXH**: Mẫu D02-LT (Báo cáo tình hình biến động lao động và đóng BHXH, BHYT, BHTN: tăng lao động, giảm lao động, điều chỉnh mức lương đóng).
+- **Decree 145/2020/NĐ-CP**: Mẫu 01/PLI (Báo cáo tình hình sử dụng lao động định kỳ 6 tháng đầu năm và cả năm).
+
+### Compliance & Statutory Reports (Category: COMPLIANCE)
+
+| Method | Relative path              | Access    | Operation                                                                                                                                                                                                                                        |
+| ------ | -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/tax-summary`             | Admin, HR | **RPT-TAX-01**: Báo cáo tổng hợp thuế TNCN & Kê khai định kỳ (Mẫu 05/KK-TNCN). Tính toán tổng thu nhập chịu thuế, giảm trừ gia cảnh, giảm trừ bảo hiểm, thu nhập tính thuế theo 7 bậc lũy tiến, và đối chiếu chênh lệch với phiếu lương đã chốt. |
+| GET    | `/tax-settlement`          | Admin, HR | **RPT-TAX-02**: Báo cáo quyết toán thuế TNCN năm (Mẫu 05/QTT-TNCN & Phụ lục 05-1/BK-TNCN). Tổng hợp thu nhập cả năm, giảm trừ lũy kế 12 tháng, nghĩa vụ thuế quyết toán, thuế đã khấu trừ, số hoàn/nộp thêm, và trạng thái ủy quyền QTT.         |
+| GET    | `/insurance-contributions` | Admin, HR | **RPT-INS-01**: Báo cáo trích nộp BHXH, BHYT, BHTN & Kinh phí công đoàn. Phân bổ trích nộp NLĐ (10.5%), Doanh nghiệp (21.5%), Công đoàn (2%), áp dụng trần lương BHXH/BHYT (46.8M) và BHTN (99.2M), đối chiếu chênh lệch với bảng lương chốt.    |
+| GET    | `/insurance-fluctuations`  | Admin, HR | **RPT-INS-02**: Báo cáo biến động lao động tham gia bảo hiểm (Mẫu D02-LT). Tổng hợp biến động tăng (mới/tái tham gia), giảm (thôi việc/tạm hoãn), và điều chỉnh mức lương đóng BHXH/BHTN theo kỳ báo cáo.                                        |
+| GET    | `/labor-utilization`       | Admin, HR | **RPT-LAB-01**: Báo cáo tình hình sử dụng lao động (Mẫu 01/PLI theo NĐ 145/2020). Thống kê cơ cấu lao động theo loại hợp đồng (không xác định TH, xác định TH, thử việc), giới tính, trình độ chuyên môn, vị trí quản lý, và biến động trong kỳ. |
+
+### Unified Export & Audit Logging
+
+Tất cả 5 báo cáo pháp lý (`RPT-TAX-01`, `RPT-TAX-02`, `RPT-INS-01`, `RPT-INS-02`, `RPT-LAB-01`) được hỗ trợ đầy đủ qua API xuất dữ liệu dùng chung (`POST /export`), xuất file RFC 4180 CSV kèm UTF-8 BOM chuẩn hiển thị tiếng Việt trên Microsoft Excel, ghi nhận nhật ký xuất nhạy cảm vào `report_export_audit_logs`.
+
+Migration `022_compliance_statutory_reporting.sql` mở rộng ràng buộc kiểm tra loại báo cáo `compliance_reports_report_type_check` cho giá trị `'LABOR_UTILIZATION'` và bổ sung các chỉ mục tối ưu hóa truy vấn (`idx_emp_contracts_reporting`, `idx_social_insurance_contrib_reporting`, `idx_compliance_anomalies_reporting`).

@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import { AccountProfile } from './AccountProfile';
 import { request, type Profile } from '../../services/api';
 
-vi.mock('../../services/api', async original => ({
+vi.mock('../../services/api', async (original) => ({
   ...(await original<typeof import('../../services/api')>()),
   request: vi.fn(),
 }));
@@ -26,11 +26,15 @@ beforeEach(() => {
   mock.mockReset();
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
     configurable: true,
-    value: function (this: HTMLDialogElement) { this.setAttribute('open', ''); },
+    value: function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    },
   });
   Object.defineProperty(HTMLDialogElement.prototype, 'close', {
     configurable: true,
-    value: function (this: HTMLDialogElement) { this.removeAttribute('open'); },
+    value: function (this: HTMLDialogElement) {
+      this.removeAttribute('open');
+    },
   });
 });
 afterEach(() => {
@@ -44,7 +48,9 @@ describe('AccountProfile avatar', () => {
     mock.mockResolvedValue({ avatarUrl: null } as never);
     render(<AccountProfile profile={profile} />);
     const input = await screen.findByLabelText('Chọn ảnh đại diện');
-    fireEvent.change(input, { target: { files: [new File(['bad'], 'avatar.gif', { type: 'image/gif' })] } });
+    fireEvent.change(input, {
+      target: { files: [new File(['bad'], 'avatar.gif', { type: 'image/gif' })] },
+    });
     expect(screen.getByRole('alert')).toHaveTextContent('Chỉ chấp nhận');
     act(() => setLocale('en'));
     expect(screen.getByRole('heading', { name: 'Profile & Account' })).toBeVisible();
@@ -62,15 +68,21 @@ describe('AccountProfile avatar', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Cập nhật ảnh' }));
     expect(screen.getByText('JPG hoặc PNG · tối đa 10MB')).toBeInTheDocument();
     const input = screen.getByLabelText('Chọn ảnh đại diện');
-    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'avatar.png', { type: 'image/png' });
+    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'avatar.png', {
+      type: 'image/png',
+    });
     fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => {
       expect(mock).toHaveBeenNthCalledWith(
         2,
         '/api/auth/profile/avatar',
-        expect.objectContaining({ fileName: 'avatar.png', mimeType: 'image/png', contentBase64: expect.any(String) }),
-        'POST'
+        expect.objectContaining({
+          fileName: 'avatar.png',
+          mimeType: 'image/png',
+          contentBase64: expect.any(String),
+        }),
+        'POST',
       );
     });
     expect(await screen.findByText('Đã cập nhật ảnh đại diện.')).toHaveAttribute('role', 'status');

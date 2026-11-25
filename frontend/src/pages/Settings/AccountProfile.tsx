@@ -9,7 +9,7 @@ import { DashIcon } from '../../components/layout/DashboardShell';
 
 export function AccountProfile({ profile }: { profile: Profile }) {
   const { locale } = useTranslation();
-  const tr = (text: string) => locale === 'en' ? (profileEnglish[text] ?? text) : text;
+  const tr = (text: string) => (locale === 'en' ? (profileEnglish[text] ?? text) : text);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(true);
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -23,12 +23,12 @@ export function AccountProfile({ profile }: { profile: Profile }) {
     setAvatarError('');
     setAvatarMessage('');
     request<{ avatarUrl: string | null }>('/api/auth/profile/avatar')
-      .then(result => {
+      .then((result) => {
         if (active) {
           setAvatarUrl(result.avatarUrl);
         }
       })
-      .catch(cause => {
+      .catch((cause) => {
         if (!active) return;
         setAvatarError(errorText(cause));
       })
@@ -75,7 +75,7 @@ export function AccountProfile({ profile }: { profile: Profile }) {
         const result = await request<{ avatarUrl: string }>(
           '/api/auth/profile/avatar',
           { fileName: file.name, mimeType: file.type, contentBase64 },
-          'POST'
+          'POST',
         );
         setAvatarUrl(result.avatarUrl);
         setAvatarMessage('Đã cập nhật ảnh đại diện.');
@@ -92,9 +92,11 @@ export function AccountProfile({ profile }: { profile: Profile }) {
     <div className="account-profile-page">
       <div className="dash-header-row">
         <div>
-          <div className="eyebrow">{tr("TÀI KHOẢN CÁ NHÂN")}</div>
-          <h1 className="dash-page-title">{tr("Hồ sơ & Tài khoản")}</h1>
-          <p className="dash-page-subtitle">{tr("Quản lý thông tin cá nhân, tổ chức trực thuộc và thiết lập tài khoản.")}</p>
+          <div className="eyebrow">{tr('TÀI KHOẢN CÁ NHÂN')}</div>
+          <h1 className="dash-page-title">{tr('Hồ sơ & Tài khoản')}</h1>
+          <p className="dash-page-subtitle">
+            {tr('Quản lý thông tin cá nhân, tổ chức trực thuộc và thiết lập tài khoản.')}
+          </p>
         </div>
       </div>
 
@@ -103,59 +105,77 @@ export function AccountProfile({ profile }: { profile: Profile }) {
         <div className="dash-card profile-summary-card">
           <div className="profile-card-hero">
             <div className="profile-avatar-editor" aria-busy={avatarBusy}>
-              <Avatar src={avatarUrl} name={profile.user.fullName} className="dash-avatar profile-avatar-large" />
-              {avatarLoading && <span className="profile-avatar-help">{tr("Đang tải ảnh đại diện…")}</span>}
+              <Avatar
+                src={avatarUrl}
+                name={profile.user.fullName}
+                className="dash-avatar profile-avatar-large"
+              />
+              {avatarLoading && (
+                <span className="profile-avatar-help">{tr('Đang tải ảnh đại diện…')}</span>
+              )}
               <button
                 type="button"
                 className="secondary profile-avatar-upload-btn"
                 onClick={() => avatarInput.current?.click()}
                 disabled={avatarBusy}
               >
-                {avatarBusy ? tr("Đang tải ảnh…") : tr("Cập nhật ảnh")}
+                {avatarBusy ? tr('Đang tải ảnh…') : tr('Cập nhật ảnh')}
               </button>
               <input
                 ref={avatarInput}
                 className="profile-avatar-file-input"
                 type="file"
                 accept="image/png,image/jpeg"
-                aria-label={tr("Chọn ảnh đại diện")}
+                aria-label={tr('Chọn ảnh đại diện')}
                 onChange={handleAvatarSelect}
                 hidden
               />
-              <span className="profile-avatar-help">{tr("JPG hoặc PNG · tối đa 10MB")}</span>
+              <span className="profile-avatar-help">{tr('JPG hoặc PNG · tối đa 10MB')}</span>
             </div>
             <div className="profile-hero-info">
               <h2>{profile.user.fullName}</h2>
               <p className="muted">{profile.user.email}</p>
               <div className="profile-badges-strip">
-                <span className="badge role-badge">{roleLabel(profile.organization.role, locale)}</span>
+                <span className="badge role-badge">
+                  {roleLabel(profile.organization.role, locale)}
+                </span>
                 <span className="badge org-badge">{profile.organization.name}</span>
               </div>
             </div>
           </div>
-          {avatarError && <p className="notice error" role="alert">{tr(avatarError)}</p>}
-          {avatarMessage && <p className="notice success" role="status">{tr(avatarMessage)}</p>}
+          {avatarError && (
+            <p className="notice error" role="alert">
+              {tr(avatarError)}
+            </p>
+          )}
+          {avatarMessage && (
+            <p className="notice success" role="status">
+              {tr(avatarMessage)}
+            </p>
+          )}
 
           <div className="profile-quick-stats">
             <div className="profile-stat-item">
-              <span className="stat-label">{tr("Bảo mật MFA")}</span>
-              <span className={`stat-value ${profile.security?.mfaEnabled ? 'text-green' : 'text-amber'}`}>
-                {profile.security?.mfaEnabled ? tr("✓ Đã kích hoạt") : tr("Chưa kích hoạt")}
+              <span className="stat-label">{tr('Bảo mật MFA')}</span>
+              <span
+                className={`stat-value ${profile.security?.mfaEnabled ? 'text-green' : 'text-amber'}`}
+              >
+                {profile.security?.mfaEnabled ? tr('✓ Đã kích hoạt') : tr('Chưa kích hoạt')}
               </span>
             </div>
             <div className="profile-stat-item">
-              <span className="stat-label">{tr("Đơn vị trực thuộc")}</span>
+              <span className="stat-label">{tr('Đơn vị trực thuộc')}</span>
               <span className="stat-value">{profile.organization.name}</span>
             </div>
             <div className="profile-stat-item">
-              <span className="stat-label">{tr("Trạng thái tài khoản")}</span>
-              <span className="stat-value text-green">{tr("✓ Đang hoạt động")}</span>
+              <span className="stat-label">{tr('Trạng thái tài khoản')}</span>
+              <span className="stat-value text-green">{tr('✓ Đang hoạt động')}</span>
             </div>
           </div>
 
           <div className="profile-card-footer">
             <a href="/security" className="secondary button" style={{ width: '100%' }}>
-              <DashIcon name="shield" /> {tr("Quản lý bảo mật & thiết bị →")}
+              <DashIcon name="shield" /> {tr('Quản lý bảo mật & thiết bị →')}
             </a>
           </div>
         </div>
@@ -163,10 +183,10 @@ export function AccountProfile({ profile }: { profile: Profile }) {
         {/* Right Column: Profile Editor & Details */}
         <div className="dash-card profile-settings-card">
           <div className="profile-card-section">
-            <h2>{tr("Chi tiết tài khoản")}</h2>
+            <h2>{tr('Chi tiết tài khoản')}</h2>
             <dl className="profile-details">
               <div>
-                <dt>{tr("Tổ chức")}</dt>
+                <dt>{tr('Tổ chức')}</dt>
                 <dd>{profile.organization.name}</dd>
               </div>
               <div>
@@ -174,7 +194,7 @@ export function AccountProfile({ profile }: { profile: Profile }) {
                 <dd>{profile.user.email}</dd>
               </div>
               <div>
-                <dt>{tr("Vai trò")}</dt>
+                <dt>{tr('Vai trò')}</dt>
                 <dd>{roleLabel(profile.organization.role, locale)}</dd>
               </div>
             </dl>

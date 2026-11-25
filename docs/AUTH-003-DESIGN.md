@@ -1,11 +1,11 @@
 # AUTH-003 scope and security decisions
 
-| Area | Existing | Missing / Improvement |
-|---|---|---|
-| Sessions | Hash-only opaque cookies,8h absolute expiry, login rotation, logout/reset/role/status revocation | Server30min idle expiry, session/device list and individual/all-other revocation |
-| Protection | Persistent IP/account/org/recipient throttles; socket IP not forwarded headers; generic auth/reset errors; CSRF | MFA/account throttles and failed-login/rate-limit audit |
-| RBAC | Current membership checks and transactional actor/session recheck | Enforce MFA and recent10min reauthentication inside sensitive transactions |
-| MFA | None | TOTP enrollment/verify, encrypted secret, saved recovery codes, controlled recovery and mandatory Admin/HR gate |
+| Area       | Existing                                                                                                        | Missing / Improvement                                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Sessions   | Hash-only opaque cookies,8h absolute expiry, login rotation, logout/reset/role/status revocation                | Server30min idle expiry, session/device list and individual/all-other revocation                                |
+| Protection | Persistent IP/account/org/recipient throttles; socket IP not forwarded headers; generic auth/reset errors; CSRF | MFA/account throttles and failed-login/rate-limit audit                                                         |
+| RBAC       | Current membership checks and transactional actor/session recheck                                               | Enforce MFA and recent10min reauthentication inside sensitive transactions                                      |
+| MFA        | None                                                                                                            | TOTP enrollment/verify, encrypted secret, saved recovery codes, controlled recovery and mandatory Admin/HR gate |
 
 Single Agent V5.3, inherited model, approved security-review skill. Reuse users, sessions, throttle and audit. Add only user_mfa storage and session metadata. No framework/library downloads, no new app dependency. TOTP selected for existing stack and local preview compatibility; WebAuthn/passkeys deferred until a reviewed RP ID/origin and maintained WebAuthn library are introduced. TOTP is not phishing-resistant and no AAL certification is claimed.
 
@@ -19,8 +19,8 @@ Test injection may turn mandatory-role policy off only in the existing regressio
 
 References: OWASP Authentication, Session Management and Multifactor Authentication Cheat Sheets; NIST SP800-63B-4 final https://pages.nist.gov/800-63-4/sp800-63b.html. OTP replay resistance and saved recovery controls are tested, not assumed from reference use.
 
-
 Reviewed sources used during implementation:
+
 - https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
 - https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
 - https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html

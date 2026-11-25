@@ -12,7 +12,6 @@ No public registration/bootstrap endpoint exists. Bootstrap CLI is never automat
 
 Production migration, admin provisioning, trusted proxy settings, SMTP staging verification and deployment require human review. Apply migrations with a separate privileged deployment account; runtime DB role should only have required SELECT/INSERT/UPDATE privileges. Keep database and SMTP secrets outside version control.
 
-
 ## AUTH-003 security/session operation
 
 Runtime requires MFA_ENCRYPTION_KEY: an independent32-byte CSPRNG key encoded as base64, stored only in approved secret storage/local ignored .env. Never derive it from CSRF/passwords, print it, commit it or overwrite it after MFA enrollment. Back up and rotate/re-encrypt it through a separately reviewed secret-management process. Production loadConfig always enables Admin/HR MFA; requireMfa:false is a direct test-factory fixture option, not a supported runtime environment switch.

@@ -12,12 +12,22 @@ export function SensitiveActionConfirmation({ useCode }: { useCode: boolean }) {
   const pending = useRef<((confirmed: boolean) => void) | null>(null);
 
   useEffect(() => {
-    const unregister = registerSensitiveActionConfirmation(() => new Promise(resolve => {
-      if (pending.current) { resolve(false); return; }
-      pending.current = resolve;
-      setOpen(true);
-    }));
-    return () => { unregister(); pending.current?.(false); pending.current = null; };
+    const unregister = registerSensitiveActionConfirmation(
+      () =>
+        new Promise((resolve) => {
+          if (pending.current) {
+            resolve(false);
+            return;
+          }
+          pending.current = resolve;
+          setOpen(true);
+        }),
+    );
+    return () => {
+      unregister();
+      pending.current?.(false);
+      pending.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -53,24 +63,85 @@ export function SensitiveActionConfirmation({ useCode }: { useCode: boolean }) {
   }
 
   if (!open) return null;
-  return <dialog ref={dialog} className="sensitive-action-dialog" aria-labelledby="sensitive-action-title"
-    onCancel={event => { event.preventDefault(); if (!busy) finish(false); }}>
-    <h2 id="sensitive-action-title">{t('verifyToContinue')}</h2>
-    <p>{t('enterCredentials')}</p>
-    <form onSubmit={submit} aria-busy={busy}>
-      <fieldset disabled={busy}>
-        <label className="field">{t('password')}<input name="password" type="password" autoComplete="current-password" maxLength={128} required /></label>
-        {useCode && <label className="field">{backup ? t('backupCode') : t('authenticatorCode')}
-          <input key={String(backup)} name="code" autoComplete="one-time-code" inputMode={backup ? 'text' : 'numeric'}
-            pattern={backup ? undefined : '[0-9]{6}'} maxLength={backup ? 64 : 6} required />
-        </label>}
-        {Boolean(error) && <p role="alert" className="notice error">{errorText(error)}</p>}
-        <button type="submit" className="primary">{busy ? t('verifying') : t('verifyAndContinue')}</button>
-        <div className="verification-actions">
-          {useCode && <button type="button" onClick={() => { setError(''); setBackup(!backup); }}>{backup ? t('useAuthenticator') : t('useBackupCode')}</button>}
-          <button type="button" onClick={() => finish(false)}>{t('cancel')}</button>
-        </div>
-      </fieldset>
-    </form>
-  </dialog>;
+  return (
+    <dialog
+      ref={dialog}
+      className="sensitive-action-dialog"
+      aria-labelledby="sensitive-action-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) finish(false);
+      }}
+    >
+      <div className="slide-dialog-close-row">
+        <button
+          type="button"
+          className="slide-dialog-close"
+          aria-label={t('closeDialog')}
+          disabled={busy}
+          onClick={() => finish(false)}
+        >
+          ×
+        </button>
+      </div>
+      <h2 id="sensitive-action-title">{t('verifyToContinue')}</h2>
+      <p>{t('enterCredentials')}</p>
+      <form onSubmit={submit} aria-busy={busy}>
+        <fieldset disabled={busy}>
+          <div className="sensitive-dialog-body">
+            <label className="field">
+              {t('password')}
+              <input
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                maxLength={128}
+                required
+              />
+            </label>
+            {useCode && (
+              <label className="field">
+                {backup ? t('backupCode') : t('authenticatorCode')}
+                <input
+                  key={String(backup)}
+                  name="code"
+                  autoComplete="one-time-code"
+                  inputMode={backup ? 'text' : 'numeric'}
+                  pattern={backup ? undefined : '[0-9]{6}'}
+                  maxLength={backup ? 64 : 6}
+                  required
+                />
+              </label>
+            )}
+            {Boolean(error) && (
+              <p role="alert" className="notice error">
+                {errorText(error)}
+              </p>
+            )}
+            <div className="verification-actions">
+              {useCode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setBackup(!backup);
+                  }}
+                >
+                  {backup ? t('useAuthenticator') : t('useBackupCode')}
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="slide-dialog-footer">
+            <button type="button" className="secondary" onClick={() => finish(false)}>
+              {t('cancel')}
+            </button>
+            <button type="submit" className="primary">
+              {busy ? t('verifying') : t('verifyAndContinue')}
+            </button>
+          </div>
+        </fieldset>
+      </form>
+    </dialog>
+  );
 }

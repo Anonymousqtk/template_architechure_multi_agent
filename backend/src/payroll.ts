@@ -9,11 +9,20 @@ import { registerPayrollAccountingRoutes } from './payroll-accounting.js';
 import { registerPayrollComplianceRoutes } from './payroll-compliance.js';
 
 const uuid = z.string().uuid();
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
-  const d = new Date(value + 'T00:00:00Z');
-  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
-});
-const code = z.string().trim().min(1).max(30).regex(/^[A-Za-z0-9_.-]+$/).transform(v => v.toUpperCase());
+const day = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const d = new Date(value + 'T00:00:00Z');
+    return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
+  });
+const code = z
+  .string()
+  .trim()
+  .min(1)
+  .max(30)
+  .regex(/^[A-Za-z0-9_.-]+$/)
+  .transform((v) => v.toUpperCase());
 
 // Exact integer decimal math (cents) to completely avoid floating-point inaccuracies
 export function toCents(val: number | string | null | undefined): bigint {
@@ -36,7 +45,11 @@ export function fromCents(cents: bigint): string {
   return `${sign}${intPart}.${decPart}`;
 }
 
-export function prorateCents(baseCents: bigint, workedDaysHundredths: bigint, standardDaysHundredths: bigint): bigint {
+export function prorateCents(
+  baseCents: bigint,
+  workedDaysHundredths: bigint,
+  standardDaysHundredths: bigint,
+): bigint {
   if (standardDaysHundredths <= 0n) return baseCents;
   if (workedDaysHundredths >= standardDaysHundredths) return baseCents;
   // Round to nearest cent: ((base * worked * 10) / standard + 5) / 10
@@ -45,68 +58,86 @@ export function prorateCents(baseCents: bigint, workedDaysHundredths: bigint, st
   return rounded / 10n;
 }
 
-const componentSchema = z.object({
-  code,
-  name: z.string().trim().min(1).max(120),
-  type: z.enum(['BASE_SALARY', 'ALLOWANCE', 'BONUS', 'DEDUCTION']),
-  calculationType: z.enum(['FIXED', 'PERCENTAGE', 'ATTENDANCE_BASED', 'FORMULA']).default('FIXED'),
-  isTaxable: z.boolean().default(true),
-  isStatutory: z.boolean().default(false),
-  defaultAmount: z.number().min(0).max(1_000_000_000).default(0),
-  active: z.boolean().default(true),
-  description: z.string().trim().max(500).nullable().optional(),
-}).strict();
+const componentSchema = z
+  .object({
+    code,
+    name: z.string().trim().min(1).max(120),
+    type: z.enum(['BASE_SALARY', 'ALLOWANCE', 'BONUS', 'DEDUCTION']),
+    calculationType: z
+      .enum(['FIXED', 'PERCENTAGE', 'ATTENDANCE_BASED', 'FORMULA'])
+      .default('FIXED'),
+    isTaxable: z.boolean().default(true),
+    isStatutory: z.boolean().default(false),
+    defaultAmount: z.number().min(0).max(1_000_000_000).default(0),
+    active: z.boolean().default(true),
+    description: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
 
-const componentUpdateSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  calculationType: z.enum(['FIXED', 'PERCENTAGE', 'ATTENDANCE_BASED', 'FORMULA']).default('FIXED'),
-  isTaxable: z.boolean().default(true),
-  isStatutory: z.boolean().default(false),
-  defaultAmount: z.number().min(0).max(1_000_000_000).default(0),
-  active: z.boolean().default(true),
-  description: z.string().trim().max(500).nullable().optional(),
-}).strict();
+const componentUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    calculationType: z
+      .enum(['FIXED', 'PERCENTAGE', 'ATTENDANCE_BASED', 'FORMULA'])
+      .default('FIXED'),
+    isTaxable: z.boolean().default(true),
+    isStatutory: z.boolean().default(false),
+    defaultAmount: z.number().min(0).max(1_000_000_000).default(0),
+    active: z.boolean().default(true),
+    description: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
 
-const profileComponentSchema = z.object({
-  componentId: uuid,
-  amount: z.number().min(0).max(1_000_000_000),
-  percentage: z.number().min(0).max(100).nullable().optional(),
-  notes: z.string().trim().max(500).nullable().optional(),
-}).strict();
+const profileComponentSchema = z
+  .object({
+    componentId: uuid,
+    amount: z.number().min(0).max(1_000_000_000),
+    percentage: z.number().min(0).max(100).nullable().optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
 
-const salaryProfileSchema = z.object({
-  salaryMode: z.enum(['GROSS', 'NET']).default('GROSS'),
-  baseSalary: z.number().min(0).max(1_000_000_000),
-  effectiveFrom: day,
-  effectiveTo: day.nullable().optional(),
-  currency: z.string().trim().min(1).max(10).default('VND'),
-  bankAccountNumber: z.string().trim().max(50).nullable().optional(),
-  bankName: z.string().trim().max(100).nullable().optional(),
-  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT']).default('ACTIVE'),
-  notes: z.string().trim().max(500).nullable().optional(),
-  components: z.array(profileComponentSchema).default([]),
-}).strict().refine(data => !data.effectiveTo || data.effectiveTo >= data.effectiveFrom, {
-  message: 'effectiveTo must be greater than or equal to effectiveFrom',
-  path: ['effectiveTo'],
-});
+const salaryProfileSchema = z
+  .object({
+    salaryMode: z.enum(['GROSS', 'NET']).default('GROSS'),
+    baseSalary: z.number().min(0).max(1_000_000_000),
+    effectiveFrom: day,
+    effectiveTo: day.nullable().optional(),
+    currency: z.string().trim().min(1).max(10).default('VND'),
+    bankAccountNumber: z.string().trim().max(50).nullable().optional(),
+    bankName: z.string().trim().max(100).nullable().optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT']).default('ACTIVE'),
+    notes: z.string().trim().max(500).nullable().optional(),
+    components: z.array(profileComponentSchema).default([]),
+  })
+  .strict()
+  .refine((data) => !data.effectiveTo || data.effectiveTo >= data.effectiveFrom, {
+    message: 'effectiveTo must be greater than or equal to effectiveFrom',
+    path: ['effectiveTo'],
+  });
 
-const periodSchema = z.object({
-  code,
-  name: z.string().trim().min(1).max(120),
-  startDate: day,
-  endDate: day,
-  paymentDate: day.nullable().optional(),
-  standardWorkingDays: z.number().min(1).max(31).default(22),
-  notes: z.string().trim().max(500).nullable().optional(),
-}).strict().refine(data => data.endDate >= data.startDate, {
-  message: 'endDate must be greater than or equal to startDate',
-  path: ['endDate'],
-});
+const periodSchema = z
+  .object({
+    code,
+    name: z.string().trim().min(1).max(120),
+    startDate: day,
+    endDate: day,
+    paymentDate: day.nullable().optional(),
+    standardWorkingDays: z.number().min(1).max(31).default(22),
+    notes: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict()
+  .refine((data) => data.endDate >= data.startDate, {
+    message: 'endDate must be greater than or equal to startDate',
+    path: ['endDate'],
+  });
 
-const periodStatusSchema = z.object({
-  status: z.enum(['DRAFT', 'UNDER_REVIEW', 'APPROVED', 'CLOSED']),
-  notes: z.string().trim().max(500).optional(),
-}).strict();
+const periodStatusSchema = z
+  .object({
+    status: z.enum(['DRAFT', 'UNDER_REVIEW', 'APPROVED', 'CLOSED']),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .strict();
 
 const pagingSchema = z.object({
   page: z.coerce.number().int().min(1).max(100000).default(1),
@@ -139,10 +170,12 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          FROM salary_components
          WHERE organization_id = $1
          ORDER BY type, name`,
-        [identity.orgId]
+        [identity.orgId],
       );
       res.json({ components: result.rows });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 2. GET Components list with pagination & search
@@ -180,7 +213,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
                        LIMIT $${params.length - 1} OFFSET $${params.length}`;
       const items = (await pool.query(dataSql, params)).rows;
       res.json({ items, total, page, limit });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 3. POST Component
@@ -190,18 +225,30 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const data = componentSchema.parse(req.body);
       const id = randomUUID();
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
         const dup = await db.query(
           'SELECT 1 FROM salary_components WHERE organization_id = $1 AND upper(btrim(code)) = upper(btrim($2))',
-          [identity.orgId, data.code]
+          [identity.orgId, data.code],
         );
         if (dup.rowCount) fail(409, 'DUPLICATE_CODE');
 
         await db.query(
           `INSERT INTO salary_components(id, organization_id, code, name, type, calculation_type, is_taxable, is_statutory, default_amount, active, description)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [id, identity.orgId, data.code, data.name, data.type, data.calculationType, data.isTaxable, data.isStatutory, data.defaultAmount, data.active, data.description || null]
+          [
+            id,
+            identity.orgId,
+            data.code,
+            data.name,
+            data.type,
+            data.calculationType,
+            data.isTaxable,
+            data.isStatutory,
+            data.defaultAmount,
+            data.active,
+            data.description || null,
+          ],
         );
         await audit(db, 'PAYROLL_COMPONENT_CREATED', identity.userId, identity.orgId, undefined, {
           componentId: id,
@@ -211,7 +258,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       });
 
       res.status(201).json({ id, ...data });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 4. PUT Component
@@ -221,11 +270,11 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const componentId = uuid.parse(req.params.id);
       const data = componentUpdateSchema.parse(req.body);
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
         const current = await db.query(
           'SELECT id, code FROM salary_components WHERE id = $1 AND organization_id = $2 FOR UPDATE',
-          [componentId, identity.orgId]
+          [componentId, identity.orgId],
         );
         if (!current.rowCount) fail(404, 'NOT_FOUND');
 
@@ -234,7 +283,17 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
            SET name = $1, calculation_type = $2, is_taxable = $3, is_statutory = $4,
                default_amount = $5, active = $6, description = $7, updated_at = now()
            WHERE id = $8 AND organization_id = $9`,
-          [data.name, data.calculationType, data.isTaxable, data.isStatutory, data.defaultAmount, data.active, data.description || null, componentId, identity.orgId]
+          [
+            data.name,
+            data.calculationType,
+            data.isTaxable,
+            data.isStatutory,
+            data.defaultAmount,
+            data.active,
+            data.description || null,
+            componentId,
+            identity.orgId,
+          ],
         );
         await audit(db, 'PAYROLL_COMPONENT_UPDATED', identity.userId, identity.orgId, undefined, {
           componentId,
@@ -243,7 +302,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       });
 
       res.json({ id: componentId, ...data });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 5. GET Employee Salary Profile
@@ -252,9 +313,14 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const identity = identityFor(req);
       const empId = uuid.parse(req.params.employeeId);
 
-      const emp = await pool.query<{ id: string; user_id: string | null; department_id: string | null; manager_user_id: string | null }>(
+      const emp = await pool.query<{
+        id: string;
+        user_id: string | null;
+        department_id: string | null;
+        manager_user_id: string | null;
+      }>(
         'SELECT id, user_id, department_id, manager_user_id FROM employees WHERE id = $1 AND organization_id = $2',
-        [empId, identity.orgId]
+        [empId, identity.orgId],
       );
       if (!emp.rowCount) fail(404, 'NOT_FOUND');
 
@@ -264,10 +330,11 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       }
       if (identity.role === 'MANAGER') {
         const scope = (await managementScope(pool, identity))!;
-        const inScope = (empRow.department_id && scope.departments.includes(empRow.department_id)) ||
-                        (empRow.user_id && scope.users.includes(empRow.user_id)) ||
-                        empRow.manager_user_id === identity.userId ||
-                        empRow.user_id === identity.userId;
+        const inScope =
+          (empRow.department_id && scope.departments.includes(empRow.department_id)) ||
+          (empRow.user_id && scope.users.includes(empRow.user_id)) ||
+          empRow.manager_user_id === identity.userId ||
+          empRow.user_id === identity.userId;
         if (!inScope) fail(403, 'FORBIDDEN');
       }
 
@@ -280,7 +347,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          WHERE organization_id = $1 AND employee_id = $2
          ORDER BY effective_from DESC
          LIMIT 1`,
-        [identity.orgId, empId]
+        [identity.orgId, empId],
       );
 
       if (!profileRes.rowCount) {
@@ -297,11 +364,13 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          JOIN salary_components c ON c.id = pc.component_id AND c.organization_id = pc.organization_id
          WHERE pc.profile_id = $1 AND pc.organization_id = $2
          ORDER BY c.type, c.name`,
-        [profile.id, identity.orgId]
+        [profile.id, identity.orgId],
       );
 
       res.json({ profile, components: compsRes.rows });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 6. PUT Employee Salary Profile (Admin & HR with reauth)
@@ -311,20 +380,20 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const empId = uuid.parse(req.params.employeeId);
       const data = salaryProfileSchema.parse(req.body);
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
         const emp = await db.query(
           'SELECT id FROM employees WHERE id = $1 AND organization_id = $2 FOR UPDATE',
-          [empId, identity.orgId]
+          [empId, identity.orgId],
         );
         if (!emp.rowCount) fail(404, 'NOT_FOUND');
 
         // Verify all componentIds belong to the same tenant
         if (data.components.length > 0) {
-          const compIds = data.components.map(c => c.componentId);
+          const compIds = data.components.map((c) => c.componentId);
           const validComps = await db.query(
             'SELECT id FROM salary_components WHERE id = ANY($1::uuid[]) AND organization_id = $2 AND active = true',
-            [compIds, identity.orgId]
+            [compIds, identity.orgId],
           );
           if (validComps.rowCount !== compIds.length) fail(400, 'INVALID_COMPONENT');
         }
@@ -337,8 +406,20 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
              id, organization_id, employee_id, salary_mode, base_salary, effective_from, effective_to,
              currency, bank_account_number, bank_name, status, notes
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-          [profileId, identity.orgId, empId, data.salaryMode, data.baseSalary, data.effectiveFrom, data.effectiveTo || null,
-           data.currency, data.bankAccountNumber || null, data.bankName || null, data.status, data.notes || null]
+          [
+            profileId,
+            identity.orgId,
+            empId,
+            data.salaryMode,
+            data.baseSalary,
+            data.effectiveFrom,
+            data.effectiveTo || null,
+            data.currency,
+            data.bankAccountNumber || null,
+            data.bankName || null,
+            data.status,
+            data.notes || null,
+          ],
         );
 
         for (const item of data.components) {
@@ -346,7 +427,15 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
             `INSERT INTO employee_salary_profile_components(
                id, organization_id, profile_id, component_id, amount, percentage, notes
              ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [randomUUID(), identity.orgId, profileId, item.componentId, item.amount, item.percentage || null, item.notes || null]
+            [
+              randomUUID(),
+              identity.orgId,
+              profileId,
+              item.componentId,
+              item.amount,
+              item.percentage || null,
+              item.notes || null,
+            ],
           );
         }
 
@@ -360,7 +449,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       });
 
       res.status(200).json({ ok: true, employeeId: empId });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 7. GET Payroll Periods
@@ -396,7 +487,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
                        LIMIT $${params.length - 1} OFFSET $${params.length}`;
       const items = (await pool.query(dataSql, params)).rows;
       res.json({ items, total, page, limit });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 8. POST Create Payroll Period
@@ -406,11 +499,11 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const data = periodSchema.parse(req.body);
       const id = randomUUID();
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
         const dup = await db.query(
           'SELECT 1 FROM payroll_periods WHERE organization_id = $1 AND upper(btrim(code)) = upper(btrim($2))',
-          [identity.orgId, data.code]
+          [identity.orgId, data.code],
         );
         if (dup.rowCount) fail(409, 'DUPLICATE_CODE');
 
@@ -418,7 +511,17 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
           `INSERT INTO payroll_periods(
              id, organization_id, code, name, start_date, end_date, payment_date, standard_working_days, status, notes
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'DRAFT', $9)`,
-          [id, identity.orgId, data.code, data.name, data.startDate, data.endDate, data.paymentDate || null, data.standardWorkingDays, data.notes || null]
+          [
+            id,
+            identity.orgId,
+            data.code,
+            data.name,
+            data.startDate,
+            data.endDate,
+            data.paymentDate || null,
+            data.standardWorkingDays,
+            data.notes || null,
+          ],
         );
 
         await audit(db, 'PAYROLL_PERIOD_CREATED', identity.userId, identity.orgId, undefined, {
@@ -430,7 +533,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       });
 
       res.status(201).json({ id, ...data, status: 'DRAFT' });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 9. GET Payroll Period Detail with Summary
@@ -449,7 +554,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          LEFT JOIN users u_app ON u_app.id = p.approved_by
          LEFT JOIN users u_cls ON u_cls.id = p.closed_by
          WHERE p.id = $1 AND p.organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'NOT_FOUND');
       const period = periodRes.rows[0];
@@ -461,11 +566,13 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
                 count(DISTINCT employee_id)::integer AS "totalEmployees"
          FROM payroll_slips
          WHERE period_id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       res.json({ period, summary: summaryRes.rows[0] });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 10. POST Calculate Draft Payroll for Period (Admin & HR with reauth)
@@ -474,18 +581,23 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const identity = identityFor(req);
       const periodId = uuid.parse(req.params.id);
 
-      const result = await transaction(async db => {
+      const result = await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         // Lock period row
         const periodRes = await db.query<{
-          id: string; status: string; code: string; start_date: string; end_date: string; standard_working_days: string;
+          id: string;
+          status: string;
+          code: string;
+          start_date: string;
+          end_date: string;
+          standard_working_days: string;
         }>(
           `SELECT id, status, code, start_date::text AS start_date, end_date::text AS end_date, standard_working_days::text AS standard_working_days
            FROM payroll_periods
            WHERE id = $1 AND organization_id = $2
            FOR UPDATE`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         if (!periodRes.rowCount) fail(404, 'NOT_FOUND');
         const period = periodRes.rows[0];
@@ -495,10 +607,10 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
         }
 
         // Idempotent: delete existing draft slips and cascade slip items
-        await db.query(
-          'DELETE FROM payroll_slips WHERE period_id = $1 AND organization_id = $2',
-          [periodId, identity.orgId]
-        );
+        await db.query('DELETE FROM payroll_slips WHERE period_id = $1 AND organization_id = $2', [
+          periodId,
+          identity.orgId,
+        ]);
 
         // Fetch all active employees in tenant
         const employees = await db.query<{ id: string; employee_code: string; full_name: string }>(
@@ -506,7 +618,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
            FROM employees
            WHERE organization_id = $1 AND employment_status = 'ACTIVE'
            ORDER BY employee_code`,
-          [identity.orgId]
+          [identity.orgId],
         );
 
         const standardDaysNum = Number(period.standard_working_days) || 22;
@@ -517,7 +629,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
         for (const emp of employees.rows) {
           // Look up active salary profile effective in this period window
           const profileRes = await db.query<{
-            id: string; salary_mode: 'GROSS' | 'NET'; base_salary: string;
+            id: string;
+            salary_mode: 'GROSS' | 'NET';
+            base_salary: string;
           }>(
             `SELECT id, salary_mode, base_salary::text AS base_salary
              FROM employee_salary_profiles
@@ -525,7 +639,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
                AND effective_from <= $4::date AND (effective_to IS NULL OR effective_to >= $3::date)
              ORDER BY effective_from DESC
              LIMIT 1`,
-            [identity.orgId, emp.id, period.start_date, period.end_date]
+            [identity.orgId, emp.id, period.start_date, period.end_date],
           );
 
           if (!profileRes.rowCount) {
@@ -542,7 +656,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
              WHERE s.organization_id = $1 AND s.employee_id = $2
                AND s.work_date >= $3::date AND s.work_date <= $4::date
                AND p.checked_in_at IS NOT NULL`,
-            [identity.orgId, emp.id, period.start_date, period.end_date]
+            [identity.orgId, emp.id, period.start_date, period.end_date],
           );
           const rawWorkedDays = attRes.rows[0]?.worked_days ?? 0;
 
@@ -552,7 +666,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
              FROM leave_requests
              WHERE organization_id = $1 AND employee_id = $2 AND status = 'APPROVED'
                AND starts_at::date >= $3::date AND starts_at::date <= $4::date`,
-            [identity.orgId, emp.id, period.start_date, period.end_date]
+            [identity.orgId, emp.id, period.start_date, period.end_date],
           );
           const leaveMinutes = leaveRes.rows[0]?.leave_minutes ?? 0;
           // 480 minutes = 1 workday
@@ -570,12 +684,19 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
           const effectiveDaysHundredths = BigInt(Math.round(totalEffectiveDays * 100));
 
           // Prorated base salary using exact integer math
-          const proratedBaseCents = prorateCents(baseCents, effectiveDaysHundredths, standardDaysHundredths);
+          const proratedBaseCents = prorateCents(
+            baseCents,
+            effectiveDaysHundredths,
+            standardDaysHundredths,
+          );
 
           // Fetch recurring components
           const compsRes = await db.query<{
-            component_id: string; component_name: string; component_type: string;
-            amount: string; percentage: number | null;
+            component_id: string;
+            component_name: string;
+            component_type: string;
+            amount: string;
+            percentage: number | null;
           }>(
             `SELECT pc.component_id, c.name AS component_name, c.type AS component_type,
                     pc.amount::text AS amount, pc.percentage
@@ -583,14 +704,18 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
              JOIN salary_components c ON c.id = pc.component_id AND c.organization_id = pc.organization_id
              WHERE pc.profile_id = $1 AND pc.organization_id = $2 AND c.active = true
              ORDER BY c.type, c.name`,
-            [profile.id, identity.orgId]
+            [profile.id, identity.orgId],
           );
 
           let allowancesCents = 0n;
           let bonusesCents = 0n;
           let deductionsCents = 0n;
           const slipItemsToInsert: Array<{
-            componentId: string | null; componentName: string; type: string; amountCents: bigint; notes: string | null;
+            componentId: string | null;
+            componentName: string;
+            type: string;
+            amountCents: bigint;
+            notes: string | null;
           }> = [];
 
           // Add base salary line item
@@ -648,11 +773,22 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
                $1, $2, $3, $4, $5, $6, $7, $8, 0, 0, $9, $10, $11, $12, $13, 0, $14, $15, 'DRAFT'
              )`,
             [
-              slipId, identity.orgId, periodId, emp.id, profile.salary_mode, standardDaysNum,
-              actualDays, paidLeaveDays, fromCents(baseCents), fromCents(proratedBaseCents),
-              fromCents(allowancesCents), fromCents(bonusesCents), fromCents(deductionsCents),
-              fromCents(grossCents), fromCents(netCents)
-            ]
+              slipId,
+              identity.orgId,
+              periodId,
+              emp.id,
+              profile.salary_mode,
+              standardDaysNum,
+              actualDays,
+              paidLeaveDays,
+              fromCents(baseCents),
+              fromCents(proratedBaseCents),
+              fromCents(allowancesCents),
+              fromCents(bonusesCents),
+              fromCents(deductionsCents),
+              fromCents(grossCents),
+              fromCents(netCents),
+            ],
           );
 
           for (const item of slipItemsToInsert) {
@@ -661,9 +797,15 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
                  id, organization_id, slip_id, component_id, component_name, type, amount, notes
                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
               [
-                randomUUID(), identity.orgId, slipId, item.componentId, item.componentName,
-                item.type, fromCents(item.amountCents), item.notes
-              ]
+                randomUUID(),
+                identity.orgId,
+                slipId,
+                item.componentId,
+                item.componentName,
+                item.type,
+                fromCents(item.amountCents),
+                item.notes,
+              ],
             );
           }
 
@@ -682,7 +824,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       });
 
       res.json({ ok: true, ...result });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 11. PATCH Period Status (Lifecycle: DRAFT -> UNDER_REVIEW -> APPROVED -> CLOSED)
@@ -692,12 +836,12 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const periodId = uuid.parse(req.params.id);
       const { status, notes } = periodStatusSchema.parse(req.body);
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         const periodRes = await db.query<{ id: string; status: string; code: string }>(
           'SELECT id, status, code FROM payroll_periods WHERE id = $1 AND organization_id = $2 FOR UPDATE',
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         if (!periodRes.rowCount) fail(404, 'NOT_FOUND');
         const period = periodRes.rows[0];
@@ -746,7 +890,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       });
 
       res.json({ id: periodId, status });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 12. GET Slips in Period
@@ -766,12 +912,16 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       } else if (identity.role === 'MANAGER') {
         const scope = (await managementScope(pool, identity))!;
         params.push(scope.departments, scope.users, identity.userId);
-        clauses.push(`(e.department_id = ANY($${params.length - 2}::uuid[]) OR e.user_id = ANY($${params.length - 1}::uuid[]) OR e.manager_user_id = $${params.length} OR e.user_id = $${params.length})`);
+        clauses.push(
+          `(e.department_id = ANY($${params.length - 2}::uuid[]) OR e.user_id = ANY($${params.length - 1}::uuid[]) OR e.manager_user_id = $${params.length} OR e.user_id = $${params.length})`,
+        );
       }
 
       if (q) {
         params.push(`%${escapeLike(q)}%`);
-        clauses.push(`(e.full_name ILIKE $${params.length} OR e.employee_code ILIKE $${params.length})`);
+        clauses.push(
+          `(e.full_name ILIKE $${params.length} OR e.employee_code ILIKE $${params.length})`,
+        );
       }
 
       const countSql = `SELECT count(*)::integer AS total
@@ -801,7 +951,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const items = (await pool.query(dataSql, params)).rows;
 
       res.json({ items, total, page, limit });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 13. GET Single Slip Detail
@@ -821,7 +973,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
          LEFT JOIN positions p ON p.id = e.position_id AND p.organization_id = e.organization_id
          WHERE s.id = $1 AND s.organization_id = $2`,
-        [slipId, identity.orgId]
+        [slipId, identity.orgId],
       );
       if (!slipRes.rowCount) fail(404, 'NOT_FOUND');
       const row = slipRes.rows[0];
@@ -831,10 +983,11 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       }
       if (identity.role === 'MANAGER') {
         const scope = (await managementScope(pool, identity))!;
-        const inScope = (row.department_id && scope.departments.includes(row.department_id)) ||
-                        (row.user_id && scope.users.includes(row.user_id)) ||
-                        row.manager_user_id === identity.userId ||
-                        row.user_id === identity.userId;
+        const inScope =
+          (row.department_id && scope.departments.includes(row.department_id)) ||
+          (row.user_id && scope.users.includes(row.user_id)) ||
+          row.manager_user_id === identity.userId ||
+          row.user_id === identity.userId;
         if (!inScope) fail(403, 'FORBIDDEN');
       }
 
@@ -843,7 +996,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          FROM payroll_slip_items
          WHERE slip_id = $1 AND organization_id = $2
          ORDER BY id`,
-        [slipId, identity.orgId]
+        [slipId, identity.orgId],
       );
 
       res.json({
@@ -879,7 +1032,9 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
         },
         items: itemsRes.rows,
       });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 14. GET Self-service "My Payslips" for logged in employee
@@ -888,7 +1043,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const identity = identityFor(req);
       const empRes = await pool.query<{ id: string }>(
         'SELECT id FROM employees WHERE user_id = $1 AND organization_id = $2',
-        [identity.userId, identity.orgId]
+        [identity.userId, identity.orgId],
       );
       if (!empRes.rowCount) {
         res.json({ items: [], total: 0 });
@@ -910,11 +1065,13 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          JOIN payroll_periods pr ON pr.id = s.period_id AND pr.organization_id = s.organization_id
          WHERE s.employee_id = $1 AND s.organization_id = $2
          ORDER BY pr.start_date DESC`,
-        [empId, identity.orgId]
+        [empId, identity.orgId],
       );
 
       res.json({ items: slipsRes.rows, total: slipsRes.rowCount });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // ================================================================
@@ -923,19 +1080,25 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
 
   // Helper: resolve employee and enforce RBAC for read (self / manager scope / ADMIN+HR)
   async function resolveEmployeeForRead(empId: string, identity: Identity) {
-    const emp = await pool.query<{ id: string; user_id: string | null; department_id: string | null; manager_user_id: string | null }>(
+    const emp = await pool.query<{
+      id: string;
+      user_id: string | null;
+      department_id: string | null;
+      manager_user_id: string | null;
+    }>(
       'SELECT id, user_id, department_id, manager_user_id FROM employees WHERE id = $1 AND organization_id = $2',
-      [empId, identity.orgId]
+      [empId, identity.orgId],
     );
     if (!emp.rowCount) fail(404, 'NOT_FOUND');
     const row = emp.rows[0];
     if (identity.role === 'EMPLOYEE' && row.user_id !== identity.userId) fail(403, 'FORBIDDEN');
     if (identity.role === 'MANAGER') {
       const scope = (await managementScope(pool, identity))!;
-      const inScope = (row.department_id && scope.departments.includes(row.department_id)) ||
-                      (row.user_id && scope.users.includes(row.user_id)) ||
-                      row.manager_user_id === identity.userId ||
-                      row.user_id === identity.userId;
+      const inScope =
+        (row.department_id && scope.departments.includes(row.department_id)) ||
+        (row.user_id && scope.users.includes(row.user_id)) ||
+        row.manager_user_id === identity.userId ||
+        row.user_id === identity.userId;
       if (!inScope) fail(403, 'FORBIDDEN');
     }
     return row;
@@ -953,7 +1116,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
 
       const countRes = await pool.query(
         'SELECT count(*)::integer AS total FROM employee_salary_profiles WHERE organization_id = $1 AND employee_id = $2',
-        [identity.orgId, empId]
+        [identity.orgId, empId],
       );
       const total = countRes.rows[0]?.total ?? 0;
 
@@ -987,11 +1150,13 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          GROUP BY esp.id
          ORDER BY esp.effective_from DESC
          LIMIT $3 OFFSET $4`,
-        [identity.orgId, empId, limit, offset]
+        [identity.orgId, empId, limit, offset],
       );
 
       res.json({ items: historyRes.rows, total, page, limit });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 16. GET Employee Self Salary Profile (self-service shortcut for EMPLOYEE role)
@@ -1000,7 +1165,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const identity = identityFor(req);
       const empRes = await pool.query<{ id: string }>(
         'SELECT id FROM employees WHERE user_id = $1 AND organization_id = $2',
-        [identity.userId, identity.orgId]
+        [identity.userId, identity.orgId],
       );
       if (!empRes.rowCount) {
         res.json({ profile: null, components: [], history: [] });
@@ -1016,7 +1181,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          WHERE organization_id = $1 AND employee_id = $2 AND status = 'ACTIVE'
          ORDER BY effective_from DESC
          LIMIT 1`,
-        [identity.orgId, empId]
+        [identity.orgId, empId],
       );
 
       if (!profileRes.rowCount) {
@@ -1032,7 +1197,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          JOIN salary_components sc ON sc.id = espc.component_id AND sc.organization_id = espc.organization_id
          WHERE espc.profile_id = $1 AND espc.organization_id = $2
          ORDER BY sc.type, sc.name`,
-        [profile.id, identity.orgId]
+        [profile.id, identity.orgId],
       );
 
       // Last 6 effective periods for self-view
@@ -1043,11 +1208,13 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          WHERE organization_id = $1 AND employee_id = $2
          ORDER BY effective_from DESC
          LIMIT 6`,
-        [identity.orgId, empId]
+        [identity.orgId, empId],
       );
 
       res.json({ profile, components: compsRes.rows, history: historyRes.rows });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 17. GET Salary Adjustment Log for employee
@@ -1063,7 +1230,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
 
       const countRes = await pool.query(
         'SELECT count(*)::integer AS total FROM salary_adjustment_log WHERE organization_id = $1 AND employee_id = $2',
-        [identity.orgId, empId]
+        [identity.orgId, empId],
       );
       const total = countRes.rows[0]?.total ?? 0;
 
@@ -1077,11 +1244,13 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          WHERE sal.organization_id = $1 AND sal.employee_id = $2
          ORDER BY sal.recorded_at DESC
          LIMIT $3 OFFSET $4`,
-        [identity.orgId, empId, limit, offset]
+        [identity.orgId, empId, limit, offset],
       );
 
       res.json({ items: logsRes.rows, total, page, limit });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 18. GET Employee Social Insurance Profile
@@ -1100,7 +1269,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          WHERE organization_id = $1 AND employee_id = $2
          ORDER BY enrollment_date DESC
          LIMIT 1`,
-        [identity.orgId, empId]
+        [identity.orgId, empId],
       );
 
       if (!siRes.rowCount) {
@@ -1120,29 +1289,34 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          WHERE organization_id = $1 AND employee_id = $2
          ORDER BY contribution_month DESC
          LIMIT 12`,
-        [identity.orgId, empId]
+        [identity.orgId, empId],
       );
 
       res.json({ profile: si, contributions: contribRes.rows });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 19. PUT Employee Social Insurance Profile (ADMIN/HR only, with reauth)
-  const siProfileSchema = z.object({
-    siCode: z.string().trim().min(1).max(20),
-    hiCode: z.string().trim().max(20).nullable().optional(),
-    insuredName: z.string().trim().min(1).max(200),
-    enrollmentDate: day,
-    terminationDate: day.nullable().optional(),
-    siSalary: z.number().min(0).max(1_000_000_000),
-    currency: z.string().trim().min(1).max(10).default('VND'),
-    status: z.enum(['ACTIVE', 'SUSPENDED', 'TERMINATED']).default('ACTIVE'),
-    suspensionReason: z.string().trim().max(500).nullable().optional(),
-    notes: z.string().trim().max(500).nullable().optional(),
-  }).strict().refine(d => !d.terminationDate || d.terminationDate >= d.enrollmentDate, {
-    message: 'terminationDate must be on or after enrollmentDate',
-    path: ['terminationDate'],
-  });
+  const siProfileSchema = z
+    .object({
+      siCode: z.string().trim().min(1).max(20),
+      hiCode: z.string().trim().max(20).nullable().optional(),
+      insuredName: z.string().trim().min(1).max(200),
+      enrollmentDate: day,
+      terminationDate: day.nullable().optional(),
+      siSalary: z.number().min(0).max(1_000_000_000),
+      currency: z.string().trim().min(1).max(10).default('VND'),
+      status: z.enum(['ACTIVE', 'SUSPENDED', 'TERMINATED']).default('ACTIVE'),
+      suspensionReason: z.string().trim().max(500).nullable().optional(),
+      notes: z.string().trim().max(500).nullable().optional(),
+    })
+    .strict()
+    .refine((d) => !d.terminationDate || d.terminationDate >= d.enrollmentDate, {
+      message: 'terminationDate must be on or after enrollmentDate',
+      path: ['terminationDate'],
+    });
 
   app.put(`${prefix}/employees/:employeeId/social-insurance`, async (req: Authed, res, next) => {
     try {
@@ -1150,12 +1324,12 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       const empId = uuid.parse(req.params.employeeId);
       const data = siProfileSchema.parse(req.body);
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         const emp = await db.query(
           'SELECT id FROM employees WHERE id = $1 AND organization_id = $2 FOR UPDATE',
-          [empId, identity.orgId]
+          [empId, identity.orgId],
         );
         if (!emp.rowCount) fail(404, 'NOT_FOUND');
 
@@ -1164,7 +1338,7 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
           `UPDATE employee_social_insurance
            SET status = 'TERMINATED', termination_date = $3, updated_at = now()
            WHERE organization_id = $1 AND employee_id = $2 AND status = 'ACTIVE'`,
-          [identity.orgId, empId, data.enrollmentDate]
+          [identity.orgId, empId, data.enrollmentDate],
         );
 
         const siId = randomUUID();
@@ -1175,12 +1349,20 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
              status, suspension_reason, notes
            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [
-            siId, identity.orgId, empId,
-            data.siCode, data.hiCode || null, data.insuredName,
-            data.enrollmentDate, data.terminationDate || null,
-            data.siSalary, data.currency,
-            data.status, data.suspensionReason || null, data.notes || null,
-          ]
+            siId,
+            identity.orgId,
+            empId,
+            data.siCode,
+            data.hiCode || null,
+            data.insuredName,
+            data.enrollmentDate,
+            data.terminationDate || null,
+            data.siSalary,
+            data.currency,
+            data.status,
+            data.suspensionReason || null,
+            data.notes || null,
+          ],
         );
 
         // Audit log — no salary amounts, only metadata
@@ -1193,27 +1375,31 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
       });
 
       res.status(200).json({ ok: true, employeeId: empId });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 20. GET Social Insurance Contribution History (paginated, HR/Admin or self)
-  app.get(`${prefix}/employees/:employeeId/social-insurance/contributions`, async (req: Authed, res, next) => {
-    try {
-      const identity = identityFor(req);
-      const empId = uuid.parse(req.params.employeeId);
-      await resolveEmployeeForRead(empId, identity);
+  app.get(
+    `${prefix}/employees/:employeeId/social-insurance/contributions`,
+    async (req: Authed, res, next) => {
+      try {
+        const identity = identityFor(req);
+        const empId = uuid.parse(req.params.employeeId);
+        await resolveEmployeeForRead(empId, identity);
 
-      const { page, limit } = pagingSchema.parse(req.query);
-      const offset = (page - 1) * limit;
+        const { page, limit } = pagingSchema.parse(req.query);
+        const offset = (page - 1) * limit;
 
-      const countRes = await pool.query(
-        'SELECT count(*)::integer AS total FROM social_insurance_contributions WHERE organization_id = $1 AND employee_id = $2',
-        [identity.orgId, empId]
-      );
-      const total = countRes.rows[0]?.total ?? 0;
+        const countRes = await pool.query(
+          'SELECT count(*)::integer AS total FROM social_insurance_contributions WHERE organization_id = $1 AND employee_id = $2',
+          [identity.orgId, empId],
+        );
+        const total = countRes.rows[0]?.total ?? 0;
 
-      const contribRes = await pool.query(
-        `SELECT sic.id, sic.contribution_month::text AS "contributionMonth",
+        const contribRes = await pool.query(
+          `SELECT sic.id, sic.contribution_month::text AS "contributionMonth",
                 sic.si_salary AS "siSalary",
                 sic.employee_rate AS "employeeRate", sic.employer_rate AS "employerRate",
                 sic.employee_amount AS "employeeAmount", sic.employer_amount AS "employerAmount",
@@ -1225,54 +1411,61 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
          WHERE sic.organization_id = $1 AND sic.employee_id = $2
          ORDER BY sic.contribution_month DESC
          LIMIT $3 OFFSET $4`,
-        [identity.orgId, empId, limit, offset]
-      );
+          [identity.orgId, empId, limit, offset],
+        );
 
-      res.json({ items: contribRes.rows, total, page, limit });
-    } catch (err) { next(err); }
-  });
+        res.json({ items: contribRes.rows, total, page, limit });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
 
   // 21. POST Record SI Contribution for a Month (ADMIN/HR only, with reauth)
-  const siContributionSchema = z.object({
-    contributionMonth: day,  // Must be first of month; validated in business logic
-    siSalary: z.number().min(0).max(1_000_000_000),
-    employeeRate: z.number().min(0).max(1),
-    employerRate: z.number().min(0).max(1),
-    employeeAmount: z.number().min(0).max(1_000_000_000),
-    employerAmount: z.number().min(0).max(1_000_000_000),
-    status: z.enum(['PENDING', 'CONFIRMED', 'ADJUSTED', 'SKIPPED']).default('PENDING'),
-    adjustmentReason: z.string().trim().max(500).nullable().optional(),
-    notes: z.string().trim().max(500).nullable().optional(),
-  }).strict();
+  const siContributionSchema = z
+    .object({
+      contributionMonth: day, // Must be first of month; validated in business logic
+      siSalary: z.number().min(0).max(1_000_000_000),
+      employeeRate: z.number().min(0).max(1),
+      employerRate: z.number().min(0).max(1),
+      employeeAmount: z.number().min(0).max(1_000_000_000),
+      employerAmount: z.number().min(0).max(1_000_000_000),
+      status: z.enum(['PENDING', 'CONFIRMED', 'ADJUSTED', 'SKIPPED']).default('PENDING'),
+      adjustmentReason: z.string().trim().max(500).nullable().optional(),
+      notes: z.string().trim().max(500).nullable().optional(),
+    })
+    .strict();
 
-  app.post(`${prefix}/employees/:employeeId/social-insurance/contributions`, async (req: Authed, res, next) => {
-    try {
-      const identity = identityFor(req);
-      const empId = uuid.parse(req.params.employeeId);
-      const data = siContributionSchema.parse(req.body);
+  app.post(
+    `${prefix}/employees/:employeeId/social-insurance/contributions`,
+    async (req: Authed, res, next) => {
+      try {
+        const identity = identityFor(req);
+        const empId = uuid.parse(req.params.employeeId);
+        const data = siContributionSchema.parse(req.body);
 
-      // Enforce month boundary: contributionMonth must be first day of month
-      const cm = new Date(data.contributionMonth + 'T00:00:00Z');
-      if (cm.getUTCDate() !== 1) fail(400, 'CONTRIBUTION_MONTH_MUST_BE_FIRST_OF_MONTH');
+        // Enforce month boundary: contributionMonth must be first day of month
+        const cm = new Date(data.contributionMonth + 'T00:00:00Z');
+        if (cm.getUTCDate() !== 1) fail(400, 'CONTRIBUTION_MONTH_MUST_BE_FIRST_OF_MONTH');
 
-      await transaction(async db => {
-        await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
+        await transaction(async (db) => {
+          await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
-        // Find active SI profile
-        const siRes = await db.query<{ id: string }>(
-          `SELECT id FROM employee_social_insurance
+          // Find active SI profile
+          const siRes = await db.query<{ id: string }>(
+            `SELECT id FROM employee_social_insurance
            WHERE organization_id = $1 AND employee_id = $2 AND status = 'ACTIVE'
            FOR UPDATE`,
-          [identity.orgId, empId]
-        );
-        if (!siRes.rowCount) fail(409, 'NO_ACTIVE_SI_PROFILE');
+            [identity.orgId, empId],
+          );
+          if (!siRes.rowCount) fail(409, 'NO_ACTIVE_SI_PROFILE');
 
-        const siProfileId = siRes.rows[0].id;
-        const contribId = randomUUID();
+          const siProfileId = siRes.rows[0].id;
+          const contribId = randomUUID();
 
-        // Upsert: on conflict update (allow adjustment)
-        await db.query(
-          `INSERT INTO social_insurance_contributions(
+          // Upsert: on conflict update (allow adjustment)
+          await db.query(
+            `INSERT INTO social_insurance_contributions(
              id, organization_id, si_profile_id, employee_id, contribution_month,
              si_salary, employee_rate, employer_rate, employee_amount, employer_amount,
              status, adjustment_reason, notes
@@ -1288,25 +1481,36 @@ export function registerPayrollRoutes(app: Express, deps: OrgStructureDeps) {
              adjustment_reason = EXCLUDED.adjustment_reason,
              notes = EXCLUDED.notes,
              updated_at = now()`,
-          [
-            contribId, identity.orgId, siProfileId, empId,
-            data.contributionMonth, data.siSalary,
-            data.employeeRate, data.employerRate,
-            data.employeeAmount, data.employerAmount,
-            data.status, data.adjustmentReason || null, data.notes || null,
-          ]
-        );
+            [
+              contribId,
+              identity.orgId,
+              siProfileId,
+              empId,
+              data.contributionMonth,
+              data.siSalary,
+              data.employeeRate,
+              data.employerRate,
+              data.employeeAmount,
+              data.employerAmount,
+              data.status,
+              data.adjustmentReason || null,
+              data.notes || null,
+            ],
+          );
 
-        await audit(db, 'SI_CONTRIBUTION_RECORDED', identity.userId, identity.orgId, undefined, {
-          employeeId: empId,
-          contributionMonth: data.contributionMonth,
-          status: data.status,
+          await audit(db, 'SI_CONTRIBUTION_RECORDED', identity.userId, identity.orgId, undefined, {
+            employeeId: empId,
+            contributionMonth: data.contributionMonth,
+            status: data.status,
+          });
         });
-      });
 
-      res.status(201).json({ ok: true, employeeId: empId });
-    } catch (err) { next(err); }
-  });
+        res.status(201).json({ ok: true, employeeId: empId });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
 
   // ---- Patch PUT salary profile to also write salary_adjustment_log ----
   // Override the existing route 6 by adding an interceptor after the fact

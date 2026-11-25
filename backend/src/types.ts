@@ -3,7 +3,10 @@ import type { Request } from 'express';
 export type Role = 'EMPLOYEE' | 'HR' | 'MANAGER' | 'ADMIN';
 
 export class HttpError extends Error {
-  constructor(public status: number, public code: string) {
+  constructor(
+    public status: number,
+    public code: string,
+  ) {
     super(code);
   }
 }
@@ -20,11 +23,11 @@ export interface Identity {
   orgName: string;
   role: Role;
   sessionId: string;
-  mfaEnforced?:boolean;
-  mfaEnabled?:boolean;
-  mfaVerified?:boolean;
-  reauthenticatedAt?:string|null;
-  idleMinutes?:number;
+  mfaEnforced?: boolean;
+  mfaEnabled?: boolean;
+  mfaVerified?: boolean;
+  reauthenticatedAt?: string | null;
+  idleMinutes?: number;
 }
 
 export type Authed = Request & { identity?: Identity };

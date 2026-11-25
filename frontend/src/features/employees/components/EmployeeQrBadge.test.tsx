@@ -46,13 +46,29 @@ describe('EmployeeQrBadge component', () => {
   });
 
   it('renders trigger button with accessible label', () => {
-    render(<EmployeeQrBadge employee={dummyEmployee} orgId={orgId} orgName="Công ty Cổ phần ManagerHR" />);
-    expect(screen.getByRole('button', { name: /Xem mã QR thẻ nhân viên của Nguyễn Văn A/i })).toBeInTheDocument();
+    render(
+      <EmployeeQrBadge
+        employee={dummyEmployee}
+        orgId={orgId}
+        orgName="Công ty Cổ phần ManagerHR"
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: /Xem mã QR thẻ nhân viên của Nguyễn Văn A/i }),
+    ).toBeInTheDocument();
   });
 
   it('opens the modal with a QR and displays the local-only URL', () => {
-    render(<EmployeeQrBadge employee={dummyEmployee} orgId={orgId} orgName="Công ty Cổ phần ManagerHR" />);
-    fireEvent.click(screen.getByRole('button', { name: /Xem mã QR thẻ nhân viên của Nguyễn Văn A/i }));
+    render(
+      <EmployeeQrBadge
+        employee={dummyEmployee}
+        orgId={orgId}
+        orgName="Công ty Cổ phần ManagerHR"
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: /Xem mã QR thẻ nhân viên của Nguyễn Văn A/i }),
+    );
 
     const dialog = screen.getByRole('dialog', { name: /Mã QR thẻ nhân viên của Nguyễn Văn A/i });
     expect(dialog).toBeInTheDocument();

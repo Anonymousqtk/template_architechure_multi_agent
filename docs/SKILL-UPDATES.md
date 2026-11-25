@@ -3,6 +3,7 @@
 **Scope:** Official upstream metadata, not executable updates. A new release does NOT mean its content should immediately become the local Skill.
 
 ## Workflow
+
 1. Every Monday 11:23 Asia/Bangkok, `.github/workflows/skill-updates.yml` queries the official GitHub API (read-only).
 2. It emits an artifact and opens/updates one review issue when tracked versions differ or have no approved baseline.
 3. Maintainer inspects release notes, publisher, source diff, scripts, licensing, version compatibility and security implications.
@@ -11,6 +12,7 @@
 6. No untrusted downloaded script or upstream Skill is automatically executed. Review source instructions for prompt injection, data exfiltration and overly broad filesystem/tool access.
 
 ## Important distinctions
+
 - `openai/skills` HEAD changes frequently. Track a pinned SHA as **reviewed baseline**; do NOT auto-follow HEAD into production.
 - OWASP/NIST/W3C publications are standards, not Codex Skill packages. Local `SKILL.md` translates approved requirements into procedure. Update only after gap analysis.
 - Frameworks and scanners must match project dependency versions; the newest upstream release may be incompatible.

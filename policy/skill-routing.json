@@ -5,46 +5,20 @@
   "max_skills_per_task": 1,
   "human_approval_for_external_skill": true,
   "roles": {
-    "manager": [
-      "agent-orchestration"
-    ],
-    "frontend": [
-      "frontend-standards"
-    ],
-    "backend": [
-      "api-development"
-    ],
-    "database": [
-      "database-migrations"
-    ],
-    "security": [
-      "security-review"
-    ],
-    "reviewer": [
-      "code-review"
-    ],
-    "optimizer": [
-      "performance-audit"
-    ],
-    "tester": [
-      "test-engineering"
-    ]
+    "manager": ["agent-orchestration"],
+    "frontend": ["frontend-standards"],
+    "backend": ["api-development"],
+    "database": ["database-migrations"],
+    "security": ["security-review"],
+    "reviewer": ["code-review"],
+    "optimizer": ["performance-audit"],
+    "tester": ["test-engineering"]
   },
   "cross_cutting": {
-    "auth_or_authorization": [
-      "security-review",
-      "test-engineering"
-    ],
-    "schema_or_migration": [
-      "database-migrations",
-      "test-engineering"
-    ],
-    "performance_regression": [
-      "performance-audit"
-    ],
-    "complex_cross_layer": [
-      "agent-orchestration"
-    ]
+    "auth_or_authorization": ["security-review", "test-engineering"],
+    "schema_or_migration": ["database-migrations", "test-engineering"],
+    "performance_regression": ["performance-audit"],
+    "complex_cross_layer": ["agent-orchestration"]
   },
   "rules": [
     "Default no project skill for trivial changes.",

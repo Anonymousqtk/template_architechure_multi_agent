@@ -1,0 +1,22 @@
+{
+  "name": "managerhr-tooling",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "npm --prefix frontend run lint && npm --prefix backend run lint",
+    "lint:fix": "npm --prefix frontend run lint:fix && npm --prefix backend run lint:fix",
+    "typecheck": "npm --prefix frontend run typecheck && npm --prefix backend run typecheck",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run i18n:check",
+    "i18n:check": "npm --prefix frontend run i18n:check"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx,jsx,css,scss,html,json,yaml,yml,md}": "prettier --write --ignore-unknown"
+  },
+  "devDependencies": {
+    "husky": "9.1.7",
+    "lint-staged": "15.5.2",
+    "prettier": "3.6.2"
+  }
+}

@@ -59,8 +59,7 @@ All three organization screens now offer retry actions. Department/position load
 errors no longer also show a misleading empty-list message or zero total.
 Eight organization UI tests passed, including recovery after failures on each screen.
 
-The local root page returned HTTP 200; the unauthenticated profile endpoint returned
-401. Authenticated browser rendering and final release security review remain
+The local root page returned HTTP 200; the unauthenticated profile endpoint returned 401. Authenticated browser rendering and final release security review remain
 unverified. No production migration or deployment was performed.
 
 ## Chart response contract repair

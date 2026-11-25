@@ -9,13 +9,21 @@ import { managementScope } from './management-scope.js';
 const uuid = z.string().uuid();
 const codeRegex = /^[A-Za-z0-9_.-]+$/;
 const catalogRoles = ['ADMIN', 'HR'] as const;
-const catalogCode = z.string().trim().min(1).max(30).regex(codeRegex).transform(value => value.toUpperCase());
-const jobTitleInput = z.object({
-  code: catalogCode,
-  name: z.string().trim().min(1).max(100),
-  description: z.string().trim().max(500).nullable().optional(),
-  isActive: z.boolean().optional(),
-}).strict();
+const catalogCode = z
+  .string()
+  .trim()
+  .min(1)
+  .max(30)
+  .regex(codeRegex)
+  .transform((value) => value.toUpperCase());
+const jobTitleInput = z
+  .object({
+    code: catalogCode,
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .strict();
 const positionReferences = { jobTitleId: uuid.nullish(), managerPositionId: uuid.nullish() };
 const positionReferenceColumns = `
   jt.id AS "jobTitleId", jt.name AS "jobTitleName",
@@ -26,27 +34,60 @@ const positionReferenceJoins = `
   LEFT JOIN positions parent ON parent.id=p.manager_position_id AND parent.organization_id=p.organization_id`;
 
 type PositionReferences = {
-  jobTitleId: string | null; jobTitleName: string | null;
-  managerPositionId: string | null; managerPositionTitle: string | null;
-  managerDepartmentId: string | null; managerActive: boolean | null;
+  jobTitleId: string | null;
+  jobTitleName: string | null;
+  managerPositionId: string | null;
+  managerPositionTitle: string | null;
+  managerDepartmentId: string | null;
+  managerActive: boolean | null;
 };
 
-function visiblePositionReferences(row: PositionReferences, identity: Identity, scope: Awaited<ReturnType<typeof managementScope>>) {
-  const canSeeManager = identity.role !== 'EMPLOYEE' &&
-    (!scope || (row.managerActive && row.managerDepartmentId && scope.departments.includes(row.managerDepartmentId)));
+function visiblePositionReferences(
+  row: PositionReferences,
+  identity: Identity,
+  scope: Awaited<ReturnType<typeof managementScope>>,
+) {
+  const canSeeManager =
+    identity.role !== 'EMPLOYEE' &&
+    (!scope ||
+      (row.managerActive &&
+        row.managerDepartmentId &&
+        scope.departments.includes(row.managerDepartmentId)));
   return {
-    jobTitleId: row.jobTitleId, jobTitleName: row.jobTitleName,
+    jobTitleId: row.jobTitleId,
+    jobTitleName: row.jobTitleName,
     managerPositionId: canSeeManager ? row.managerPositionId : null,
     managerPositionTitle: canSeeManager ? row.managerPositionTitle : null,
   };
 }
 
-async function validatePositionReferences(db: PoolClient, orgId: string, data: z.infer<z.ZodObject<typeof positionReferences>>, positionId: string) {
-  if (data.jobTitleId && !(await db.query('SELECT 1 FROM job_titles WHERE id=$1 AND organization_id=$2 AND is_active', [data.jobTitleId, orgId])).rowCount) {
+async function validatePositionReferences(
+  db: PoolClient,
+  orgId: string,
+  data: z.infer<z.ZodObject<typeof positionReferences>>,
+  positionId: string,
+) {
+  if (
+    data.jobTitleId &&
+    !(
+      await db.query('SELECT 1 FROM job_titles WHERE id=$1 AND organization_id=$2 AND is_active', [
+        data.jobTitleId,
+        orgId,
+      ])
+    ).rowCount
+  ) {
     fail(400, 'INVALID_JOB_TITLE');
   }
   if (data.managerPositionId === positionId) fail(400, 'CIRCULAR_POSITION_REPORTING');
-  if (data.managerPositionId && !(await db.query('SELECT 1 FROM positions WHERE id=$1 AND organization_id=$2 AND is_active', [data.managerPositionId, orgId])).rowCount) {
+  if (
+    data.managerPositionId &&
+    !(
+      await db.query('SELECT 1 FROM positions WHERE id=$1 AND organization_id=$2 AND is_active', [
+        data.managerPositionId,
+        orgId,
+      ])
+    ).rowCount
+  ) {
     fail(400, 'INVALID_MANAGER_POSITION');
   }
 }
@@ -55,7 +96,8 @@ async function writePosition(db: PoolClient, sql: string, values: unknown[]) {
   try {
     await db.query(sql, values);
   } catch (error) {
-    if ((error as { constraint?: string }).constraint === 'positions_reporting_cycle') fail(400, 'CIRCULAR_POSITION_REPORTING');
+    if ((error as { constraint?: string }).constraint === 'positions_reporting_cycle')
+      fail(400, 'CIRCULAR_POSITION_REPORTING');
     throw error;
   }
 }
@@ -75,7 +117,7 @@ export interface OrgStructureDeps {
 }
 
 export function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, char => `\\${char}`);
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 export async function detectDepartmentCycle(
@@ -135,33 +177,49 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
   function requireCatalogIdentity(req: Authed) {
     const identity = requireOrgIdentity(req);
-    if (!catalogRoles.some(role => identity.role === role)) fail(403, 'FORBIDDEN');
+    if (!catalogRoles.some((role) => identity.role === role)) fail(403, 'FORBIDDEN');
     return identity;
   }
 
   app.get(`${orgPrefix}/job-titles`, async (req: Authed, res) => {
     const identity = requireCatalogIdentity(req);
-    const query = z.object({
-      q: z.string().trim().max(100).default(''),
-      isActive: z.enum(['true', 'false']).optional(),
-      page: z.coerce.number().int().min(1).max(100000).default(1),
-      limit: z.coerce.number().int().min(1).max(100).default(20),
-    }).strict().parse(req.query);
+    const query = z
+      .object({
+        q: z.string().trim().max(100).default(''),
+        isActive: z.enum(['true', 'false']).optional(),
+        page: z.coerce.number().int().min(1).max(100000).default(1),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+      })
+      .strict()
+      .parse(req.query);
     const params = [identity.orgId, `%${escapeLike(query.q)}%`, query.isActive ?? null];
     const where = `organization_id=$1 AND (name ILIKE $2 ESCAPE '\\' OR code ILIKE $2 ESCAPE '\\')
       AND ($3::boolean IS NULL OR is_active=$3)`;
     const [list, count] = await Promise.all([
-      pool.query(`SELECT id,code,name,description,is_active AS "isActive" FROM job_titles WHERE ${where} ORDER BY code LIMIT $4 OFFSET $5`,
-        [...params, query.limit, (query.page - 1) * query.limit]),
-      pool.query<{ total: number }>(`SELECT count(*)::int AS total FROM job_titles WHERE ${where}`, params),
+      pool.query(
+        `SELECT id,code,name,description,is_active AS "isActive" FROM job_titles WHERE ${where} ORDER BY code LIMIT $4 OFFSET $5`,
+        [...params, query.limit, (query.page - 1) * query.limit],
+      ),
+      pool.query<{ total: number }>(
+        `SELECT count(*)::int AS total FROM job_titles WHERE ${where}`,
+        params,
+      ),
     ]);
-    res.json({ items: list.rows, total: count.rows[0].total, page: query.page, limit: query.limit });
+    res.json({
+      items: list.rows,
+      total: count.rows[0].total,
+      page: query.page,
+      limit: query.limit,
+    });
   });
 
   app.get(`${orgPrefix}/job-titles/:jobTitleId`, async (req: Authed, res) => {
     const identity = requireCatalogIdentity(req);
     const id = uuid.parse(req.params.jobTitleId);
-    const result = await pool.query('SELECT id,code,name,description,is_active AS "isActive" FROM job_titles WHERE organization_id=$1 AND id=$2', [identity.orgId, id]);
+    const result = await pool.query(
+      'SELECT id,code,name,description,is_active AS "isActive" FROM job_titles WHERE organization_id=$1 AND id=$2',
+      [identity.orgId, id],
+    );
     if (!result.rowCount) fail(404, 'JOB_TITLE_NOT_FOUND');
     res.json({ jobTitle: result.rows[0] });
   });
@@ -170,13 +228,17 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const identity = requireCatalogIdentity(req);
     const data = jobTitleInput.parse(req.body);
     const id = randomUUID();
-    await transaction(async db => {
+    await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], catalogRoles);
-      const result = await db.query(`INSERT INTO job_titles (id,organization_id,code,name,description,is_active)
+      const result = await db.query(
+        `INSERT INTO job_titles (id,organization_id,code,name,description,is_active)
         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (organization_id,code) DO NOTHING`,
-      [id, identity.orgId, data.code, data.name, data.description ?? null, data.isActive ?? true]);
+        [id, identity.orgId, data.code, data.name, data.description ?? null, data.isActive ?? true],
+      );
       if (!result.rowCount) fail(409, 'JOB_TITLE_CODE_EXISTS');
-      await audit(db, 'JOB_TITLE_CREATED', identity.userId, identity.orgId, undefined, { jobTitleId: id });
+      await audit(db, 'JOB_TITLE_CREATED', identity.userId, identity.orgId, undefined, {
+        jobTitleId: id,
+      });
     });
     res.status(201).json({ id });
   });
@@ -185,17 +247,37 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const identity = requireCatalogIdentity(req);
     const id = uuid.parse(req.params.jobTitleId);
     const data = jobTitleInput.partial().parse(req.body);
-    await transaction(async db => {
+    await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], catalogRoles);
-      if (data.code && (await db.query('SELECT 1 FROM job_titles WHERE organization_id=$1 AND code=$2 AND id<>$3', [identity.orgId, data.code, id])).rowCount) {
+      if (
+        data.code &&
+        (
+          await db.query(
+            'SELECT 1 FROM job_titles WHERE organization_id=$1 AND code=$2 AND id<>$3',
+            [identity.orgId, data.code, id],
+          )
+        ).rowCount
+      ) {
         fail(409, 'JOB_TITLE_CODE_EXISTS');
       }
-      const result = await db.query(`UPDATE job_titles SET code=COALESCE($3,code), name=COALESCE($4,name),
+      const result = await db.query(
+        `UPDATE job_titles SET code=COALESCE($3,code), name=COALESCE($4,name),
         description=CASE WHEN $5::boolean THEN $6 ELSE description END, is_active=COALESCE($7,is_active)
         WHERE organization_id=$1 AND id=$2`,
-      [identity.orgId, id, data.code, data.name, data.description !== undefined, data.description, data.isActive]);
+        [
+          identity.orgId,
+          id,
+          data.code,
+          data.name,
+          data.description !== undefined,
+          data.description,
+          data.isActive,
+        ],
+      );
       if (!result.rowCount) fail(404, 'JOB_TITLE_NOT_FOUND');
-      await audit(db, 'JOB_TITLE_UPDATED', identity.userId, identity.orgId, undefined, { jobTitleId: id });
+      await audit(db, 'JOB_TITLE_UPDATED', identity.userId, identity.orgId, undefined, {
+        jobTitleId: id,
+      });
     });
     res.status(204).end();
   });
@@ -221,7 +303,6 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const org = result.rows[0];
     if (!org) fail(404, 'ORGANIZATION_NOT_FOUND');
 
-
     res.json({
       organization: {
         id: org.id,
@@ -243,18 +324,30 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const schema = z
       .object({
         name: z.string().trim().min(1).max(100).optional(),
-        code: z.string().trim().min(1).max(30).regex(codeRegex, 'INVALID_CODE').optional().nullable(),
+        code: z
+          .string()
+          .trim()
+          .min(1)
+          .max(30)
+          .regex(codeRegex, 'INVALID_CODE')
+          .optional()
+          .nullable(),
         description: z.string().trim().max(500).optional().nullable(),
         parentOrganizationId: uuid.optional().nullable(),
       })
       .strict();
     const data = schema.parse(req.body);
 
-    await transaction(async db => {
+    await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], ['ADMIN']);
 
       const currentOrg = (
-        await db.query<{ id: string; name: string; code: string | null; parent_organization_id: string | null }>(
+        await db.query<{
+          id: string;
+          name: string;
+          code: string | null;
+          parent_organization_id: string | null;
+        }>(
           'SELECT id, name, code, parent_organization_id FROM organizations WHERE id = $1 FOR UPDATE',
           [identity.orgId],
         )
@@ -323,7 +416,10 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const conditions = ['d.organization_id = $1'];
     const params: unknown[] = [identity.orgId];
     const scope = await managementScope(pool, identity);
-    if(scope){params.push(scope.departments);conditions.push(`d.id=ANY($${params.length}::uuid[])`);}
+    if (scope) {
+      params.push(scope.departments);
+      conditions.push(`d.id=ANY($${params.length}::uuid[])`);
+    }
 
     if (isActive === 'true') conditions.push('d.is_active = true');
     else if (isActive === 'false') conditions.push('d.is_active = false');
@@ -339,7 +435,9 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
     if (q) {
       params.push(`%${escapeLike(q)}%`);
-      conditions.push(`(d.name ILIKE $${params.length} ESCAPE '\\' OR d.code ILIKE $${params.length} ESCAPE '\\')`);
+      conditions.push(
+        `(d.name ILIKE $${params.length} ESCAPE '\\' OR d.code ILIKE $${params.length} ESCAPE '\\')`,
+      );
     }
 
     const whereClause = conditions.join(' AND ');
@@ -394,7 +492,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     );
 
     res.json({
-      items: rows.rows.map(r => ({
+      items: rows.rows.map((r) => ({
         id: r.id,
         organizationId: r.organization_id,
         parentId: scope && !scope.departments.includes(r.parent_id || '') ? null : r.parent_id,
@@ -420,8 +518,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
   app.get(`${orgPrefix}/departments/:departmentId`, async (req: Authed, res) => {
     const identity = requireOrgIdentity(req);
     const deptId = z.string().uuid().parse(req.params.departmentId);
-    const scope = await managementScope(pool,identity);
-    if(scope && !scope.departments.includes(deptId)) fail(404,'DEPARTMENT_NOT_FOUND');
+    const scope = await managementScope(pool, identity);
+    if (scope && !scope.departments.includes(deptId)) fail(404, 'DEPARTMENT_NOT_FOUND');
 
     const result = await pool.query<{
       id: string;
@@ -471,7 +569,8 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         id: row.id,
         organizationId: row.organization_id,
         parentId: scope && !scope.departments.includes(row.parent_id || '') ? null : row.parent_id,
-        parentName: scope && !scope.departments.includes(row.parent_id || '') ? null : row.parent_name,
+        parentName:
+          scope && !scope.departments.includes(row.parent_id || '') ? null : row.parent_name,
         code: row.code,
         name: row.name,
         description: row.description,
@@ -503,7 +602,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const data = schema.parse(req.body);
     const code = data.code.toUpperCase();
 
-    const createdId = await transaction(async db => {
+    const createdId = await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
       // Check unique code in org
@@ -535,7 +634,15 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       await db.query(
         `INSERT INTO departments(id, organization_id, parent_id, code, name, description, manager_user_id)
          VALUES($1, $2, $3, $4, $5, $6, $7)`,
-        [id, identity.orgId, data.parentId ?? null, code, data.name, data.description ?? null, data.managerUserId ?? null],
+        [
+          id,
+          identity.orgId,
+          data.parentId ?? null,
+          code,
+          data.name,
+          data.description ?? null,
+          data.managerUserId ?? null,
+        ],
       );
 
       await audit(db, 'DEPARTMENT_CREATED', identity.userId, identity.orgId, undefined, {
@@ -568,7 +675,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       .strict();
     const data = schema.parse(req.body);
 
-    await transaction(async db => {
+    await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
       const deptRes = await db.query<{
@@ -584,12 +691,15 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       );
       const dept = deptRes.rows[0];
       if (!dept) fail(404, 'DEPARTMENT_NOT_FOUND');
-      if(data.isActive===false){
-        const dependencies=await db.query(`SELECT 1 FROM departments WHERE organization_id=$1 AND parent_id=$2 AND is_active
+      if (data.isActive === false) {
+        const dependencies = await db.query(
+          `SELECT 1 FROM departments WHERE organization_id=$1 AND parent_id=$2 AND is_active
           UNION ALL SELECT 1 FROM memberships WHERE organization_id=$1 AND department_id=$2 AND is_active
           UNION ALL SELECT 1 FROM employees WHERE organization_id=$1 AND department_id=$2 AND employment_status<>'TERMINATED'
-          UNION ALL SELECT 1 FROM positions WHERE organization_id=$1 AND department_id=$2 AND is_active LIMIT 1`,[identity.orgId,deptId]);
-        if(dependencies.rowCount)fail(409,'DEPARTMENT_IN_USE');
+          UNION ALL SELECT 1 FROM positions WHERE organization_id=$1 AND department_id=$2 AND is_active LIMIT 1`,
+          [identity.orgId, deptId],
+        );
+        if (dependencies.rowCount) fail(409, 'DEPARTMENT_IN_USE');
       }
 
       let nextCode = dept.code;
@@ -659,7 +769,12 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       await audit(db, 'DEPARTMENT_UPDATED', identity.userId, identity.orgId, undefined, {
         departmentId: deptId,
         before: dept,
-        after: { code: nextCode, name: data.name ?? dept.name, parentId: nextParentId, isActive: data.isActive ?? dept.is_active },
+        after: {
+          code: nextCode,
+          name: data.name ?? dept.name,
+          parentId: nextParentId,
+          isActive: data.isActive ?? dept.is_active,
+        },
       });
     });
 
@@ -671,7 +786,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     if (!['ADMIN', 'HR'].includes(identity.role)) fail(403, 'FORBIDDEN');
     const deptId = z.string().uuid().parse(req.params.departmentId);
 
-    await transaction(async db => {
+    await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
       const deptRes = await db.query(
@@ -705,10 +820,15 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         fail(409, 'DEPARTMENT_IN_USE_HAS_POSITIONS');
       }
 
-      const employeeReferences=await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND department_id=$2 UNION ALL SELECT 1 FROM employee_work_history WHERE organization_id=$1 AND department_id=$2 LIMIT 1',[identity.orgId,deptId]);
-      if(employeeReferences.rowCount)fail(409,'DEPARTMENT_IN_USE');
+      const employeeReferences = await db.query(
+        'SELECT 1 FROM employees WHERE organization_id=$1 AND department_id=$2 UNION ALL SELECT 1 FROM employee_work_history WHERE organization_id=$1 AND department_id=$2 LIMIT 1',
+        [identity.orgId, deptId],
+      );
+      if (employeeReferences.rowCount) fail(409, 'DEPARTMENT_IN_USE');
       await db.query('DELETE FROM departments WHERE id = $1', [deptId]);
-      await audit(db, 'DEPARTMENT_DELETED', identity.userId, identity.orgId, undefined, { departmentId: deptId });
+      await audit(db, 'DEPARTMENT_DELETED', identity.userId, identity.orgId, undefined, {
+        departmentId: deptId,
+      });
     });
 
     res.status(204).end();
@@ -730,12 +850,16 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         limit: z.coerce.number().int().min(1).max(100).default(50),
       })
       .strict();
-    const { q, departmentId, jobTitleId, managerPositionId, isActive, page, limit } = querySchema.parse(req.query);
+    const { q, departmentId, jobTitleId, managerPositionId, isActive, page, limit } =
+      querySchema.parse(req.query);
 
     const conditions = ['p.organization_id = $1'];
     const params: unknown[] = [identity.orgId];
-    const scope = await managementScope(pool,identity);
-    if(scope){params.push(scope.departments);conditions.push(`p.department_id=ANY($${params.length}::uuid[]) AND p.is_active`);}
+    const scope = await managementScope(pool, identity);
+    if (scope) {
+      params.push(scope.departments);
+      conditions.push(`p.department_id=ANY($${params.length}::uuid[]) AND p.is_active`);
+    }
     if (jobTitleId) {
       params.push(jobTitleId);
       conditions.push(`p.job_title_id=$${params.length}`);
@@ -756,7 +880,9 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
     if (q) {
       params.push(`%${escapeLike(q)}%`);
-      conditions.push(`(p.title ILIKE $${params.length} ESCAPE '\\' OR p.code ILIKE $${params.length} ESCAPE '\\')`);
+      conditions.push(
+        `(p.title ILIKE $${params.length} ESCAPE '\\' OR p.code ILIKE $${params.length} ESCAPE '\\')`,
+      );
     }
 
     const whereClause = conditions.join(' AND ');
@@ -767,19 +893,21 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const total = countRes.rows[0].total;
 
     const listParams = [...params, limit, (page - 1) * limit];
-    const rows = await pool.query<{
-      id: string;
-      organization_id: string;
-      department_id: string | null;
-      department_name: string | null;
-      code: string;
-      title: string;
-      description: string | null;
-      is_active: boolean;
-      member_count: number;
-      created_at: Date;
-      updated_at: Date;
-    } & PositionReferences>(
+    const rows = await pool.query<
+      {
+        id: string;
+        organization_id: string;
+        department_id: string | null;
+        department_name: string | null;
+        code: string;
+        title: string;
+        description: string | null;
+        is_active: boolean;
+        member_count: number;
+        created_at: Date;
+        updated_at: Date;
+      } & PositionReferences
+    >(
       `SELECT p.id, p.organization_id, p.department_id, d.name AS department_name, p.code, p.title,
               p.description, p.is_active, p.created_at, p.updated_at,
               ${positionReferenceColumns},
@@ -800,7 +928,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     );
 
     res.json({
-      items: rows.rows.map(r => ({
+      items: rows.rows.map((r) => ({
         ...visiblePositionReferences(r, identity, scope),
         id: r.id,
         organizationId: r.organization_id,
@@ -823,22 +951,30 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
   app.get(`${orgPrefix}/positions/:positionId`, async (req: Authed, res) => {
     const identity = requireOrgIdentity(req);
     const posId = z.string().uuid().parse(req.params.positionId);
-    const scope = await managementScope(pool,identity);
-    if(scope){const check=await pool.query('SELECT id FROM positions WHERE organization_id=$1 AND id=$2 AND is_active AND department_id=ANY($3::uuid[])',[identity.orgId,posId,scope.departments]);if(!check.rowCount)fail(404,'POSITION_NOT_FOUND');}
+    const scope = await managementScope(pool, identity);
+    if (scope) {
+      const check = await pool.query(
+        'SELECT id FROM positions WHERE organization_id=$1 AND id=$2 AND is_active AND department_id=ANY($3::uuid[])',
+        [identity.orgId, posId, scope.departments],
+      );
+      if (!check.rowCount) fail(404, 'POSITION_NOT_FOUND');
+    }
 
-    const result = await pool.query<{
-      id: string;
-      organization_id: string;
-      department_id: string | null;
-      department_name: string | null;
-      code: string;
-      title: string;
-      description: string | null;
-      is_active: boolean;
-      member_count: number;
-      created_at: Date;
-      updated_at: Date;
-    } & PositionReferences>(
+    const result = await pool.query<
+      {
+        id: string;
+        organization_id: string;
+        department_id: string | null;
+        department_name: string | null;
+        code: string;
+        title: string;
+        description: string | null;
+        is_active: boolean;
+        member_count: number;
+        created_at: Date;
+        updated_at: Date;
+      } & PositionReferences
+    >(
       `SELECT p.id, p.organization_id, p.department_id, d.name AS department_name, p.code, p.title,
               p.description, p.is_active, p.created_at, p.updated_at,
               ${positionReferenceColumns},
@@ -893,7 +1029,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     const data = schema.parse(req.body);
     const code = data.code.toUpperCase();
 
-    const createdId = await transaction(async db => {
+    const createdId = await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
       const existing = await db.query(
@@ -912,11 +1048,21 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
 
       const id = randomUUID();
       await validatePositionReferences(db, identity.orgId, data, id);
-      await writePosition(db,
+      await writePosition(
+        db,
         `INSERT INTO positions(id, organization_id, department_id, code, title, description, job_title_id, manager_position_id, is_active)
          VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [id, identity.orgId, data.departmentId ?? null, code, data.title, data.description ?? null,
-          data.jobTitleId ?? null, data.managerPositionId ?? null, data.isActive ?? true],
+        [
+          id,
+          identity.orgId,
+          data.departmentId ?? null,
+          code,
+          data.title,
+          data.description ?? null,
+          data.jobTitleId ?? null,
+          data.managerPositionId ?? null,
+          data.isActive ?? true,
+        ],
       );
 
       await audit(db, 'POSITION_CREATED', identity.userId, identity.orgId, undefined, {
@@ -951,7 +1097,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       .strict();
     const data = schema.parse(req.body);
 
-    await transaction(async db => {
+    await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
       const posRes = await db.query<{
@@ -993,16 +1139,24 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         }
       }
 
-      if(data.departmentId!==undefined && nextDeptId!==null){
-        const assigned=await db.query('SELECT 1 FROM memberships WHERE organization_id=$1 AND position_id=$2 AND department_id IS DISTINCT FROM $3::uuid LIMIT 1',[identity.orgId,posId,nextDeptId]);
-        if(assigned.rowCount)fail(409,'POSITION_IN_USE');
-        const employeeAssigned=await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND position_id=$2 AND department_id IS DISTINCT FROM $3::uuid LIMIT 1',[identity.orgId,posId,nextDeptId]);
-        if(employeeAssigned.rowCount)fail(409,'POSITION_IN_USE');
+      if (data.departmentId !== undefined && nextDeptId !== null) {
+        const assigned = await db.query(
+          'SELECT 1 FROM memberships WHERE organization_id=$1 AND position_id=$2 AND department_id IS DISTINCT FROM $3::uuid LIMIT 1',
+          [identity.orgId, posId, nextDeptId],
+        );
+        if (assigned.rowCount) fail(409, 'POSITION_IN_USE');
+        const employeeAssigned = await db.query(
+          'SELECT 1 FROM employees WHERE organization_id=$1 AND position_id=$2 AND department_id IS DISTINCT FROM $3::uuid LIMIT 1',
+          [identity.orgId, posId, nextDeptId],
+        );
+        if (employeeAssigned.rowCount) fail(409, 'POSITION_IN_USE');
       }
       await validatePositionReferences(db, identity.orgId, data, posId);
       const nextJobTitleId = data.jobTitleId === undefined ? pos.job_title_id : data.jobTitleId;
-      const nextManagerPositionId = data.managerPositionId === undefined ? pos.manager_position_id : data.managerPositionId;
-      await writePosition(db,
+      const nextManagerPositionId =
+        data.managerPositionId === undefined ? pos.manager_position_id : data.managerPositionId;
+      await writePosition(
+        db,
         `UPDATE positions
          SET code = $1,
              title = COALESCE($2, title),
@@ -1031,8 +1185,14 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       await audit(db, 'POSITION_UPDATED', identity.userId, identity.orgId, undefined, {
         positionId: posId,
         before: pos,
-        after: { code: nextCode, title: data.title ?? pos.title, departmentId: nextDeptId, isActive: data.isActive ?? pos.is_active,
-          jobTitleId: nextJobTitleId, managerPositionId: nextManagerPositionId },
+        after: {
+          code: nextCode,
+          title: data.title ?? pos.title,
+          departmentId: nextDeptId,
+          isActive: data.isActive ?? pos.is_active,
+          jobTitleId: nextJobTitleId,
+          managerPositionId: nextManagerPositionId,
+        },
       });
     });
 
@@ -1044,7 +1204,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
     if (!['ADMIN', 'HR'].includes(identity.role)) fail(403, 'FORBIDDEN');
     const posId = z.string().uuid().parse(req.params.positionId);
 
-    await transaction(async db => {
+    await transaction(async (db) => {
       await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
       const posRes = await db.query(
@@ -1061,13 +1221,28 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         fail(409, 'POSITION_IN_USE_HAS_MEMBERS');
       }
 
-      const employeeReferences=await db.query('SELECT 1 FROM employees WHERE organization_id=$1 AND position_id=$2 UNION ALL SELECT 1 FROM employee_work_history WHERE organization_id=$1 AND position_id=$2 LIMIT 1',[identity.orgId,posId]);
-      if(employeeReferences.rowCount)fail(409,'POSITION_IN_USE');
-      if ((await db.query('SELECT 1 FROM positions WHERE organization_id=$1 AND manager_position_id=$2 LIMIT 1', [identity.orgId, posId])).rowCount) {
+      const employeeReferences = await db.query(
+        'SELECT 1 FROM employees WHERE organization_id=$1 AND position_id=$2 UNION ALL SELECT 1 FROM employee_work_history WHERE organization_id=$1 AND position_id=$2 LIMIT 1',
+        [identity.orgId, posId],
+      );
+      if (employeeReferences.rowCount) fail(409, 'POSITION_IN_USE');
+      if (
+        (
+          await db.query(
+            'SELECT 1 FROM positions WHERE organization_id=$1 AND manager_position_id=$2 LIMIT 1',
+            [identity.orgId, posId],
+          )
+        ).rowCount
+      ) {
         fail(409, 'POSITION_HAS_REPORTS');
       }
-      await db.query('DELETE FROM positions WHERE id = $1 AND organization_id = $2', [posId, identity.orgId]);
-      await audit(db, 'POSITION_DELETED', identity.userId, identity.orgId, undefined, { positionId: posId });
+      await db.query('DELETE FROM positions WHERE id = $1 AND organization_id = $2', [
+        posId,
+        identity.orgId,
+      ]);
+      await audit(db, 'POSITION_DELETED', identity.userId, identity.orgId, undefined, {
+        positionId: posId,
+      });
     });
 
     res.status(204).end();
@@ -1089,11 +1264,16 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
       .strict();
     const data = schema.parse(req.body);
 
-    await transaction(async db => {
+    await transaction(async (db) => {
       const lockIds = [identity.userId, targetUserId];
       await authorizeMutation(db, identity, lockIds, ['ADMIN', 'HR']);
 
-      const targetMember = await db.query<{ id: string; role: string; department_id: string | null; position_id: string | null }>(
+      const targetMember = await db.query<{
+        id: string;
+        role: string;
+        department_id: string | null;
+        position_id: string | null;
+      }>(
         'SELECT id, role, department_id, position_id FROM memberships WHERE organization_id = $1 AND user_id = $2 FOR UPDATE',
         [identity.orgId, targetUserId],
       );
@@ -1124,10 +1304,11 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         }
       }
 
-      await db.query(
-        'UPDATE memberships SET department_id = $1, position_id = $2 WHERE id = $3',
-        [data.departmentId, data.positionId, target.id],
-      );
+      await db.query('UPDATE memberships SET department_id = $1, position_id = $2 WHERE id = $3', [
+        data.departmentId,
+        data.positionId,
+        target.id,
+      ]);
 
       await audit(db, 'USER_ASSIGNMENT_CHANGED', identity.userId, identity.orgId, targetUserId, {
         before: { departmentId: target.department_id, positionId: target.position_id },
@@ -1143,13 +1324,15 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
   // =========================================================================
   app.get(`${orgPrefix}/org-chart`, async (req: Authed, res) => {
     const identity = requireOrgIdentity(req);
-    const scope = await managementScope(pool,identity);
+    const scope = await managementScope(pool, identity);
 
     // Fetch organization info
-    const orgRes = await pool.query<{ id: string; name: string; code: string | null; description: string | null }>(
-      'SELECT id, name, code, description FROM organizations WHERE id = $1',
-      [identity.orgId],
-    );
+    const orgRes = await pool.query<{
+      id: string;
+      name: string;
+      code: string | null;
+      description: string | null;
+    }>('SELECT id, name, code, description FROM organizations WHERE id = $1', [identity.orgId]);
     const organization = orgRes.rows[0];
     if (!organization) fail(404, 'ORGANIZATION_NOT_FOUND');
 
@@ -1172,7 +1355,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
        LEFT JOIN users u ON u.id = d.manager_user_id AND u.is_active AND u.email_verified_at IS NOT NULL AND EXISTS (SELECT 1 FROM memberships dm WHERE dm.organization_id=d.organization_id AND dm.user_id=u.id AND dm.is_active)
        WHERE d.organization_id = $1 AND d.is_active = true AND ($2::uuid[] IS NULL OR d.id=ANY($2))
        ORDER BY d.code ASC`,
-      [identity.orgId,scope?.departments??null],
+      [identity.orgId, scope?.departments ?? null],
     );
 
     // Fetch active positions
@@ -1186,7 +1369,7 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
        FROM positions
        WHERE organization_id = $1 AND is_active = true AND ($2::uuid[] IS NULL OR department_id=ANY($2))
        ORDER BY code ASC`,
-      [identity.orgId,scope?.departments??null],
+      [identity.orgId, scope?.departments ?? null],
     );
 
     // Fetch members with position and department
@@ -1212,33 +1395,49 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
          AND ($3::text <> 'HR' OR m.role='EMPLOYEE' OR m.user_id=$4)
          AND ($3::text <> 'EMPLOYEE' OR m.user_id=$4)
        ORDER BY u.full_name ASC`,
-      [identity.orgId,scope?.users??null,identity.role,identity.userId],
+      [identity.orgId, scope?.users ?? null, identity.role, identity.userId],
     );
 
-    if(scope){
-      deptRows.rows=deptRows.rows.filter(d=>scope.departments.includes(d.id));
-      posRows.rows=posRows.rows.filter(p=>p.department_id && scope.departments.includes(p.department_id));
-      memberRows.rows=memberRows.rows.filter(m=>scope.users.includes(m.user_id));
-      for(const d of deptRows.rows)if(d.parent_id&&!scope.departments.includes(d.parent_id))d.parent_id=null;
+    if (scope) {
+      deptRows.rows = deptRows.rows.filter((d) => scope.departments.includes(d.id));
+      posRows.rows = posRows.rows.filter(
+        (p) => p.department_id && scope.departments.includes(p.department_id),
+      );
+      memberRows.rows = memberRows.rows.filter((m) => scope.users.includes(m.user_id));
+      for (const d of deptRows.rows)
+        if (d.parent_id && !scope.departments.includes(d.parent_id)) d.parent_id = null;
     }
-    if(identity.role==='EMPLOYEE')memberRows.rows=memberRows.rows.filter(m=>m.user_id===identity.userId);
-    if(identity.role==='HR')memberRows.rows=memberRows.rows.filter(m=>m.role==='EMPLOYEE'||m.user_id===identity.userId);
+    if (identity.role === 'EMPLOYEE')
+      memberRows.rows = memberRows.rows.filter((m) => m.user_id === identity.userId);
+    if (identity.role === 'HR')
+      memberRows.rows = memberRows.rows.filter(
+        (m) => m.role === 'EMPLOYEE' || m.user_id === identity.userId,
+      );
     // Members outside visible active departments remain visible as unassigned.
-    const visibleDepartments=new Set(deptRows.rows.map(d=>d.id));
-    for(const m of memberRows.rows)if(m.department_id&&!visibleDepartments.has(m.department_id))m.department_id=null;
-    const visibleUsers=new Set(memberRows.rows.map(m=>m.user_id));
-    if(identity.role!=='ADMIN')for(const m of memberRows.rows)if(m.manager_user_id&&!visibleUsers.has(m.manager_user_id)){m.manager_user_id=null;m.manager_name=null;}
+    const visibleDepartments = new Set(deptRows.rows.map((d) => d.id));
+    for (const m of memberRows.rows)
+      if (m.department_id && !visibleDepartments.has(m.department_id)) m.department_id = null;
+    const visibleUsers = new Set(memberRows.rows.map((m) => m.user_id));
+    if (identity.role !== 'ADMIN')
+      for (const m of memberRows.rows)
+        if (m.manager_user_id && !visibleUsers.has(m.manager_user_id)) {
+          m.manager_user_id = null;
+          m.manager_name = null;
+        }
     // Map members by department
-    const membersByDept = new Map<string, Array<{
-      userId: string;
-      fullName: string;
-      email: string;
-      role: string;
-      positionId: string | null;
-      positionTitle: string | null;
-      managerUserId: string | null;
-      managerName: string | null;
-    }>>();
+    const membersByDept = new Map<
+      string,
+      Array<{
+        userId: string;
+        fullName: string;
+        email: string;
+        role: string;
+        positionId: string | null;
+        positionTitle: string | null;
+        managerUserId: string | null;
+        managerName: string | null;
+      }>
+    >();
 
     const unassignedMembers: Array<{
       userId: string;
@@ -1292,11 +1491,14 @@ export function registerOrgStructureRoutes(app: Express, deps: OrgStructureDeps)
         code: d.code,
         name: d.name,
         description: d.description,
-        manager: d.manager_user_id && d.manager_name ? {
-          userId: d.manager_user_id,
-          fullName: d.manager_name,
-          email: d.manager_email || '',
-        } : null,
+        manager:
+          d.manager_user_id && d.manager_name
+            ? {
+                userId: d.manager_user_id,
+                fullName: d.manager_name,
+                email: d.manager_email || '',
+              }
+            : null,
         members,
         memberCount: members.length,
         children: [],

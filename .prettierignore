@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/vendor
+**/generated
+**/*.generated.*
+**/*.min.*
+**/*lock*
+**/.env*
+database/migrations
+backend/data
+data
+.git

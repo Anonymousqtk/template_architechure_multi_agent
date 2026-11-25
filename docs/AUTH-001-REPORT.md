@@ -14,26 +14,26 @@ Manager coordinated Database, Backend, Frontend, Test Engineer, Security Agent a
 
 ## Actual command evidence
 
-| Check | Commands actually executed | Final result |
-|---|---|---|
-| PostgreSQL migrations | `node database/test-migrations.mjs`; final backend test command also applied migrations on a fresh cluster | PASS on disposable PostgreSQL 18; constraints and rollback verified |
-| Backend validation | `npm run typecheck`, `npm run lint`, `npm run build` in backend | PASS after fixing unused middleware parameter and TypeScript rootDir |
-| Backend unit/integration | `npm run test:coverage` in backend (disposable database runner) | PASS: 28 tests; statements 90.55%, branches 81.14%, lines 96.27% |
-| Frontend validation | `npm run lint`, `npm run typecheck`, `npm run build` in frontend | PASS, including after test additions |
-| Frontend UI | `npm run test:coverage` in frontend | PASS: 9 tests; statements/lines 90.8%, branches 79.85% |
-| Dependency audit | `npm audit --audit-level=high --omit=dev` in each workspace | PASS: 0 vulnerabilities reported by both production audits; dev dependencies excluded |
-| Governance unit tests | Actual Python runtime with `-m unittest discover -s tests` | PASS: 20 tests |
-| Model/skill policy | Actual Python runtime with `scripts/check_model_policy.py` and `scripts/check_skill_policy.py` | PASS (offline metadata/config checks) |
-| Local changed-path policy | Import existing `policy_check.validate` against tracked changes and untracked files plus task manifest | PASS; not a PR/human approval claim |
-| Built-server smoke | Spawned `node backend/dist/server.js`, fetched login HTML, JS bundle and CSRF endpoint, checked no-referrer; stopped own child | PASS; no database fixture or browser involved |
-| Whitespace/syntax | `git diff --check`; `node --check` for migration/test runners | PASS at execution time |
-| PR-context policy | `python3 scripts/policy_check.py`, then actual Python runtime | NOT VERIFIED: Python alias inaccessible initially; actual runtime requires missing BASE_SHA |
-| SAST | `semgrep --version` | NOT VERIFIED: binary unavailable; configured CI scan not executed locally |
-| Staging / browser / deployment | No staging SMTP, browser E2E or production commands executed | NOT VERIFIED |
+| Check                          | Commands actually executed                                                                                                     | Final result                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| PostgreSQL migrations          | `node database/test-migrations.mjs`; final backend test command also applied migrations on a fresh cluster                     | PASS on disposable PostgreSQL 18; constraints and rollback verified                         |
+| Backend validation             | `npm run typecheck`, `npm run lint`, `npm run build` in backend                                                                | PASS after fixing unused middleware parameter and TypeScript rootDir                        |
+| Backend unit/integration       | `npm run test:coverage` in backend (disposable database runner)                                                                | PASS: 28 tests; statements 90.55%, branches 81.14%, lines 96.27%                            |
+| Frontend validation            | `npm run lint`, `npm run typecheck`, `npm run build` in frontend                                                               | PASS, including after test additions                                                        |
+| Frontend UI                    | `npm run test:coverage` in frontend                                                                                            | PASS: 9 tests; statements/lines 90.8%, branches 79.85%                                      |
+| Dependency audit               | `npm audit --audit-level=high --omit=dev` in each workspace                                                                    | PASS: 0 vulnerabilities reported by both production audits; dev dependencies excluded       |
+| Governance unit tests          | Actual Python runtime with `-m unittest discover -s tests`                                                                     | PASS: 20 tests                                                                              |
+| Model/skill policy             | Actual Python runtime with `scripts/check_model_policy.py` and `scripts/check_skill_policy.py`                                 | PASS (offline metadata/config checks)                                                       |
+| Local changed-path policy      | Import existing `policy_check.validate` against tracked changes and untracked files plus task manifest                         | PASS; not a PR/human approval claim                                                         |
+| Built-server smoke             | Spawned `node backend/dist/server.js`, fetched login HTML, JS bundle and CSRF endpoint, checked no-referrer; stopped own child | PASS; no database fixture or browser involved                                               |
+| Whitespace/syntax              | `git diff --check`; `node --check` for migration/test runners                                                                  | PASS at execution time                                                                      |
+| PR-context policy              | `python3 scripts/policy_check.py`, then actual Python runtime                                                                  | NOT VERIFIED: Python alias inaccessible initially; actual runtime requires missing BASE_SHA |
+| SAST                           | `semgrep --version`                                                                                                            | NOT VERIFIED: binary unavailable; configured CI scan not executed locally                   |
+| Staging / browser / deployment | No staging SMTP, browser E2E or production commands executed                                                                   | NOT VERIFIED                                                                                |
 
 Python alias commands initially failed; the usable runtime was `C:/Users/Tu Thao/AppData/Local/Python/pythoncore-3.15-64/python.exe`. Windows sandbox PostgreSQL startup also failed initially; disposable tests passed with reviewed local execution outside that restriction. Initial native argon2 dependency build failed; final implementation uses installed @node-rs/argon2 and its real Argon2id tests pass. Initial lint/build failures were fixed before the final successful runs. No remaining executed application-test failure is open.
 
-Detailed AUTH-01–22 evidence and limitations: [test report](AUTH-001-TEST-RESULTS.md).
+Detailed AUTH-01ï¿½22 evidence and limitations: [test report](AUTH-001-TEST-RESULTS.md).
 
 ## Independent advisory reviews
 
@@ -57,7 +57,6 @@ The existing initial SQL proposal, API contract, protected policy/scripts and CI
 - Human review and successful required CI gate are required before merging this high-risk authentication change. First Admin provisioning and deployment each require explicit authorization. None were executed.
 
 See [local setup](AUTH-LOCAL-SETUP.md), [backend operation](../backend/README.md), and [database verification](../database/README.md).
-
 
 ## Follow-up AUTH-001-UI-002 (2026-11-18)
 

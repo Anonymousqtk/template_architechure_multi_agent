@@ -6,11 +6,13 @@ description: Use for fullstack multi-agent task decomposition, scope, budget, sk
 # agent-orchestration
 
 ## Approved references
+
 - `openai-skills` — https://developers.openai.com/plugins/concepts/skills (version: living)
 - `openai-skill-evals` — https://developers.openai.com/blog/eval-skills (version: living)
 - `nist-ssdf` — https://csrc.nist.gov/pubs/sp/800/218/final (version: 1.1)
 
 ## Procedure
+
 1. Read task contract and ownership.
 2. Decide whether 0, 1 or 2 subagents are needed; keep tasks disjoint.
 3. Select approved skills from policy/skill-routing.json; load only selected SKILL.md.
@@ -18,4 +20,5 @@ description: Use for fullstack multi-agent task decomposition, scope, budget, sk
 5. Require verification outputs, record blockers and approval requirements.
 
 ## Output contract
+
 Give changed paths or findings, evidence, commands actually executed, result, risk and next action. Keep it short. No fabricated test results.

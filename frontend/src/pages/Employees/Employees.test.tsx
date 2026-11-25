@@ -4,9 +4,13 @@ import { setLocale } from '../../i18n';
 import '@testing-library/jest-dom/vitest';
 import { Employees } from './Employees';
 import { request, type Profile } from '../../services/api';
-import type { Employee, EmployeeContract, WorkHistory } from '../../features/employees/employee-types';
+import type {
+  Employee,
+  EmployeeContract,
+  WorkHistory,
+} from '../../features/employees/employee-types';
 
-vi.mock('../../services/api', async original => ({
+vi.mock('../../services/api', async (original) => ({
   ...(await original<typeof import('../../services/api')>()),
   request: vi.fn(),
 }));
@@ -135,13 +139,23 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
         return { employee: sampleEmployee, today: '2026-11-19' };
       }
       if (path.includes('/users?')) {
-        return { items: [{ id: 'emp-user-1', fullName: 'Nguyen Van A', email: 'emp@example.test' }], total: 1, page: 1, limit: 20 };
+        return {
+          items: [{ id: 'emp-user-1', fullName: 'Nguyen Van A', email: 'emp@example.test' }],
+          total: 1,
+          page: 1,
+          limit: 20,
+        };
       }
       if (path.includes('/departments?')) {
         return { items: [{ id: 'dept-1', name: 'Phòng Kỹ Thuật' }], total: 1, page: 1, limit: 20 };
       }
       if (path.includes('/positions?')) {
-        return { items: [{ id: 'pos-1', title: 'Kỹ sư phần mềm', departmentId: 'dept-1' }], total: 1, page: 1, limit: 20 };
+        return {
+          items: [{ id: 'pos-1', title: 'Kỹ sư phần mềm', departmentId: 'dept-1' }],
+          total: 1,
+          page: 1,
+          limit: 20,
+        };
       }
       if (path.includes('/employees?')) {
         return { items: [sampleEmployee], total: 1, page: 1, limit: 20 };
@@ -172,7 +186,9 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
     render(<Employees profile={adminProfile} />);
     fireEvent.click(await screen.findByRole('button', { name: /Nhập từ Excel/ }));
     act(() => setLocale('en'));
-    expect(screen.getByRole('heading', { name: 'Import employees from Excel / CSV' })).toBeVisible();
+    expect(
+      screen.getByRole('heading', { name: 'Import employees from Excel / CSV' }),
+    ).toBeVisible();
     expect(screen.getByRole('button', { name: /Download Excel template/ })).toBeVisible();
     act(() => setLocale('vi'));
   });
@@ -184,7 +200,14 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
     expect(await screen.findByText('EMP-001')).toBeVisible();
     expect(screen.getByText('Nguyen Van A')).toBeVisible();
     expect(screen.getByText('Phòng Kỹ Thuật')).toBeVisible();
-    expect(screen.getByText((content, element) => element?.tagName.toLowerCase() === 'span' && (element?.className.includes('emp-badge') || element?.className.includes('badge')) && content.includes('Đang làm việc'))).toBeVisible();
+    expect(
+      screen.getByText(
+        (content, element) =>
+          element?.tagName.toLowerCase() === 'span' &&
+          (element?.className.includes('emp-badge') || element?.className.includes('badge')) &&
+          content.includes('Đang làm việc'),
+      ),
+    ).toBeVisible();
   });
 
   it('supports filtering by query and status', async () => {
@@ -195,38 +218,45 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tìm kiếm' }));
 
     await waitFor(() => {
-      expect(mock.mock.calls.some(([p]) => p.includes('q=EMP-001') && p.includes('status=ACTIVE'))).toBe(true);
+      expect(
+        mock.mock.calls.some(([p]) => p.includes('q=EMP-001') && p.includes('status=ACTIVE')),
+      ).toBe(true);
     });
   });
 
   it('shows the XLSX template guidance and uploads an XLSX workbook for preview', async () => {
-    mock.mockImplementation(async path => {
+    mock.mockImplementation(async (path) => {
       if (path.includes('/employees-import/preview')) {
         return { totalRows: 0, validCount: 0, duplicateCount: 0, errorCount: 0, rows: [] };
       }
-      if (path.includes('/employees?')) return { items: [sampleEmployee], total: 1, page: 1, limit: 20 };
+      if (path.includes('/employees?'))
+        return { items: [sampleEmployee], total: 1, page: 1, limit: 20 };
       return {};
     });
     const { container } = render(<Employees profile={adminProfile} />);
     fireEvent.click(await screen.findByRole('button', { name: /Nhập từ Excel/ }));
     expect(await screen.findByText('File mẫu Excel (.XLSX)')).toBeVisible();
-    expect(screen.getByText(/sheet hướng dẫn; nhập dữ liệu từ dòng 2 trong sheet Danh sách nhân viên/)).toBeVisible();
+    expect(
+      screen.getByText(/sheet hướng dẫn; nhập dữ liệu từ dòng 2 trong sheet Danh sách nhân viên/),
+    ).toBeVisible();
     expect(screen.getByRole('button', { name: /Tải file Excel mẫu/ })).toBeVisible();
 
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input?.accept).toContain('.xlsx');
-    const file = new File([new Uint8Array([0x50, 0x4B, 0x03, 0x04])], 'mau_nhap_nhan_vien.xlsx', {
+    const file = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], 'mau_nhap_nhan_vien.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
     fireEvent.change(input!, { target: { files: [file] } });
-    await waitFor(() => expect(mock).toHaveBeenCalledWith(
-      expect.stringContaining('/employees-import/preview'),
-      expect.objectContaining({
-        fileName: 'mau_nhap_nhan_vien.xlsx',
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }),
-      'POST'
-    ));
+    await waitFor(() =>
+      expect(mock).toHaveBeenCalledWith(
+        expect.stringContaining('/employees-import/preview'),
+        expect.objectContaining({
+          fileName: 'mau_nhap_nhan_vien.xlsx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+        'POST',
+      ),
+    );
     expect(await screen.findByText('mau_nhap_nhan_vien.xlsx')).toBeVisible();
   });
 
@@ -289,7 +319,9 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
   it('switches salary history labels without changing the loaded records', async () => {
     setLocale('vi');
     const previous = mock.getMockImplementation()!;
-    mock.mockImplementation(async (path, ...args) => path.includes('/salary-history') ? { items: [], total: 0 } : previous(path, ...args));
+    mock.mockImplementation(async (path, ...args) =>
+      path.includes('/salary-history') ? { items: [], total: 0 } : previous(path, ...args),
+    );
     render(<Employees profile={adminProfile} />);
     await screen.findByText('EMP-001');
     fireEvent.click(screen.getByRole('button', { name: 'Xem hồ sơ Nguyen Van A' }));
@@ -302,20 +334,32 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
 
   it('opens employee avatars from the roster and detail drawer in the zoom viewer', async () => {
     render(<Employees profile={adminProfile} />);
-    const rosterAvatar = await screen.findByRole('button', { name: 'Xem ảnh đại diện của Nguyen Van A' });
+    const rosterAvatar = await screen.findByRole('button', {
+      name: 'Xem ảnh đại diện của Nguyen Van A',
+    });
     fireEvent.click(rosterAvatar);
-    const rosterViewer = await screen.findByRole('dialog', { name: 'Ảnh đại diện của Nguyen Van A' });
+    const rosterViewer = await screen.findByRole('dialog', {
+      name: 'Ảnh đại diện của Nguyen Van A',
+    });
     expect(rosterViewer.tagName).toBe('DIALOG');
     expect(rosterViewer).toBeVisible();
     fireEvent(rosterViewer, new Event('cancel', { bubbles: false, cancelable: true }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Ảnh đại diện của Nguyen Van A' })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Ảnh đại diện của Nguyen Van A' }),
+      ).not.toBeInTheDocument(),
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Xem hồ sơ Nguyen Van A' }));
     await screen.findByText('Thông tin hồ sơ');
     const employeeDrawer = screen.getByRole('dialog');
-    const detailAvatar = within(employeeDrawer).getByRole('button', { name: 'Xem ảnh đại diện của Nguyen Van A' });
+    const detailAvatar = within(employeeDrawer).getByRole('button', {
+      name: 'Xem ảnh đại diện của Nguyen Van A',
+    });
     fireEvent.click(detailAvatar);
-    const detailViewer = await screen.findByRole('dialog', { name: 'Ảnh đại diện của Nguyen Van A' });
+    const detailViewer = await screen.findByRole('dialog', {
+      name: 'Ảnh đại diện của Nguyen Van A',
+    });
     expect(detailViewer.tagName).toBe('DIALOG');
     expect(detailViewer).toBeVisible();
     fireEvent(detailViewer, new Event('cancel', { bubbles: false, cancelable: true }));
@@ -345,7 +389,10 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
 
   it('omits private fields for Manager view in detail', async () => {
     const { birthDate, phone, personalEmail, address, ...rest } = sampleEmployee;
-    void birthDate; void phone; void personalEmail; void address;
+    void birthDate;
+    void phone;
+    void personalEmail;
+    void address;
     const managerScopedEmployee: Employee = {
       ...rest,
       canEdit: false,
@@ -378,7 +425,12 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
       }
       if (path.includes('/employees/emp-new')) {
         return {
-          employee: { ...sampleEmployee, id: 'emp-new', employeeCode: 'EMP-002', fullName: 'Tran Thi B' },
+          employee: {
+            ...sampleEmployee,
+            id: 'emp-new',
+            employeeCode: 'EMP-002',
+            fullName: 'Tran Thi B',
+          },
           today: '2026-11-19',
         };
       }
@@ -402,7 +454,7 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
           employeeCode: 'EMP-002',
           fullName: 'Tran Thi B',
           hireDate: '2024-01-01',
-        })
+        }),
       );
     });
   });
@@ -430,7 +482,13 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Lịch sử công tác' }));
 
     expect(await screen.findByText('Tạo hồ sơ')).toBeVisible();
-    expect(screen.getByText((_c, el) => el?.className === 'emp-timeline-desc' && (el?.textContent?.includes('Phòng Kỹ Thuật') ?? false))).toBeVisible();
+    expect(
+      screen.getByText(
+        (_c, el) =>
+          el?.className === 'emp-timeline-desc' &&
+          (el?.textContent?.includes('Phòng Kỹ Thuật') ?? false),
+      ),
+    ).toBeVisible();
     expect(screen.getByRole('button', { name: 'Ghi nhận điều chuyển' })).toBeVisible();
   });
 
@@ -443,7 +501,9 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
     await screen.findByRole('button', { name: 'Ghi nhận điều chuyển' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Ghi nhận điều chuyển' }));
-    fireEvent.change(screen.getByLabelText('Lý do điều chuyển'), { target: { value: 'Chuyển dự án mới' } });
+    fireEvent.change(screen.getByLabelText('Lý do điều chuyển'), {
+      target: { value: 'Chuyển dự án mới' },
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Lưu điều chuyển' }));
     await waitFor(() => {
@@ -451,7 +511,7 @@ describe('EMP-001 & EMP-002: Employees UI Component', () => {
         expect.stringContaining('/work-history'),
         expect.objectContaining({
           reason: 'Chuyển dự án mới',
-        })
+        }),
       );
     });
   });

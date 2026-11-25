@@ -18,7 +18,7 @@ type Props = {
 
 export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Props) {
   const { locale } = useTranslation();
-  const tr = (text: string) => locale === 'en' ? (cardEnglish[text] ?? text) : text;
+  const tr = (text: string) => (locale === 'en' ? (cardEnglish[text] ?? text) : text);
   const [open, setOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [copied, setCopied] = useState(false);
@@ -28,9 +28,10 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const cardFragment = `org=${encodeURIComponent(orgId)}&code=${encodeURIComponent(employee.employeeCode)}`;
-  const cardUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/employee-card#${cardFragment}`
-    : `/employee-card#${cardFragment}`;
+  const cardUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/employee-card#${cardFragment}`
+      : `/employee-card#${cardFragment}`;
 
   let matrix: boolean[][] = [];
   let svgPath = '';
@@ -74,7 +75,7 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
   }, [open]);
 
   function changeZoom(amount: number) {
-    setZoom(current => Math.min(2.5, Math.max(0.6, Math.round((current + amount) * 100) / 100)));
+    setZoom((current) => Math.min(2.5, Math.max(0.6, Math.round((current + amount) * 100) / 100)));
   }
 
   async function handleCopy() {
@@ -113,47 +114,80 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
           ref={dialogRef}
           className="avatar-viewer-dialog qr-viewer-dialog"
           aria-modal="true"
-          aria-label={`${tr("Mã QR thẻ nhân viên của")} ${employee.fullName}`}
-          onCancel={event => {
+          aria-label={`${tr('Mã QR thẻ nhân viên của')} ${employee.fullName}`}
+          onCancel={(event) => {
             event.preventDefault();
             event.stopPropagation();
             setOpen(false);
           }}
-          onClick={event => {
+          onClick={(event) => {
             if (event.target === event.currentTarget) setOpen(false);
           }}
         >
           <header className="avatar-viewer-header">
             <div className="qr-viewer-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                width="18"
+                height="18"
+                aria-hidden="true"
+              >
                 <rect x="3" y="3" width="7" height="7" rx="1" />
                 <rect x="14" y="3" width="7" height="7" rx="1" />
                 <rect x="3" y="14" width="7" height="7" rx="1" />
                 <rect x="14" y="14" width="7" height="7" rx="1" />
               </svg>
-              <strong>{tr("Mã QR thẻ nhân viên")}</strong>
+              <strong>{tr('Mã QR thẻ nhân viên')}</strong>
             </div>
-            <button ref={closeRef} type="button" aria-label={tr("Đóng")} onClick={() => setOpen(false)}>
+            <button
+              ref={closeRef}
+              type="button"
+              aria-label={tr('Đóng')}
+              onClick={() => setOpen(false)}
+            >
               ×
             </button>
           </header>
 
-          <div className="avatar-viewer-controls" aria-label={tr("Điều khiển thu phóng")}>
-            <button type="button" aria-label={tr("Thu nhỏ")} disabled={zoom <= 0.6} onClick={() => changeZoom(-0.2)}>
+          <div className="avatar-viewer-controls" aria-label={tr('Điều khiển thu phóng')}>
+            <button
+              type="button"
+              aria-label={tr('Thu nhỏ')}
+              disabled={zoom <= 0.6}
+              onClick={() => changeZoom(-0.2)}
+            >
               −
             </button>
             <output aria-live="polite">{Math.round(zoom * 100)}%</output>
-            <button type="button" aria-label={tr("Phóng to")} disabled={zoom >= 2.5} onClick={() => changeZoom(0.2)}>
+            <button
+              type="button"
+              aria-label={tr('Phóng to')}
+              disabled={zoom >= 2.5}
+              onClick={() => changeZoom(0.2)}
+            >
               +
             </button>
-            <button type="button" aria-label={tr("Kích thước ban đầu")} onClick={() => setZoom(1)}>
+            <button type="button" aria-label={tr('Kích thước ban đầu')} onClick={() => setZoom(1)}>
               100%
             </button>
-            <button type="button" className="qr-action-btn" onClick={handleCopy} aria-label={tr("Sao chép URL")}>
-              {copied ? tr("✓ Đã sao chép") : tr("Sao chép link")}
+            <button
+              type="button"
+              className="qr-action-btn"
+              onClick={handleCopy}
+              aria-label={tr('Sao chép URL')}
+            >
+              {copied ? tr('✓ Đã sao chép') : tr('Sao chép link')}
             </button>
-            <button type="button" className="qr-action-btn" onClick={handleDownloadSvg} aria-label={tr("Tải mã QR SVG")}>
-              {tr("Tải ảnh QR")}
+            <button
+              type="button"
+              className="qr-action-btn"
+              onClick={handleDownloadSvg}
+              aria-label={tr('Tải mã QR SVG')}
+            >
+              {tr('Tải ảnh QR')}
             </button>
           </div>
 
@@ -172,7 +206,7 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
                       shapeRendering="crispEdges"
                       className="qr-code-svg"
                       role="img"
-                      aria-label={`${tr("Mã QR truy cập hồ sơ")} ${employee.fullName}`}
+                      aria-label={`${tr('Mã QR truy cập hồ sơ')} ${employee.fullName}`}
                     >
                       <rect width="100%" height="100%" fill="#ffffff" rx="1" />
                       <path d={svgPath} fill="#1a1926" />
@@ -188,7 +222,9 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
                   </div>
                   <div className="qr-card-meta">
                     <span className="qr-emp-code">{employee.employeeCode}</span>
-                    {employee.positionTitle && <span className="qr-emp-pos">{employee.positionTitle}</span>}
+                    {employee.positionTitle && (
+                      <span className="qr-emp-pos">{employee.positionTitle}</span>
+                    )}
                   </div>
                   {employee.departmentName && (
                     <div className="qr-card-dept">{employee.departmentName}</div>
@@ -197,16 +233,16 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
 
                 <div className="qr-card-footer">
                   <p className="qr-card-tip">
-                    <span>{tr("Quét mã để kiểm tra URL; thông tin nhân viên không hiển thị")}</span>
+                    <span>{tr('Quét mã để kiểm tra URL; thông tin nhân viên không hiển thị')}</span>
                   </p>
                   <a
                     href={cardUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="qr-link-preview"
-                    onClick={e => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    {tr("Mở URL xem trước ↗")}
+                    {tr('Mở URL xem trước ↗')}
                   </a>
                 </div>
               </div>
@@ -216,16 +252,21 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
             {copyError && <p role="alert">{tr(copyError)}</p>}
             <code className="qr-link-url">{cardUrl}</code>
             <p className="qr-link-preview-warning">
-              {tr("URL chỉ để kiểm tra mã QR; thẻ công khai chưa được bật nên thông tin nhân viên không hiển thị.")}
+              {tr(
+                'URL chỉ để kiểm tra mã QR; thẻ công khai chưa được bật nên thông tin nhân viên không hiển thị.',
+              )}
             </p>
-            {typeof window !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname) && (
-              <p className="qr-local-origin-warning">
-                {tr("Địa chỉ localhost chỉ dùng trên thiết bị này. Để quét bằng điện thoại, hãy mở ứng dụng qua tên miền HTTPS hoặc địa chỉ mạng mà điện thoại có thể truy cập được.")}
-              </p>
-            )}
+            {typeof window !== 'undefined' &&
+              ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname) && (
+                <p className="qr-local-origin-warning">
+                  {tr(
+                    'Địa chỉ localhost chỉ dùng trên thiết bị này. Để quét bằng điện thoại, hãy mở ứng dụng qua tên miền HTTPS hoặc địa chỉ mạng mà điện thoại có thể truy cập được.',
+                  )}
+                </p>
+              )}
           </div>
         </dialog>,
-        document.body
+        document.body,
       )
     : null;
 
@@ -235,7 +276,7 @@ export function EmployeeQrBadge({ employee, orgId, orgName, className = '' }: Pr
         ref={triggerRef}
         type="button"
         className={`emp-qr-trigger ${className}`}
-        aria-label={`${tr("Xem mã QR thẻ nhân viên của")} ${employee.fullName}`}
+        aria-label={`${tr('Xem mã QR thẻ nhân viên của')} ${employee.fullName}`}
         title={tr('Xem mã QR & danh thiếp nhân viên')}
         onClick={() => {
           setZoom(1);

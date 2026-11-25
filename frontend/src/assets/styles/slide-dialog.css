@@ -1,0 +1,78 @@
+.slide-dialog {
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  width: min(750px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  border: 0;
+  background: white;
+  overflow: hidden;
+  box-shadow: -6px 0 22px #2f2b3d33;
+  animation: slide-dialog-in 0.22s ease-out;
+}
+.slide-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.slide-dialog::backdrop {
+  background: rgb(47 43 61 / 50%);
+}
+.slide-dialog-close-row {
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  padding: 16px 24px 0;
+}
+.slide-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 24px 24px;
+}
+.slide-dialog-close {
+  border: 0;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.slide-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 16px 24px max(16px, env(safe-area-inset-bottom));
+  border-top: 1px solid #e6e8ef;
+  background: white;
+}
+.slide-dialog-footer > button {
+  min-height: 40px;
+  min-width: 112px;
+}
+@media (max-width: 480px) {
+  .slide-dialog-footer > button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+@keyframes slide-dialog-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide-dialog,
+  .emp-import-modal,
+  .sensitive-action-dialog,
+  .org-modal-dialog {
+    animation: none;
+  }
+}

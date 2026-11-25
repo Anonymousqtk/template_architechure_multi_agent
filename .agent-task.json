@@ -1,16 +1,16 @@
 {
-  "id": "FE-I18N-001",
-  "summary": "Add Vietnamese and English localization and maintainable frontend formatting and skill guidance",
-  "allowed_scopes": [
-    "frontend",
-    "governance"
-  ],
+  "id": "RPT-003",
+  "summary": "Build Compliance and Statutory Reporting module for PIT tax (05/KK-TNCN, 05/QTT-TNCN), Social Insurance (SI/HI/UI/Trade Union, D02-LT), and Labor Utilization (01/PLI) under Vietnamese legal regulations",
+  "allowed_scopes": ["frontend", "backend", "database", "tests"],
   "risk": "high",
   "security_review_required": true,
   "acceptance": [
-    "Add accessible persistent language selection and translations",
-    "Move user-facing fixed text into translation resources",
-    "Preserve authentication behavior and existing user data",
-    "Document i18n for future frontend work and run relevant checks"
+    "Implement RPT-TAX-01 PIT periodic declaration (Form 05/KK-TNCN) and progressive 7-tier tax brackets with payroll slip reconciliation",
+    "Implement RPT-TAX-02 PIT annual finalization (Form 05/QTT-TNCN & 05-1/BK-TNCN) with proxy authorization and tax balance settlement",
+    "Implement RPT-INS-01 statutory insurance contributions (SI 8%/17.5%, HI 1.5%/3%, UI 1%/1%, Trade Union 2%) with statutory wage caps",
+    "Implement RPT-INS-02 insurance labor fluctuations (Form D02-LT) tracking enrollments, terminations, and salary adjustments",
+    "Implement RPT-LAB-01 bi-annual/annual labor utilization reporting (Form 01/PLI per Decree 145/2020/ND-CP)",
+    "Integrate filters, UTF-8 BOM CSV exports, audit logging, and responsive UI in ReportingCenter",
+    "Enforce strict tenant isolation, RBAC (HR/ADMIN only), audit logging, and regression tests"
   ]
 }

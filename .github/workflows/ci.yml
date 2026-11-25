@@ -53,6 +53,26 @@ jobs:
       - name: Test governance validator
         run: python3 -m unittest discover -s tests -p 'test_policy.py'
 
+  formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm run format:check
+
+  i18n:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --prefix frontend --ignore-scripts
+      - run: npm run i18n:check
+
   quality:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -138,13 +158,15 @@ jobs:
   gate:
     name: required-gate
     if: always()
-    needs: [changes, policy, quality, security, sonar]
+    needs: [changes, policy, formatting, i18n, quality, security, sonar]
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate outcomes and optional Sonar policy
         env:
           CHANGES: ${{ needs.changes.result }}
           POLICY: ${{ needs.policy.result }}
+          FORMATTING: ${{ needs.formatting.result }}
+          I18N: ${{ needs.i18n.result }}
           CODE: ${{ needs.changes.outputs.code }}
           SAST: ${{ needs.changes.outputs.sast }}
           QUALITY: ${{ needs.quality.result }}
@@ -158,6 +180,8 @@ jobs:
           set -euo pipefail
           [[ "$CHANGES" == success ]] || { echo 'Change detection failed'; exit 1; }
           [[ "$POLICY" == success ]] || { echo "Policy: $POLICY"; exit 1; }
+          [[ "$FORMATTING" == success ]] || { echo "Formatting: $FORMATTING"; exit 1; }
+          [[ "$I18N" == success ]] || { echo "Internationalization: $I18N"; exit 1; }
           if [[ "$CODE" == true ]]; then
             [[ "$QUALITY" == success ]] || { echo "Quality: $QUALITY"; exit 1; }
           fi

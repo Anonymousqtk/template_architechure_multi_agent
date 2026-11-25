@@ -6,7 +6,12 @@ import { setLocale, useTranslation } from './index';
 
 function Example() {
   const { t } = useTranslation();
-  return <><LanguageSelector /><p>{t('home')}</p></>;
+  return (
+    <>
+      <LanguageSelector />
+      <p>{t('home')}</p>
+    </>
+  );
 }
 
 afterEach(() => {
@@ -22,6 +27,7 @@ describe('language selection', () => {
     const { LanguageSelector: ReloadedSelector } = await import('./LanguageSelector');
     render(<ReloadedSelector />);
     expect((screen.getByLabelText('Language') as HTMLSelectElement).value).toBe('en');
+    expect(document.documentElement.lang).toBe('en');
   });
   it('changes translated text and saves the preference', () => {
     setLocale('vi');
@@ -31,5 +37,6 @@ describe('language selection', () => {
     expect(screen.getByText('Home')).toBeTruthy();
     expect(screen.getByLabelText('Language')).toBeTruthy();
     expect(localStorage.getItem('managerhr.locale')).toBe('en');
+    expect(document.documentElement.lang).toBe('en');
   });
 });

@@ -41,10 +41,14 @@ type Props = {
 };
 
 export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
-  const { locale } = useTranslation();
-  const tr = (text: string) => locale === 'en' ? (employeeDetailEnglish[text] ?? text) : text;
+  const { locale, t } = useTranslation();
+  const tr = (text: string) => (locale === 'en' ? (employeeDetailEnglish[text] ?? text) : text);
   const dateLabel = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'vi-VN', { timeZone: 'UTC' }).format(new Date(value + 'T00:00:00Z')) : '—';
+    value
+      ? new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'vi-VN', { timeZone: 'UTC' }).format(
+          new Date(value + 'T00:00:00Z'),
+        )
+      : '—';
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const alive = useRef(true);
@@ -56,7 +60,9 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
   const [success, setSuccess] = useState('');
   const [today, setToday] = useState('');
 
-  const [tab, setTab] = useState<'profile' | 'contracts' | 'history' | 'documents' | 'salary' | 'insurance'>('profile');
+  const [tab, setTab] = useState<
+    'profile' | 'contracts' | 'history' | 'documents' | 'salary' | 'insurance'
+  >('profile');
   const [contracts, setContracts] = useState<EmployeePage<EmployeeContract> | null>(null);
   const [history, setHistory] = useState<EmployeePage<WorkHistory> | null>(null);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -70,22 +76,54 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
 
   // PAY-001 Enhancement: Salary & Insurance history state
   interface SalaryProfileHistory {
-    id: string; salaryMode: string; baseSalary: string; currency: string;
-    effectiveFrom: string | null; effectiveTo: string | null;
-    status: string; notes: string | null; createdAt: string;
-    components: Array<{ componentId: string; componentName: string; componentCode: string; type: string; amount: string; percentage: string | null; notes: string | null }>;
+    id: string;
+    salaryMode: string;
+    baseSalary: string;
+    currency: string;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+    status: string;
+    notes: string | null;
+    createdAt: string;
+    components: Array<{
+      componentId: string;
+      componentName: string;
+      componentCode: string;
+      type: string;
+      amount: string;
+      percentage: string | null;
+      notes: string | null;
+    }>;
   }
   interface SIProfile {
-    id: string; siCode: string; hiCode: string | null; insuredName: string;
-    enrollmentDate: string; terminationDate: string | null; siSalary: string;
-    currency: string; status: string; suspensionReason: string | null; notes: string | null;
+    id: string;
+    siCode: string;
+    hiCode: string | null;
+    insuredName: string;
+    enrollmentDate: string;
+    terminationDate: string | null;
+    siSalary: string;
+    currency: string;
+    status: string;
+    suspensionReason: string | null;
+    notes: string | null;
   }
   interface SIContribution {
-    contributionMonth: string; siSalary: string; employeeRate: string; employerRate: string;
-    employeeAmount: string; employerAmount: string; status: string;
-    adjustmentReason: string | null; notes: string | null; confirmedAt: string | null;
+    contributionMonth: string;
+    siSalary: string;
+    employeeRate: string;
+    employerRate: string;
+    employeeAmount: string;
+    employerAmount: string;
+    status: string;
+    adjustmentReason: string | null;
+    notes: string | null;
+    confirmedAt: string | null;
   }
-  const [salaryHistory, setSalaryHistory] = useState<{ items: SalaryProfileHistory[]; total: number } | null>(null);
+  const [salaryHistory, setSalaryHistory] = useState<{
+    items: SalaryProfileHistory[];
+    total: number;
+  } | null>(null);
   const [siProfile, setSiProfile] = useState<SIProfile | null>(null);
   const [siContributions, setSiContributions] = useState<SIContribution[]>([]);
   const [salaryPage, setSalaryPage] = useState(1);
@@ -106,10 +144,12 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
 
   const canEdit = Boolean(detail?.canEdit);
   const canContracts = Boolean(
-    detail && (['ADMIN', 'HR'].includes(profile.organization.role) || detail.userId === profile.user.id)
+    detail &&
+      (['ADMIN', 'HR'].includes(profile.organization.role) || detail.userId === profile.user.id),
   );
   const canUploadAvatar = Boolean(
-    detail && (['ADMIN', 'HR'].includes(profile.organization.role) || detail.userId === profile.user.id)
+    detail &&
+      (['ADMIN', 'HR'].includes(profile.organization.role) || detail.userId === profile.user.id),
   );
 
   useEffect(() => {
@@ -130,7 +170,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     alive.current = true;
     let active = true;
     request<{ employee: Employee; today: string }>(url + '/' + encodeURIComponent(id))
-      .then(r => {
+      .then((r) => {
         if (active) {
           setDetail(r.employee);
           setToday(r.today);
@@ -139,7 +179,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
           setManager(r.employee.managerUserId || '');
         }
       })
-      .catch(e => {
+      .catch((e) => {
         if (active) setError(errorText(e));
       })
       .finally(() => {
@@ -161,10 +201,10 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     setSectionLoading(true);
     setSectionError('');
     request<{ items: DocumentItem[] }>(url + '/' + detail.id + '/documents')
-      .then(r => {
+      .then((r) => {
         if (active) setDocuments(r.items);
       })
-      .catch(e => {
+      .catch((e) => {
         if (active) setSectionError(errorText(e));
       })
       .finally(() => {
@@ -186,32 +226,48 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
       let active = true;
       setSectionLoading(true);
       setSectionError('');
-      const payBase = '/api/organizations/' + encodeURIComponent(profile.organization.id) + '/payroll';
+      const payBase =
+        '/api/organizations/' + encodeURIComponent(profile.organization.id) + '/payroll';
       request<{ items: SalaryProfileHistory[]; total: number }>(
-        payBase + '/employees/' + detail.id + '/salary-history?page=' + salaryPage + '&limit=10'
+        payBase + '/employees/' + detail.id + '/salary-history?page=' + salaryPage + '&limit=10',
       )
-        .then(r => { if (active) setSalaryHistory(r); })
-        .catch(e => { if (active) setSectionError(errorText(e)); })
-        .finally(() => { if (active) setSectionLoading(false); });
-      return () => { active = false; };
+        .then((r) => {
+          if (active) setSalaryHistory(r);
+        })
+        .catch((e) => {
+          if (active) setSectionError(errorText(e));
+        })
+        .finally(() => {
+          if (active) setSectionLoading(false);
+        });
+      return () => {
+        active = false;
+      };
     }
     if (tab === 'insurance') {
       let active = true;
       setSectionLoading(true);
       setSectionError('');
-      const payBase = '/api/organizations/' + encodeURIComponent(profile.organization.id) + '/payroll';
+      const payBase =
+        '/api/organizations/' + encodeURIComponent(profile.organization.id) + '/payroll';
       request<{ profile: SIProfile | null; contributions: SIContribution[] }>(
-        payBase + '/employees/' + detail.id + '/social-insurance'
+        payBase + '/employees/' + detail.id + '/social-insurance',
       )
-        .then(r => {
+        .then((r) => {
           if (active) {
             setSiProfile(r.profile);
             setSiContributions(r.contributions);
           }
         })
-        .catch(e => { if (active) setSectionError(errorText(e)); })
-        .finally(() => { if (active) setSectionLoading(false); });
-      return () => { active = false; };
+        .catch((e) => {
+          if (active) setSectionError(errorText(e));
+        })
+        .finally(() => {
+          if (active) setSectionLoading(false);
+        });
+      return () => {
+        active = false;
+      };
     }
     let active = true;
     setSectionLoading(true);
@@ -220,15 +276,17 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
       url +
       '/' +
       detail.id +
-      (tab === 'contracts' ? '/contracts?page=' + contractPage : '/work-history?page=' + historyPage);
+      (tab === 'contracts'
+        ? '/contracts?page=' + contractPage
+        : '/work-history?page=' + historyPage);
     request<EmployeePage<EmployeeContract> | EmployeePage<WorkHistory>>(path)
-      .then(r => {
+      .then((r) => {
         if (active) {
           if (tab === 'contracts') setContracts(r as EmployeePage<EmployeeContract>);
           else setHistory(r as EmployeePage<WorkHistory>);
         }
       })
-      .catch(e => {
+      .catch((e) => {
         if (active) setSectionError(errorText(e));
       })
       .finally(() => {
@@ -237,7 +295,16 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     return () => {
       active = false;
     };
-  }, [url, detail?.id, tab, contractPage, historyPage, canContracts, salaryPage, profile.organization.id]);
+  }, [
+    url,
+    detail?.id,
+    tab,
+    contractPage,
+    historyPage,
+    canContracts,
+    salaryPage,
+    profile.organization.id,
+  ]);
 
   function close() {
     if (busy || closing) return;
@@ -287,9 +354,9 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
             bankAccountNumber: nullable(f, 'bankAccountNumber'),
             bankAccountName: nullable(f, 'bankAccountName'),
           },
-          'PATCH'
+          'PATCH',
         ),
-      'Đã cập nhật thông tin hồ sơ.'
+      'Đã cập nhật thông tin hồ sơ.',
     );
   }
 
@@ -309,9 +376,13 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     void perform(
       () =>
         item
-          ? request(url + '/' + detail.id + '/contracts/' + item.id, { ...data, version: item.version }, 'PATCH')
+          ? request(
+              url + '/' + detail.id + '/contracts/' + item.id,
+              { ...data, version: item.version },
+              'PATCH',
+            )
           : request(url + '/' + detail.id + '/contracts', data),
-      'Đã lưu hợp đồng lao động.'
+      'Đã lưu hợp đồng lao động.',
     );
   }
 
@@ -339,7 +410,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
             mimeType: file.type,
             contentBase64: base64,
           },
-          'POST'
+          'POST',
         );
         setSuccess('Đã cập nhật ảnh đại diện thành công.');
         loadDetail();
@@ -370,7 +441,11 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'text/csv',
     ];
-    if (!allowed.includes(file.type) && !file.name.endsWith('.csv') && !file.name.endsWith('.xlsx')) {
+    if (
+      !allowed.includes(file.type) &&
+      !file.name.endsWith('.csv') &&
+      !file.name.endsWith('.xlsx')
+    ) {
       setError('Định dạng tập tin không được hỗ trợ. Chấp nhận PDF, JPG, PNG, XLSX, CSV.');
       return;
     }
@@ -388,12 +463,16 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
           url + '/' + detail.id + '/documents',
           {
             fileName: file.name,
-            mimeType: file.type || (file.name.endsWith('.csv') ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+            mimeType:
+              file.type ||
+              (file.name.endsWith('.csv')
+                ? 'text/csv'
+                : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
             documentType: docType,
             description: docDesc || null,
             contentBase64: base64,
           },
-          'POST'
+          'POST',
         );
         setSuccess('Đã tải lên tài liệu thành công.');
         form.reset();
@@ -432,7 +511,14 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
 
   async function handleDeleteDoc(doc: DocumentItem) {
     if (!detail) return;
-    if (!window.confirm(locale === 'en' ? `Delete document "${doc.fileName}"?` : `Bạn có chắc muốn xóa tài liệu "${doc.fileName}"?`)) return;
+    if (
+      !window.confirm(
+        locale === 'en'
+          ? `Delete document "${doc.fileName}"?`
+          : `Bạn có chắc muốn xóa tài liệu "${doc.fileName}"?`,
+      )
+    )
+      return;
     setBusy(true);
     setError('');
     try {
@@ -463,7 +549,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
           positionId: position || null,
           managerUserId: manager || null,
         }),
-      'Đã ghi nhận mốc công tác.'
+      'Đã ghi nhận mốc công tác.',
     );
   }
 
@@ -474,9 +560,9 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
         request(
           url + '/' + detail.id + '/contracts/' + c.id,
           { version: c.version, status, ...(terminationDate ? { terminationDate } : {}) },
-          'PATCH'
+          'PATCH',
         ),
-      'Đã cập nhật trạng thái hợp đồng.'
+      'Đã cập nhật trạng thái hợp đồng.',
     );
   }
 
@@ -484,7 +570,11 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     if (total <= 20) return null;
     return (
       <div className="emp-pagination">
-        <button className="secondary" disabled={current === 1 || sectionLoading} onClick={() => set(current - 1)}>
+        <button
+          className="secondary"
+          disabled={current === 1 || sectionLoading}
+          onClick={() => set(current - 1)}
+        >
           Trước
         </button>
         <span>
@@ -507,11 +597,11 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
       className={'account-drawer emp-drawer' + (closing ? ' is-closing' : '')}
       aria-labelledby="employee-detail-title"
       aria-modal="true"
-      onCancel={event => {
+      onCancel={(event) => {
         event.preventDefault();
         close();
       }}
-      onClick={event => {
+      onClick={(event) => {
         if (event.target !== event.currentTarget) return;
         const rect = event.currentTarget.getBoundingClientRect();
         if (
@@ -525,28 +615,45 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
     >
       <header className="drawer-header">
         <div>
-          <span className="eyebrow">{detail ? detail.employeeCode : tr("HỒ SƠ NHÂN VIÊN")}</span>
+          <span className="eyebrow">{detail ? detail.employeeCode : tr('HỒ SƠ NHÂN VIÊN')}</span>
           <h2 id="employee-detail-title" ref={heading} tabIndex={-1}>
-            {detail ? detail.fullName : tr("Chi tiết nhân viên")}
+            {detail ? detail.fullName : tr('Chi tiết nhân viên')}
           </h2>
         </div>
-        <button className="secondary" onClick={close} disabled={busy || closing} aria-label={tr("Đóng chi tiết")}>
+        <button
+          className="secondary"
+          onClick={close}
+          disabled={busy || closing}
+          aria-label={tr('Đóng chi tiết')}
+        >
           ×
         </button>
       </header>
 
       <div className="drawer-body" inert={closing} aria-busy={loading || busy}>
-        {error && <p role="alert" className="notice error">{error}</p>}
-        {success && <p role="status" className="notice success">{success}</p>}
-        {loading && <p role="status">{tr("Đang tải hồ sơ nhân viên…")}</p>}
+        {error && (
+          <p role="alert" className="notice error">
+            {error}
+          </p>
+        )}
+        {success && (
+          <p role="status" className="notice success">
+            {success}
+          </p>
+        )}
+        {loading && <p role="status">{tr('Đang tải hồ sơ nhân viên…')}</p>}
 
         {detail && (
           <>
             <div className="emp-summary-header">
               <div className="drawer-profile-avatar-wrapper">
-                <Avatar src={detail.avatarUrl} name={detail.fullName} className="drawer-profile-avatar-img" />
+                <Avatar
+                  src={detail.avatarUrl}
+                  name={detail.fullName}
+                  className="drawer-profile-avatar-img"
+                />
                 {canUploadAvatar && (
-                  <label className="drawer-avatar-upload-btn" title={tr("Cập nhật ảnh đại diện")}>
+                  <label className="drawer-avatar-upload-btn" title={tr('Cập nhật ảnh đại diện')}>
                     <span>📷</span>
                     <input
                       type="file"
@@ -561,22 +668,25 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
               <div className="emp-summary-info">
                 <h3>{detail.fullName}</h3>
                 <p className="emp-summary-subtitle">
-                  {detail.positionTitle || tr("Chưa có chức danh")} · {detail.departmentName || tr("Chưa phân công")}
+                  {detail.positionTitle || tr('Chưa có chức danh')} ·{' '}
+                  {detail.departmentName || tr('Chưa phân công')}
                 </p>
                 <div className="emp-badges-row">
                   <span className={`emp-badge emp-badge-${detail.employmentStatus.toLowerCase()}`}>
                     {tr(employmentLabels[detail.employmentStatus])}
                   </span>
                   {detail.userId ? (
-                    <span className="emp-badge emp-badge-linked">{tr("Đã liên kết tài khoản")}</span>
+                    <span className="emp-badge emp-badge-linked">
+                      {tr('Đã liên kết tài khoản')}
+                    </span>
                   ) : (
-                    <span className="emp-badge emp-badge-standalone">{tr("Hồ sơ độc lập")}</span>
+                    <span className="emp-badge emp-badge-standalone">{tr('Hồ sơ độc lập')}</span>
                   )}
                 </div>
               </div>
             </div>
 
-            <nav className="emp-drawer-tabs" role="tablist" aria-label={tr("Nội dung hồ sơ")}>
+            <nav className="emp-drawer-tabs" role="tablist" aria-label={tr('Nội dung hồ sơ')}>
               <button
                 type="button"
                 role="tab"
@@ -587,7 +697,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                   setEditing(false);
                 }}
               >
-                {tr("Thông tin hồ sơ")}
+                {tr('Thông tin hồ sơ')}
               </button>
               {canContracts && (
                 <button
@@ -601,7 +711,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                     setTermination(null);
                   }}
                 >
-                  {tr("Hợp đồng lao động")}
+                  {tr('Hợp đồng lao động')}
                 </button>
               )}
               <button
@@ -614,7 +724,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                   setTransferring(false);
                 }}
               >
-                {tr("Lịch sử công tác")}
+                {tr('Lịch sử công tác')}
               </button>
               <button
                 type="button"
@@ -625,23 +735,28 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                   setTab('documents');
                 }}
               >
-                {tr("Tài liệu đính kèm")}
+                {tr('Tài liệu đính kèm')}
               </button>
               <button
                 type="button"
                 role="tab"
                 aria-selected={tab === 'salary'}
                 className={'emp-drawer-tab' + (tab === 'salary' ? ' is-active' : '')}
-                onClick={() => { setTab('salary'); setSalaryPage(1); }}
+                onClick={() => {
+                  setTab('salary');
+                  setSalaryPage(1);
+                }}
               >
-                {tr("Lịch sử lương")}
+                {tr('Lịch sử lương')}
               </button>
               <button
                 type="button"
                 role="tab"
                 aria-selected={tab === 'insurance'}
                 className={'emp-drawer-tab' + (tab === 'insurance' ? ' is-active' : '')}
-                onClick={() => { setTab('insurance'); }}
+                onClick={() => {
+                  setTab('insurance');
+                }}
               >
                 BHXH
               </button>
@@ -651,45 +766,45 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
               <div className="emp-tab-panel">
                 <section className="emp-card">
                   <div className="emp-card-header">
-                    <h4>{tr("Thông tin công tác")}</h4>
+                    <h4>{tr('Thông tin công tác')}</h4>
                     {canEdit && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => setEditing(true)}
-                      >
-                        {tr("Chỉnh sửa hồ sơ")}
+                      <button type="button" className="secondary" onClick={() => setEditing(true)}>
+                        {tr('Chỉnh sửa hồ sơ')}
                       </button>
                     )}
                   </div>
                   <dl className="drawer-detail-list">
                     <div>
-                      <dt>{tr("Mã nhân viên")}</dt>
-                      <dd><strong>{detail.employeeCode}</strong></dd>
+                      <dt>{tr('Mã nhân viên')}</dt>
+                      <dd>
+                        <strong>{detail.employeeCode}</strong>
+                      </dd>
                     </div>
                     <div>
-                      <dt>{tr("Ngày vào làm")}</dt>
+                      <dt>{tr('Ngày vào làm')}</dt>
                       <dd>{dateLabel(detail.hireDate)}</dd>
                     </div>
                     <div>
-                      <dt>{tr("Trạng thái")}</dt>
+                      <dt>{tr('Trạng thái')}</dt>
                       <dd>
-                        <span className={`emp-badge emp-badge-${detail.employmentStatus.toLowerCase()}`}>
+                        <span
+                          className={`emp-badge emp-badge-${detail.employmentStatus.toLowerCase()}`}
+                        >
                           {tr(employmentLabels[detail.employmentStatus])}
                         </span>
                       </dd>
                     </div>
                     <div>
-                      <dt>{tr("Phòng ban")}</dt>
-                      <dd>{detail.departmentName || tr("Chưa phân công")}</dd>
+                      <dt>{tr('Phòng ban')}</dt>
+                      <dd>{detail.departmentName || tr('Chưa phân công')}</dd>
                     </div>
                     <div>
-                      <dt>{tr("Chức danh")}</dt>
-                      <dd>{detail.positionTitle || tr("Chưa phân công")}</dd>
+                      <dt>{tr('Chức danh')}</dt>
+                      <dd>{detail.positionTitle || tr('Chưa phân công')}</dd>
                     </div>
                     <div>
-                      <dt>{tr("Quản lý trực tiếp")}</dt>
-                      <dd>{detail.managerName || tr("Chưa phân công")}</dd>
+                      <dt>{tr('Quản lý trực tiếp')}</dt>
+                      <dd>{detail.managerName || tr('Chưa phân công')}</dd>
                     </div>
                   </dl>
                 </section>
@@ -700,24 +815,24 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                   detail.address !== undefined) && (
                   <section className="emp-card">
                     <div className="emp-card-header">
-                      <h4>{tr("Thông tin cá nhân")}</h4>
-                      <small className="muted">{tr("Chỉ hiển thị cho người có thẩm quyền")}</small>
+                      <h4>{tr('Thông tin cá nhân')}</h4>
+                      <small className="muted">{tr('Chỉ hiển thị cho người có thẩm quyền')}</small>
                     </div>
                     <dl className="drawer-detail-list">
                       <div>
-                        <dt>{tr("Ngày sinh")}</dt>
+                        <dt>{tr('Ngày sinh')}</dt>
                         <dd>{dateLabel(detail.birthDate)}</dd>
                       </div>
                       <div>
-                        <dt>{tr("Điện thoại")}</dt>
+                        <dt>{tr('Điện thoại')}</dt>
                         <dd>{detail.phone || '—'}</dd>
                       </div>
                       <div>
-                        <dt>{tr("Email cá nhân")}</dt>
+                        <dt>{tr('Email cá nhân')}</dt>
                         <dd>{detail.personalEmail || '—'}</dd>
                       </div>
                       <div>
-                        <dt>{tr("Địa chỉ")}</dt>
+                        <dt>{tr('Địa chỉ')}</dt>
                         <dd>{detail.address || '—'}</dd>
                       </div>
                     </dl>
@@ -726,27 +841,33 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
 
                 <section className="emp-card">
                   <div className="emp-card-header">
-                    <h4>{tr("Thông tin tài khoản ngân hàng")}</h4>
-                    <small className="muted">Dùng cho chi trả lương &amp; thanh toán công tác</small>
+                    <h4>{tr('Thông tin tài khoản ngân hàng')}</h4>
+                    <small className="muted">
+                      Dùng cho chi trả lương &amp; thanh toán công tác
+                    </small>
                   </div>
                   <dl className="drawer-detail-list">
                     <div>
-                      <dt>{tr("Ngân hàng")}</dt>
-                      <dd>{detail.bankName || tr("Chưa cập nhật")}</dd>
+                      <dt>{tr('Ngân hàng')}</dt>
+                      <dd>{detail.bankName || tr('Chưa cập nhật')}</dd>
                     </div>
                     <div>
-                      <dt>{tr("Số tài khoản")}</dt>
+                      <dt>{tr('Số tài khoản')}</dt>
                       <dd>
                         {detail.bankAccountNumber ? (
                           <code>{detail.bankAccountNumber}</code>
                         ) : (
-                          tr("Chưa cập nhật")
+                          tr('Chưa cập nhật')
                         )}
                       </dd>
                     </div>
                     <div>
-                      <dt>{tr("Tên chủ tài khoản")}</dt>
-                      <dd>{detail.bankAccountName ? detail.bankAccountName.toUpperCase() : tr("Chưa cập nhật")}</dd>
+                      <dt>{tr('Tên chủ tài khoản')}</dt>
+                      <dd>
+                        {detail.bankAccountName
+                          ? detail.bankAccountName.toUpperCase()
+                          : tr('Chưa cập nhật')}
+                      </dd>
                     </div>
                   </dl>
                 </section>
@@ -754,26 +875,32 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                 {profile.organization.role === 'ADMIN' && !detail.userId && (
                   <form
                     className="emp-card emp-link-card"
-                    onSubmit={e => {
+                    onSubmit={(e) => {
                       e.preventDefault();
                       void perform(
-                        () => request(url + '/' + detail.id + '/account', { version: detail.version, userId: account }),
-                        'Đã liên kết tài khoản thành công.'
+                        () =>
+                          request(url + '/' + detail.id + '/account', {
+                            version: detail.version,
+                            userId: account,
+                          }),
+                        'Đã liên kết tài khoản thành công.',
                       );
                     }}
                   >
                     <h4>{tr('Liên kết tài khoản người dùng')}</h4>
-                    <p className="muted">{tr('Liên kết hồ sơ này với một tài khoản đã được mời trong tổ chức.')}</p>
+                    <p className="muted">
+                      {tr('Liên kết hồ sơ này với một tài khoản đã được mời trong tổ chức.')}
+                    </p>
                     <SearchChoice
                       base={base}
                       resource="users"
-                      label={tr("Tài khoản liên kết")}
+                      label={tr('Tài khoản liên kết')}
                       value={account}
                       onChange={setAccount}
                     />
                     <div className="emp-actions">
                       <button className="primary" disabled={!account || busy}>
-                        {tr("Xác nhận liên kết")}
+                        {tr('Xác nhận liên kết')}
                       </button>
                     </div>
                   </form>
@@ -784,19 +911,29 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
             {tab === 'profile' && editing && (
               <form className="emp-card emp-edit-form" onSubmit={submitProfile}>
                 <div className="emp-card-header">
-                  <h4>{tr("Chỉnh sửa hồ sơ nhân viên")}</h4>
+                  <h4>{tr('Chỉnh sửa hồ sơ nhân viên')}</h4>
                 </div>
                 <fieldset disabled={busy} className="emp-form-stack">
                   <label className="field">
-                    <span>{tr("Mã nhân viên")}</span>
-                    <input name="employeeCode" required maxLength={30} defaultValue={detail.employeeCode} />
+                    <span>{tr('Mã nhân viên')}</span>
+                    <input
+                      name="employeeCode"
+                      required
+                      maxLength={30}
+                      defaultValue={detail.employeeCode}
+                    />
                   </label>
                   <label className="field">
-                    <span>{tr("Họ và tên")}</span>
-                    <input name="fullName" required maxLength={150} defaultValue={detail.fullName} />
+                    <span>{tr('Họ và tên')}</span>
+                    <input
+                      name="fullName"
+                      required
+                      maxLength={150}
+                      defaultValue={detail.fullName}
+                    />
                   </label>
                   <label className="field">
-                    <span>{tr("Trạng thái làm việc")}</span>
+                    <span>{tr('Trạng thái làm việc')}</span>
                     <select name="employmentStatus" defaultValue={detail.employmentStatus}>
                       {Object.entries(employmentLabels).map(([v, l]) => (
                         <option key={v} value={v}>
@@ -806,39 +943,64 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                     </select>
                   </label>
                   <label className="field">
-                    <span>{tr("Ngày sinh")}</span>
+                    <span>{tr('Ngày sinh')}</span>
                     <input name="birthDate" type="date" defaultValue={detail.birthDate || ''} />
                   </label>
                   <label className="field">
-                    <span>{tr("Số điện thoại")}</span>
-                    <input name="phone" type="tel" maxLength={32} defaultValue={detail.phone || ''} />
+                    <span>{tr('Số điện thoại')}</span>
+                    <input
+                      name="phone"
+                      type="tel"
+                      maxLength={32}
+                      defaultValue={detail.phone || ''}
+                    />
                   </label>
                   <label className="field">
-                    <span>{tr("Email cá nhân")}</span>
-                    <input name="personalEmail" type="email" maxLength={254} defaultValue={detail.personalEmail || ''} />
+                    <span>{tr('Email cá nhân')}</span>
+                    <input
+                      name="personalEmail"
+                      type="email"
+                      maxLength={254}
+                      defaultValue={detail.personalEmail || ''}
+                    />
                   </label>
                   <label className="field">
-                    <span>{tr("Địa chỉ")}</span>
+                    <span>{tr('Địa chỉ')}</span>
                     <input name="address" maxLength={500} defaultValue={detail.address || ''} />
                   </label>
                   <label className="field">
-                    <span>{tr("Tên ngân hàng")}</span>
-                    <input name="bankName" maxLength={100} placeholder={tr("VD: Vietcombank, Techcombank, MB Bank...")} defaultValue={detail.bankName || ''} />
+                    <span>{tr('Tên ngân hàng')}</span>
+                    <input
+                      name="bankName"
+                      maxLength={100}
+                      placeholder={tr('VD: Vietcombank, Techcombank, MB Bank...')}
+                      defaultValue={detail.bankName || ''}
+                    />
                   </label>
                   <label className="field">
-                    <span>{tr("Số tài khoản ngân hàng")}</span>
-                    <input name="bankAccountNumber" maxLength={50} placeholder={tr("Nhập số tài khoản ngân hàng")} defaultValue={detail.bankAccountNumber || ''} />
+                    <span>{tr('Số tài khoản ngân hàng')}</span>
+                    <input
+                      name="bankAccountNumber"
+                      maxLength={50}
+                      placeholder={tr('Nhập số tài khoản ngân hàng')}
+                      defaultValue={detail.bankAccountNumber || ''}
+                    />
                   </label>
                   <label className="field">
-                    <span>{tr("Tên chủ tài khoản")}</span>
-                    <input name="bankAccountName" maxLength={150} placeholder={tr("Tên chủ tài khoản (in hoa)")} defaultValue={detail.bankAccountName || ''} />
+                    <span>{tr('Tên chủ tài khoản')}</span>
+                    <input
+                      name="bankAccountName"
+                      maxLength={150}
+                      placeholder={tr('Tên chủ tài khoản (in hoa)')}
+                      defaultValue={detail.bankAccountName || ''}
+                    />
                   </label>
                   <div className="emp-actions">
                     <button className="primary" type="submit">
-                      {busy ? tr("Đang lưu…") : tr("Lưu hồ sơ")}
+                      {busy ? tr('Đang lưu…') : tr('Lưu hồ sơ')}
                     </button>
                     <button type="button" className="secondary" onClick={() => setEditing(false)}>
-                      {tr("Hủy")}
+                      {tr('Hủy')}
                     </button>
                   </div>
                 </fieldset>
@@ -848,7 +1010,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
             {tab === 'contracts' && canContracts && (
               <div className="emp-tab-panel">
                 <div className="emp-card-header">
-                  <h4>{tr("Danh sách hợp đồng lao động")}</h4>
+                  <h4>{tr('Danh sách hợp đồng lao động')}</h4>
                   {canEdit && (
                     <button
                       type="button"
@@ -858,32 +1020,44 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         setTermination(null);
                       }}
                     >
-                      {tr("Thêm hợp đồng")}
+                      {tr('Thêm hợp đồng')}
                     </button>
                   )}
                 </div>
 
-                {sectionLoading && <p role="status">{tr("Đang tải danh sách hợp đồng…")}</p>}
-                {sectionError && <p role="alert" className="notice error">{sectionError}</p>}
+                {sectionLoading && <p role="status">{tr('Đang tải danh sách hợp đồng…')}</p>}
+                {sectionError && (
+                  <p role="alert" className="notice error">
+                    {sectionError}
+                  </p>
+                )}
 
                 {contractEditor && (
                   <form className="emp-card emp-editor" onSubmit={submitContract}>
-                    <h4>{contractEditor === 'new' ? tr("Tạo bản nháp hợp đồng") : tr("Chỉnh sửa bản nháp")}</h4>
+                    <h4>
+                      {contractEditor === 'new'
+                        ? tr('Tạo bản nháp hợp đồng')
+                        : tr('Chỉnh sửa bản nháp')}
+                    </h4>
                     <fieldset disabled={busy} className="emp-form-stack">
                       <label className="field">
-                        <span>{tr("Số hợp đồng")}</span>
+                        <span>{tr('Số hợp đồng')}</span>
                         <input
                           name="contractNumber"
                           required
                           maxLength={60}
-                          defaultValue={contractEditor === 'new' ? '' : contractEditor.contractNumber}
+                          defaultValue={
+                            contractEditor === 'new' ? '' : contractEditor.contractNumber
+                          }
                         />
                       </label>
                       <label className="field">
-                        <span>{tr("Loại hợp đồng")}</span>
+                        <span>{tr('Loại hợp đồng')}</span>
                         <select
                           name="contractType"
-                          defaultValue={contractEditor === 'new' ? 'FIXED_TERM' : contractEditor.contractType}
+                          defaultValue={
+                            contractEditor === 'new' ? 'FIXED_TERM' : contractEditor.contractType
+                          }
                         >
                           {Object.entries(contractTypeLabels).map(([v, l]) => (
                             <option key={v} value={v}>
@@ -893,7 +1067,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         </select>
                       </label>
                       <label className="field">
-                        <span>{tr("Ngày bắt đầu")}</span>
+                        <span>{tr('Ngày bắt đầu')}</span>
                         <input
                           name="startDate"
                           type="date"
@@ -902,23 +1076,27 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         />
                       </label>
                       <label className="field">
-                        <span>{tr("Ngày kết thúc")}</span>
+                        <span>{tr('Ngày kết thúc')}</span>
                         <input
                           name="endDate"
                           type="date"
-                          defaultValue={contractEditor === 'new' ? '' : contractEditor.endDate || ''}
+                          defaultValue={
+                            contractEditor === 'new' ? '' : contractEditor.endDate || ''
+                          }
                         />
                       </label>
                       <label className="field">
-                        <span>{tr("Ngày ký")}</span>
+                        <span>{tr('Ngày ký')}</span>
                         <input
                           name="signedOn"
                           type="date"
-                          defaultValue={contractEditor === 'new' ? '' : contractEditor.signedOn || ''}
+                          defaultValue={
+                            contractEditor === 'new' ? '' : contractEditor.signedOn || ''
+                          }
                         />
                       </label>
                       <label className="field">
-                        <span>{tr("Ghi chú hợp đồng")}</span>
+                        <span>{tr('Ghi chú hợp đồng')}</span>
                         <textarea
                           name="notes"
                           maxLength={1000}
@@ -928,10 +1106,14 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                       </label>
                       <div className="emp-actions">
                         <button className="primary" type="submit">
-                          {busy ? tr("Đang lưu…") : tr("Lưu bản nháp")}
+                          {busy ? tr('Đang lưu…') : tr('Lưu bản nháp')}
                         </button>
-                        <button type="button" className="secondary" onClick={() => setContractEditor(null)}>
-                          {tr("Hủy")}
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setContractEditor(null)}
+                        >
+                          {tr('Hủy')}
                         </button>
                       </div>
                     </fieldset>
@@ -941,15 +1123,17 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                 {termination && (
                   <form
                     className="emp-card emp-editor"
-                    onSubmit={e => {
+                    onSubmit={(e) => {
                       e.preventDefault();
                       const f = new FormData(e.currentTarget);
                       changeContract(termination, 'TERMINATED', String(f.get('terminationDate')));
                     }}
                   >
-                    <h4>{tr('Chấm dứt hợp đồng')} {termination.contractNumber}</h4>
+                    <h4>
+                      {tr('Chấm dứt hợp đồng')} {termination.contractNumber}
+                    </h4>
                     <label className="field">
-                      <span>{tr("Ngày chấm dứt")}</span>
+                      <span>{tr('Ngày chấm dứt')}</span>
                       <input
                         type="date"
                         name="terminationDate"
@@ -961,10 +1145,14 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                     </label>
                     <div className="emp-actions">
                       <button className="primary" disabled={busy}>
-                        {tr("Xác nhận chấm dứt")}
+                        {tr('Xác nhận chấm dứt')}
                       </button>
-                      <button type="button" className="secondary" onClick={() => setTermination(null)}>
-                        {tr("Hủy")}
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setTermination(null)}
+                      >
+                        {tr('Hủy')}
                       </button>
                     </div>
                   </form>
@@ -972,11 +1160,13 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
 
                 <div className="emp-contracts-list">
                   {!sectionLoading &&
-                    contracts?.items.map(c => (
+                    contracts?.items.map((c) => (
                       <article key={c.id} className="emp-contract-card">
                         <div className="emp-contract-top">
                           <div>
-                            <span className="eyebrow">{tr(contractTypeLabels[c.contractType])}</span>
+                            <span className="eyebrow">
+                              {tr(contractTypeLabels[c.contractType])}
+                            </span>
                             <h5>{c.contractNumber}</h5>
                           </div>
                           <span className={`emp-badge emp-badge-${c.status.toLowerCase()}`}>
@@ -985,16 +1175,17 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         </div>
                         <div className="emp-contract-dates">
                           <span>
-                            <strong>{tr("Thời hạn:")}</strong> {dateLabel(c.startDate)} → {dateLabel(c.endDate)}
+                            <strong>{tr('Thời hạn:')}</strong> {dateLabel(c.startDate)} →{' '}
+                            {dateLabel(c.endDate)}
                           </span>
                           {c.signedOn && (
                             <span>
-                              <strong>{tr("Ngày ký:")}</strong> {dateLabel(c.signedOn)}
+                              <strong>{tr('Ngày ký:')}</strong> {dateLabel(c.signedOn)}
                             </span>
                           )}
                           {c.terminationDate && (
                             <span>
-                              <strong>{tr("Chấm dứt:")}</strong> {dateLabel(c.terminationDate)}
+                              <strong>{tr('Chấm dứt:')}</strong> {dateLabel(c.terminationDate)}
                             </span>
                           )}
                         </div>
@@ -1008,7 +1199,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                                   className="secondary"
                                   onClick={() => setContractEditor(c)}
                                 >
-                                  {tr("Sửa bản nháp")}
+                                  {tr('Sửa bản nháp')}
                                 </button>
                                 <button
                                   type="button"
@@ -1016,7 +1207,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                                   disabled={busy}
                                   onClick={() => changeContract(c, 'ACTIVE')}
                                 >
-                                  {tr("Kích hoạt")}
+                                  {tr('Kích hoạt')}
                                 </button>
                                 <button
                                   type="button"
@@ -1024,7 +1215,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                                   disabled={busy}
                                   onClick={() => changeContract(c, 'CANCELLED')}
                                 >
-                                  {tr("Hủy")}
+                                  {tr('Hủy')}
                                 </button>
                               </>
                             )}
@@ -1037,7 +1228,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                                     disabled={busy}
                                     onClick={() => changeContract(c, 'EXPIRED')}
                                   >
-                                    {tr("Ghi nhận hết hạn")}
+                                    {tr('Ghi nhận hết hạn')}
                                   </button>
                                 ) : (
                                   <button
@@ -1045,7 +1236,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                                     className="secondary"
                                     onClick={() => setTermination(c)}
                                   >
-                                    {tr("Chấm dứt hợp đồng")}
+                                    {tr('Chấm dứt hợp đồng')}
                                   </button>
                                 )}
                               </>
@@ -1055,7 +1246,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                       </article>
                     ))}
                   {!sectionLoading && !sectionError && contracts?.items.length === 0 && (
-                    <p className="muted">{tr("Chưa có hợp đồng lao động nào.")}</p>
+                    <p className="muted">{tr('Chưa có hợp đồng lao động nào.')}</p>
                   )}
                 </div>
                 {contracts && drawerPagination(contractPage, contracts.total, setContractPage)}
@@ -1065,27 +1256,27 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
             {tab === 'history' && (
               <div className="emp-tab-panel">
                 <div className="emp-card-header">
-                  <h4>{tr("Lịch sử thay đổi công tác")}</h4>
+                  <h4>{tr('Lịch sử thay đổi công tác')}</h4>
                   {canEdit && (
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() => setTransferring(true)}
-                    >
-                      {tr("Ghi nhận điều chuyển")}
+                    <button type="button" className="primary" onClick={() => setTransferring(true)}>
+                      {tr('Ghi nhận điều chuyển')}
                     </button>
                   )}
                 </div>
 
-                {sectionLoading && <p role="status">{tr("Đang tải lịch sử công tác…")}</p>}
-                {sectionError && <p role="alert" className="notice error">{sectionError}</p>}
+                {sectionLoading && <p role="status">{tr('Đang tải lịch sử công tác…')}</p>}
+                {sectionError && (
+                  <p role="alert" className="notice error">
+                    {sectionError}
+                  </p>
+                )}
 
                 {transferring && (
                   <form className="emp-card emp-editor" onSubmit={submitTransfer}>
-                    <h4>{tr("Ghi nhận điều chuyển / bổ nhiệm / khen thưởng")}</h4>
+                    <h4>{tr('Ghi nhận điều chuyển / bổ nhiệm / khen thưởng')}</h4>
                     <fieldset disabled={busy} className="emp-form-stack">
                       <label className="field">
-                        <span>{tr("Loại sự kiện công tác")}</span>
+                        <span>{tr('Loại sự kiện công tác')}</span>
                         <select name="eventType" defaultValue="TRANSFER">
                           {Object.entries(workEventLabels).map(([val, lbl]) => (
                             <option key={val} value={val}>
@@ -1095,11 +1286,15 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         </select>
                       </label>
                       <label className="field">
-                        <span>{tr("Tiêu đề quyết định / sự kiện (tùy chọn)")}</span>
-                        <input name="title" maxLength={200} placeholder={tr("VD: Quyết định bổ nhiệm số 05/QĐ-BGD")} />
+                        <span>{tr('Tiêu đề quyết định / sự kiện (tùy chọn)')}</span>
+                        <input
+                          name="title"
+                          maxLength={200}
+                          placeholder={tr('VD: Quyết định bổ nhiệm số 05/QĐ-BGD')}
+                        />
                       </label>
                       <label className="field">
-                        <span>{tr("Ngày hiệu lực")}</span>
+                        <span>{tr('Ngày hiệu lực')}</span>
                         <input
                           type="date"
                           name="effectiveOn"
@@ -1110,12 +1305,21 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         />
                       </label>
                       <label className="field">
-                        <span>{tr("Lý do điều chuyển")}</span>
-                        <input name="reason" maxLength={500} required placeholder={tr("Căn cứ nhu cầu công tác...")} />
+                        <span>{tr('Lý do điều chuyển')}</span>
+                        <input
+                          name="reason"
+                          maxLength={500}
+                          required
+                          placeholder={tr('Căn cứ nhu cầu công tác...')}
+                        />
                       </label>
                       <label className="field">
-                        <span>{tr("Ghi chú bổ sung (tùy chọn)")}</span>
-                        <input name="notes" maxLength={1000} placeholder={tr("Chi tiết nghị quyết hoặc ghi chú")} />
+                        <span>{tr('Ghi chú bổ sung (tùy chọn)')}</span>
+                        <input
+                          name="notes"
+                          maxLength={1000}
+                          placeholder={tr('Chi tiết nghị quyết hoặc ghi chú')}
+                        />
                       </label>
                       <SearchChoice
                         base={base}
@@ -1123,7 +1327,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         label="Phòng ban"
                         value={dept}
                         initialLabel={detail.departmentName}
-                        onChange={id => {
+                        onChange={(id) => {
                           setDept(id);
                           setPosition('');
                         }}
@@ -1148,13 +1352,19 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                           onChange={setManager}
                         />
                       ) : (
-                        <p className="muted">{tr("Chỉ Quản trị viên mới được điều chuyển người quản lý trực tiếp.")}</p>
+                        <p className="muted">
+                          {tr('Chỉ Quản trị viên mới được điều chuyển người quản lý trực tiếp.')}
+                        </p>
                       )}
                       <div className="emp-actions">
                         <button className="primary" type="submit">
-                          {busy ? 'Đang lưu…' : tr("Lưu điều chuyển")}
+                          {busy ? 'Đang lưu…' : tr('Lưu điều chuyển')}
                         </button>
-                        <button type="button" className="secondary" onClick={() => setTransferring(false)}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setTransferring(false)}
+                        >
                           Hủy
                         </button>
                       </div>
@@ -1164,26 +1374,45 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
 
                 <ol className="emp-timeline">
                   {!sectionLoading &&
-                    history?.items.map(h => (
+                    history?.items.map((h) => (
                       <li key={h.id} className="emp-timeline-item">
                         <time className="emp-timeline-time">{dateLabel(h.effectiveOn)}</time>
                         <div className="emp-timeline-content">
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              gap: '8px',
+                              alignItems: 'center',
+                              flexWrap: 'wrap',
+                            }}
+                          >
                             <span className="emp-timeline-badge">
-                              {(h.eventType && workEventLabels[h.eventType] ? tr(workEventLabels[h.eventType]) : historyLabels[h.reason] ? tr(historyLabels[h.reason]) : h.reason)}
+                              {h.eventType && workEventLabels[h.eventType]
+                                ? tr(workEventLabels[h.eventType])
+                                : historyLabels[h.reason]
+                                  ? tr(historyLabels[h.reason])
+                                  : h.reason}
                             </span>
                             {h.title && <strong>{h.title}</strong>}
                           </div>
                           <p className="emp-timeline-desc">
-                            <strong>{h.departmentName || tr("Chưa phân công phòng ban")}</strong> · {h.positionTitle || tr("Chưa có chức danh")}
+                            <strong>{h.departmentName || tr('Chưa phân công phòng ban')}</strong> ·{' '}
+                            {h.positionTitle || tr('Chưa có chức danh')}
                           </p>
-                          <small className="muted">{tr('Lý do')}: {h.reason} · {tr('Quản lý trực tiếp')}: {h.managerName || tr("Chưa phân công")}</small>
-                          {h.notes && <small style={{ color: '#686477' }}>{tr('Ghi chú')}: {h.notes}</small>}
+                          <small className="muted">
+                            {tr('Lý do')}: {h.reason} · {tr('Quản lý trực tiếp')}:{' '}
+                            {h.managerName || tr('Chưa phân công')}
+                          </small>
+                          {h.notes && (
+                            <small style={{ color: '#686477' }}>
+                              {tr('Ghi chú')}: {h.notes}
+                            </small>
+                          )}
                         </div>
                       </li>
                     ))}
                   {!sectionLoading && !sectionError && history?.items.length === 0 && (
-                    <p className="muted">{tr("Chưa có mốc lịch sử công tác nào.")}</p>
+                    <p className="muted">{tr('Chưa có mốc lịch sử công tác nào.')}</p>
                   )}
                 </ol>
                 {history && drawerPagination(historyPage, history.total, setHistoryPage)}
@@ -1193,16 +1422,16 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
             {tab === 'documents' && (
               <div className="emp-tab-panel">
                 <div className="emp-card-header">
-                  <h4>{tr("Tài liệu hồ sơ đính kèm")}</h4>
-                  <small className="muted">{tr("Lưu trữ an toàn, phân quyền theo vai trò")}</small>
+                  <h4>{tr('Tài liệu hồ sơ đính kèm')}</h4>
+                  <small className="muted">{tr('Lưu trữ an toàn, phân quyền theo vai trò')}</small>
                 </div>
 
                 {canUploadAvatar && (
                   <form className="emp-doc-upload-box" onSubmit={handleDocumentUpload}>
-                    <h4>{tr("Tải lên tài liệu mới")}</h4>
+                    <h4>{tr('Tải lên tài liệu mới')}</h4>
                     <div className="emp-form-grid">
                       <label className="field">
-                        <span>{tr("Chọn tập tin")}</span>
+                        <span>{tr('Chọn tập tin')}</span>
                         <input
                           name="docFile"
                           type="file"
@@ -1212,10 +1441,12 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         />
                       </label>
                       <label className="field">
-                        <span>{tr("Phân loại tài liệu")}</span>
+                        <span>{tr('Phân loại tài liệu')}</span>
                         <select
                           value={docType}
-                          onChange={e => setDocType(e.target.value as DocumentItem['documentType'])}
+                          onChange={(e) =>
+                            setDocType(e.target.value as DocumentItem['documentType'])
+                          }
                           disabled={docUploading || busy}
                         >
                           {Object.entries(documentTypeLabels).map(([val, lbl]) => (
@@ -1226,11 +1457,11 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                         </select>
                       </label>
                       <label className="field emp-span">
-                        <span>{tr("Mô tả tài liệu (tùy chọn)")}</span>
+                        <span>{tr('Mô tả tài liệu (tùy chọn)')}</span>
                         <input
                           value={docDesc}
-                          onChange={e => setDocDesc(e.target.value)}
-                          placeholder={tr("Nhập ghi chú hoặc mô tả tài liệu")}
+                          onChange={(e) => setDocDesc(e.target.value)}
+                          placeholder={tr('Nhập ghi chú hoặc mô tả tài liệu')}
                           maxLength={500}
                           disabled={docUploading || busy}
                         />
@@ -1238,29 +1469,40 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                     </div>
                     <div className="emp-actions" style={{ marginTop: '12px' }}>
                       <button className="primary" type="submit" disabled={docUploading || busy}>
-                        {docUploading ? tr("Đang tải lên…") : tr("Tải lên tài liệu")}
+                        {docUploading ? tr('Đang tải lên…') : tr('Tải lên tài liệu')}
                       </button>
                     </div>
                   </form>
                 )}
 
-                {sectionLoading && <p role="status">{tr("Đang tải danh sách tài liệu…")}</p>}
-                {sectionError && <p role="alert" className="notice error">{sectionError}</p>}
+                {sectionLoading && <p role="status">{tr('Đang tải danh sách tài liệu…')}</p>}
+                {sectionError && (
+                  <p role="alert" className="notice error">
+                    {sectionError}
+                  </p>
+                )}
 
                 <div className="emp-docs-list">
                   {!sectionLoading &&
-                    documents.map(d => (
+                    documents.map((d) => (
                       <article key={d.id} className="emp-doc-card">
                         <div className="emp-doc-info">
                           <div className="emp-doc-header">
                             <span className="emp-badge emp-badge-linked">
-                              {documentTypeLabels[d.documentType] ? tr(documentTypeLabels[d.documentType]) : d.documentType}
+                              {documentTypeLabels[d.documentType]
+                                ? tr(documentTypeLabels[d.documentType])
+                                : d.documentType}
                             </span>
                             <span className="emp-doc-name">{d.fileName}</span>
                           </div>
                           <div className="emp-doc-meta">
-                            <span>{tr('Kích thước')}: {formatFileSize(d.fileSize)}</span> ·{' '}
-                            <span>{tr('Ngày tải lên')}: {dateLabel(d.createdAt.slice(0, 10))}</span>
+                            <span>
+                              {tr('Kích thước')}: {formatFileSize(d.fileSize)}
+                            </span>{' '}
+                            ·{' '}
+                            <span>
+                              {tr('Ngày tải lên')}: {dateLabel(d.createdAt.slice(0, 10))}
+                            </span>
                           </div>
                           {d.description && <p className="emp-doc-desc">{d.description}</p>}
                         </div>
@@ -1271,7 +1513,7 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                             onClick={() => handleDownloadDoc(d)}
                             disabled={busy}
                           >
-                            {tr("⬇ Tải về")}
+                            {tr('⬇ Tải về')}
                           </button>
                           {canEdit && (
                             <button
@@ -1280,14 +1522,14 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                               onClick={() => handleDeleteDoc(d)}
                               disabled={busy}
                             >
-                              {tr("Xóa")}
+                              {tr('Xóa')}
                             </button>
                           )}
                         </div>
                       </article>
                     ))}
                   {!sectionLoading && !sectionError && documents.length === 0 && (
-                    <p className="muted">{tr("Chưa có tài liệu đính kèm nào.")}</p>
+                    <p className="muted">{tr('Chưa có tài liệu đính kèm nào.')}</p>
                   )}
                 </div>
               </div>
@@ -1298,16 +1540,20 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
               <div className="emp-tab-panel">
                 <section className="emp-card">
                   <div className="emp-card-header">
-                    <h4>{tr("Lịch sử mức lương")}</h4>
+                    <h4>{tr('Lịch sử mức lương')}</h4>
                   </div>
-                  {sectionLoading && <p role="status">{tr("Đang tải lịch sử lương…")}</p>}
-                  {sectionError && <p role="alert" className="notice error">{sectionError}</p>}
+                  {sectionLoading && <p role="status">{tr('Đang tải lịch sử lương…')}</p>}
+                  {sectionError && (
+                    <p role="alert" className="notice error">
+                      {sectionError}
+                    </p>
+                  )}
                   {!sectionLoading && !sectionError && salaryHistory && (
                     <>
                       {salaryHistory.items.length === 0 && (
-                        <p className="muted">{tr("Chưa có hồ sơ lương nào.")}</p>
+                        <p className="muted">{tr('Chưa có hồ sơ lương nào.')}</p>
                       )}
-                      {salaryHistory.items.map(sp => (
+                      {salaryHistory.items.map((sp) => (
                         <article key={sp.id} className="emp-history-entry">
                           <div className="emp-history-meta">
                             <span className="emp-badge emp-badge-linked">
@@ -1315,42 +1561,84 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
                             </span>
                             <span className="emp-history-date">
                               {tr('Hiệu lực từ')}: <strong>{dateLabel(sp.effectiveFrom)}</strong>
-                              {sp.effectiveTo ? ` → ${dateLabel(sp.effectiveTo)}` : tr(" (đang áp dụng)")}
+                              {sp.effectiveTo
+                                ? ` → ${dateLabel(sp.effectiveTo)}`
+                                : tr(' (đang áp dụng)')}
                             </span>
-                            <span className={'emp-badge ' + (sp.status === 'ACTIVE' ? 'emp-badge-active' : 'emp-badge-inactive')}>
-                              {sp.status === 'ACTIVE' ? tr("Hiệu lực") : sp.status === 'DRAFT' ? tr("Nháp") : tr("Không hiệu lực")}
+                            <span
+                              className={
+                                'emp-badge ' +
+                                (sp.status === 'ACTIVE' ? 'emp-badge-active' : 'emp-badge-inactive')
+                              }
+                            >
+                              {sp.status === 'ACTIVE'
+                                ? tr('Hiệu lực')
+                                : sp.status === 'DRAFT'
+                                  ? tr('Nháp')
+                                  : tr('Không hiệu lực')}
                             </span>
                           </div>
                           {sp.components.length > 0 && (
-                            <table className="payroll-table" style={{ marginTop: 8, fontSize: '0.85rem' }}>
+                            <table
+                              className="payroll-table"
+                              style={{ marginTop: 8, fontSize: '0.85rem' }}
+                            >
                               <thead>
                                 <tr>
-                                  <th>{tr("Khoản mục")}</th>
-                                  <th>{tr("Loại")}</th>
-                                  <th style={{ textAlign: 'right' }}>{tr("Số tiền / %")}</th>
+                                  <th>{tr('Khoản mục')}</th>
+                                  <th>{tr('Loại')}</th>
+                                  <th style={{ textAlign: 'right' }}>{tr('Số tiền / %')}</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {sp.components.map(c => (
+                                {sp.components.map((c) => (
                                   <tr key={c.componentId}>
                                     <td>{c.componentName}</td>
-                                    <td>{c.type === 'ALLOWANCE' ? tr("Phụ cấp") : c.type === 'BONUS' ? tr("Thưởng") : c.type === 'DEDUCTION' ? tr("Khấu trừ") : tr("Lương cơ bản")}</td>
+                                    <td>
+                                      {c.type === 'ALLOWANCE'
+                                        ? tr('Phụ cấp')
+                                        : c.type === 'BONUS'
+                                          ? tr('Thưởng')
+                                          : c.type === 'DEDUCTION'
+                                            ? tr('Khấu trừ')
+                                            : tr('Lương cơ bản')}
+                                    </td>
                                     <td style={{ textAlign: 'right' }}>
-                                      {c.percentage != null ? `${c.percentage}%` : Number(c.amount).toLocaleString(locale === 'en' ? 'en-US' : 'vi-VN') + ' ₫'}
+                                      {c.percentage != null
+                                        ? `${c.percentage}%`
+                                        : Number(c.amount).toLocaleString(
+                                            locale === 'en' ? 'en-US' : 'vi-VN',
+                                          ) + ' ₫'}
                                     </td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
                           )}
-                          {sp.notes && <p className="muted" style={{ marginTop: 4, fontSize: '0.82rem' }}>{sp.notes}</p>}
+                          {sp.notes && (
+                            <p className="muted" style={{ marginTop: 4, fontSize: '0.82rem' }}>
+                              {sp.notes}
+                            </p>
+                          )}
                         </article>
                       ))}
                       {salaryHistory.total > 10 && (
                         <div className="payroll-pager">
-                          <button disabled={salaryPage <= 1} onClick={() => setSalaryPage(p => p - 1)} type="button">{tr("‹ Trước")}</button>
+                          <button
+                            disabled={salaryPage <= 1}
+                            onClick={() => setSalaryPage((p) => p - 1)}
+                            type="button"
+                          >
+                            {tr('‹ Trước')}
+                          </button>
                           <span>Trang {salaryPage}</span>
-                          <button disabled={salaryPage * 10 >= salaryHistory.total} onClick={() => setSalaryPage(p => p + 1)} type="button">{tr("Sau ›")}</button>
+                          <button
+                            disabled={salaryPage * 10 >= salaryHistory.total}
+                            onClick={() => setSalaryPage((p) => p + 1)}
+                            type="button"
+                          >
+                            {tr('Sau ›')}
+                          </button>
                         </div>
                       )}
                     </>
@@ -1364,54 +1652,124 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
               <div className="emp-tab-panel">
                 <section className="emp-card">
                   <div className="emp-card-header">
-                    <h4>{tr("Hồ sơ Bảo hiểm xã hội (BHXH)")}</h4>
+                    <h4>{tr('Hồ sơ Bảo hiểm xã hội (BHXH)')}</h4>
                   </div>
-                  {sectionLoading && <p role="status">{tr("Đang tải hồ sơ BHXH…")}</p>}
-                  {sectionError && <p role="alert" className="notice error">{sectionError}</p>}
+                  {sectionLoading && <p role="status">{tr('Đang tải hồ sơ BHXH…')}</p>}
+                  {sectionError && (
+                    <p role="alert" className="notice error">
+                      {sectionError}
+                    </p>
+                  )}
                   {!sectionLoading && !siProfile && !sectionError && (
-                    <p className="muted">{tr("Chưa có thông tin BHXH được ghi nhận.")}</p>
+                    <p className="muted">{tr('Chưa có thông tin BHXH được ghi nhận.')}</p>
                   )}
                   {!sectionLoading && siProfile && (
                     <>
                       <dl className="emp-dl">
-                        <dt>{tr("Mã số BHXH")}</dt><dd><strong>{siProfile.siCode}</strong></dd>
-                        {siProfile.hiCode && (<><dt>{tr("Mã BHYT")}</dt><dd>{siProfile.hiCode}</dd></>)}
-                        <dt>{tr("Tên trên hồ sơ BHXH")}</dt><dd>{siProfile.insuredName}</dd>
-                        <dt>{tr("Ngày tham gia")}</dt><dd>{dateLabel(siProfile.enrollmentDate)}</dd>
-                        {siProfile.terminationDate && (<><dt>{tr("Ngày kết thúc")}</dt><dd>{dateLabel(siProfile.terminationDate)}</dd></>)}
-                        <dt>{tr("Mức lương đóng BHXH")}</dt><dd>{Number(siProfile.siSalary).toLocaleString(locale === 'en' ? 'en-US' : 'vi-VN')} {siProfile.currency}</dd>
-                        <dt>{tr("Trạng thái")}</dt>
+                        <dt>{tr('Mã số BHXH')}</dt>
                         <dd>
-                          <span className={'emp-badge ' + (siProfile.status === 'ACTIVE' ? 'emp-badge-active' : 'emp-badge-inactive')}>
-                            {siProfile.status === 'ACTIVE' ? tr("Đang tham gia") : siProfile.status === 'SUSPENDED' ? tr("Tạm dừng") : tr("Đã kết thúc")}
+                          <strong>{siProfile.siCode}</strong>
+                        </dd>
+                        {siProfile.hiCode && (
+                          <>
+                            <dt>{tr('Mã BHYT')}</dt>
+                            <dd>{siProfile.hiCode}</dd>
+                          </>
+                        )}
+                        <dt>{tr('Tên trên hồ sơ BHXH')}</dt>
+                        <dd>{siProfile.insuredName}</dd>
+                        <dt>{tr('Ngày tham gia')}</dt>
+                        <dd>{dateLabel(siProfile.enrollmentDate)}</dd>
+                        {siProfile.terminationDate && (
+                          <>
+                            <dt>{tr('Ngày kết thúc')}</dt>
+                            <dd>{dateLabel(siProfile.terminationDate)}</dd>
+                          </>
+                        )}
+                        <dt>{tr('Mức lương đóng BHXH')}</dt>
+                        <dd>
+                          {Number(siProfile.siSalary).toLocaleString(
+                            locale === 'en' ? 'en-US' : 'vi-VN',
+                          )}{' '}
+                          {siProfile.currency}
+                        </dd>
+                        <dt>{tr('Trạng thái')}</dt>
+                        <dd>
+                          <span
+                            className={
+                              'emp-badge ' +
+                              (siProfile.status === 'ACTIVE'
+                                ? 'emp-badge-active'
+                                : 'emp-badge-inactive')
+                            }
+                          >
+                            {siProfile.status === 'ACTIVE'
+                              ? tr('Đang tham gia')
+                              : siProfile.status === 'SUSPENDED'
+                                ? tr('Tạm dừng')
+                                : tr('Đã kết thúc')}
                           </span>
                         </dd>
-                        {siProfile.suspensionReason && (<><dt>{tr("Lý do tạm dừng")}</dt><dd className="muted">{siProfile.suspensionReason}</dd></>)}
+                        {siProfile.suspensionReason && (
+                          <>
+                            <dt>{tr('Lý do tạm dừng')}</dt>
+                            <dd className="muted">{siProfile.suspensionReason}</dd>
+                          </>
+                        )}
                       </dl>
 
                       {siContributions.length > 0 && (
                         <>
-                          <h5 style={{ marginTop: 16, marginBottom: 8 }}>{tr("Lịch sử đóng BHXH (12 tháng gần nhất)")}</h5>
+                          <h5 style={{ marginTop: 16, marginBottom: 8 }}>
+                            {tr('Lịch sử đóng BHXH (12 tháng gần nhất)')}
+                          </h5>
                           <table className="payroll-table">
                             <thead>
                               <tr>
-                                <th>{tr("Tháng")}</th>
-                                <th style={{ textAlign: 'right' }}>{tr("Mức lương đóng")}</th>
-                                <th style={{ textAlign: 'right' }}>{tr("NLĐ đóng")}</th>
-                                <th style={{ textAlign: 'right' }}>{tr("NSDLĐ đóng")}</th>
-                                <th>{tr("Trạng thái")}</th>
+                                <th>{tr('Tháng')}</th>
+                                <th style={{ textAlign: 'right' }}>{tr('Mức lương đóng')}</th>
+                                <th style={{ textAlign: 'right' }}>{tr('NLĐ đóng')}</th>
+                                <th style={{ textAlign: 'right' }}>{tr('NSDLĐ đóng')}</th>
+                                <th>{tr('Trạng thái')}</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {siContributions.map(c => (
+                              {siContributions.map((c) => (
                                 <tr key={c.contributionMonth}>
                                   <td>{c.contributionMonth.slice(0, 7)}</td>
-                                  <td style={{ textAlign: 'right' }}>{Number(c.siSalary).toLocaleString(locale === 'en' ? 'en-US' : 'vi-VN')}</td>
-                                  <td style={{ textAlign: 'right' }}>{Number(c.employeeAmount).toLocaleString(locale === 'en' ? 'en-US' : 'vi-VN')}</td>
-                                  <td style={{ textAlign: 'right' }}>{Number(c.employerAmount).toLocaleString(locale === 'en' ? 'en-US' : 'vi-VN')}</td>
+                                  <td style={{ textAlign: 'right' }}>
+                                    {Number(c.siSalary).toLocaleString(
+                                      locale === 'en' ? 'en-US' : 'vi-VN',
+                                    )}
+                                  </td>
+                                  <td style={{ textAlign: 'right' }}>
+                                    {Number(c.employeeAmount).toLocaleString(
+                                      locale === 'en' ? 'en-US' : 'vi-VN',
+                                    )}
+                                  </td>
+                                  <td style={{ textAlign: 'right' }}>
+                                    {Number(c.employerAmount).toLocaleString(
+                                      locale === 'en' ? 'en-US' : 'vi-VN',
+                                    )}
+                                  </td>
                                   <td>
-                                    <span className={'emp-badge ' + (c.status === 'CONFIRMED' ? 'emp-badge-active' : c.status === 'SKIPPED' ? 'emp-badge-inactive' : '')}>
-                                      {c.status === 'CONFIRMED' ? tr("Đã xác nhận") : c.status === 'PENDING' ? tr("Chờ xác nhận") : c.status === 'ADJUSTED' ? tr("Điều chỉnh") : tr("Bỏ qua")}
+                                    <span
+                                      className={
+                                        'emp-badge ' +
+                                        (c.status === 'CONFIRMED'
+                                          ? 'emp-badge-active'
+                                          : c.status === 'SKIPPED'
+                                            ? 'emp-badge-inactive'
+                                            : '')
+                                      }
+                                    >
+                                      {c.status === 'CONFIRMED'
+                                        ? tr('Đã xác nhận')
+                                        : c.status === 'PENDING'
+                                          ? tr('Chờ xác nhận')
+                                          : c.status === 'ADJUSTED'
+                                            ? tr('Điều chỉnh')
+                                            : tr('Bỏ qua')}
                                     </span>
                                   </td>
                                 </tr>
@@ -1430,10 +1788,13 @@ export function EmployeeDetailDrawer({ id, profile, onClose, onSaved }: Props) {
       </div>
 
       <footer className="drawer-footer">
-        <span>{tr("Chỉ hiển thị thông tin trong phạm vi quyền của bạn.")}</span>
-        {busy && <span role="status">{tr("Đang lưu, vui lòng đợi…")}</span>}
+        <button type="button" className="secondary" disabled={busy || closing} onClick={close}>
+          {t('cancel')}
+        </button>
+        <span>{tr('Chỉ hiển thị thông tin trong phạm vi quyền của bạn.')}</span>
+        {busy && <span role="status">{tr('Đang lưu, vui lòng đợi…')}</span>}
       </footer>
     </dialog>,
-    document.body
+    document.body,
   );
 }

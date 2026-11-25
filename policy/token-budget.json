@@ -38,13 +38,7 @@
     "approval"
   ],
   "version": "5.3",
-  "tool_first": [
-    "changed_files",
-    "targeted_tests",
-    "lint",
-    "typecheck",
-    "existing_scan_reports"
-  ],
+  "tool_first": ["changed_files", "targeted_tests", "lint", "typecheck", "existing_scan_reports"],
   "no_repeat_if_same_commit_and_settings": true,
   "stop_conditions": [
     "targeted test failed twice: stop and summarize root cause",

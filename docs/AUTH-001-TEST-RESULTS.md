@@ -14,30 +14,30 @@ Test Engineer used the approved `test-engineering` skill with the inherited mode
 
 All PASS statuses below refer to the executed application tests, with the stated limits. Test names retain the matrix IDs for traceability.
 
-| Matrix | Result | Evidence |
-|---|---|---|
-| AUTH-01 | PASS | Missing public registration; arbitrary token cannot create a user |
-| AUTH-02 | PASS (adapter fixture) | Own-org ADMIN invite persisted; normalized recipient and token hash passed to injected mail adapter; safe paginated list |
-| AUTH-03 | PASS | HR cannot grant ADMIN/HR; ADMIN can grant HR |
-| AUTH-04 | PASS | Cross-org create/list/revoke/resend denied; employee cannot administer |
-| AUTH-05 | PASS | Invitation consumption creates exactly one verified user and stored-role membership |
-| AUTH-06 | PASS | Replay rejected; no duplicate identity/membership |
-| AUTH-07 | PASS | Concurrent accepts produce one 204 and one 410 |
-| AUTH-08 | PASS | Expired, revoked and previous resend token rejected; fresh token valid |
-| AUTH-09 | PASS | Injected role/organization rejected without consuming invitation |
-| AUTH-10 | PASS | Anonymous/wrong user rejected; matching verified existing session can join another org without password overwrite |
-| AUTH-11 | PASS | Session rotation, production Secure/HttpOnly/SameSite=Lax/Path=/, host-only cookie |
-| AUTH-12 | PASS | Unknown user and wrong password return identical errors; shared database throttle returns 429 and Retry-After |
-| AUTH-13 | PASS | Logout, inactive membership/user/organization block session access |
-| AUTH-14 | PASS | Known/unknown reset responses match; blocked mail adapter does not block public response |
-| AUTH-15 | PASS | Expired reset and replay rejected with password unchanged |
-| AUTH-16 | PASS | Reset changes password and revokes multiple sessions; no automatic login |
-| AUTH-17 | PASS | Concurrent resets produce exactly one winner |
-| AUTH-18 | PASS | Hostile Origin, absent CSRF header and forged signature rejected |
-| AUTH-19 | PASS (tested application flows) | Persisted invite/reset/session/audit rows and console capture contain no raw bearer tokens or plaintext password |
-| AUTH-20 | PASS | Missing SMTP adapter and API DEV_ONLY mode do not report SENT |
-| AUTH-21 | PASS | No public bootstrap endpoint |
-| AUTH-22 | PASS (headers/UI) | No-referrer/no-store/self-only policy; no redirect; reset/invite token removed from browser history and never put in storage |
+| Matrix  | Result                          | Evidence                                                                                                                     |
+| ------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| AUTH-01 | PASS                            | Missing public registration; arbitrary token cannot create a user                                                            |
+| AUTH-02 | PASS (adapter fixture)          | Own-org ADMIN invite persisted; normalized recipient and token hash passed to injected mail adapter; safe paginated list     |
+| AUTH-03 | PASS                            | HR cannot grant ADMIN/HR; ADMIN can grant HR                                                                                 |
+| AUTH-04 | PASS                            | Cross-org create/list/revoke/resend denied; employee cannot administer                                                       |
+| AUTH-05 | PASS                            | Invitation consumption creates exactly one verified user and stored-role membership                                          |
+| AUTH-06 | PASS                            | Replay rejected; no duplicate identity/membership                                                                            |
+| AUTH-07 | PASS                            | Concurrent accepts produce one 204 and one 410                                                                               |
+| AUTH-08 | PASS                            | Expired, revoked and previous resend token rejected; fresh token valid                                                       |
+| AUTH-09 | PASS                            | Injected role/organization rejected without consuming invitation                                                             |
+| AUTH-10 | PASS                            | Anonymous/wrong user rejected; matching verified existing session can join another org without password overwrite            |
+| AUTH-11 | PASS                            | Session rotation, production Secure/HttpOnly/SameSite=Lax/Path=/, host-only cookie                                           |
+| AUTH-12 | PASS                            | Unknown user and wrong password return identical errors; shared database throttle returns 429 and Retry-After                |
+| AUTH-13 | PASS                            | Logout, inactive membership/user/organization block session access                                                           |
+| AUTH-14 | PASS                            | Known/unknown reset responses match; blocked mail adapter does not block public response                                     |
+| AUTH-15 | PASS                            | Expired reset and replay rejected with password unchanged                                                                    |
+| AUTH-16 | PASS                            | Reset changes password and revokes multiple sessions; no automatic login                                                     |
+| AUTH-17 | PASS                            | Concurrent resets produce exactly one winner                                                                                 |
+| AUTH-18 | PASS                            | Hostile Origin, absent CSRF header and forged signature rejected                                                             |
+| AUTH-19 | PASS (tested application flows) | Persisted invite/reset/session/audit rows and console capture contain no raw bearer tokens or plaintext password             |
+| AUTH-20 | PASS                            | Missing SMTP adapter and API DEV_ONLY mode do not report SENT                                                                |
+| AUTH-21 | PASS                            | No public bootstrap endpoint                                                                                                 |
+| AUTH-22 | PASS (headers/UI)               | No-referrer/no-store/self-only policy; no redirect; reset/invite token removed from browser history and never put in storage |
 
 Additional executed backend regression: reset holding the user lock prevents an old-password login from creating a surviving session. The test waits for PostgreSQL lock contention rather than relying on a fixed race delay.
 

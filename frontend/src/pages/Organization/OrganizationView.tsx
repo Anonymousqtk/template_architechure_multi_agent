@@ -12,26 +12,39 @@ import {
 } from '../../services/api';
 import type { Account } from '../../features/users/account-types';
 import { JobTitlesPanel } from './JobTitlesPanel';
+import { useTranslation } from '../../i18n';
+import { organizationMessages } from './organizationMessages';
+import { SearchableSelect } from '../../components/common/SearchableSelect';
 import '../../assets/styles/org.css';
 
 function ErrorMessage({ text, onRetry }: { text: string; onRetry?: () => void }) {
-  return text ? <div className="notice error org-load-error" role="alert"><span>{text}</span>{onRetry && <button type="button" className="secondary" onClick={onRetry}>Thử tải lại</button>}</div> : null;
+  const { locale } = useTranslation();
+  return text ? (
+    <div className="notice error org-load-error" role="alert">
+      <span>{text}</span>
+      {onRetry && (
+        <button type="button" className="secondary" onClick={onRetry}>
+          {organizationMessages[locale].retry}
+        </button>
+      )}
+    </div>
+  ) : null;
 }
 
 function SuccessMessage({ text }: { text: string }) {
-  return text ? <p className="notice success" role="status">{text}</p> : null;
+  return text ? (
+    <p className="notice success" role="status">
+      {text}
+    </p>
+  ) : null;
 }
 
 // ============================================================================
 // 1. ORG-CHART VIEW (ORG-001.5)
 // ============================================================================
-function TreeNodeItem({
-  node,
-  depth = 0,
-}: {
-  node: OrgChartNode;
-  depth?: number;
-}) {
+function TreeNodeItem({ node, depth = 0 }: { node: OrgChartNode; depth?: number }) {
+  const { locale } = useTranslation();
+  const tr = organizationMessages[locale];
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
   const hasMembers = node.members && node.members.length > 0;
@@ -52,7 +65,7 @@ function TreeNodeItem({
                 onClick={() => setExpanded(!expanded)}
                 aria-expanded={expanded}
               >
-                {expanded ? 'Thu gọn ▲' : `Mở rộng (${node.children.length}) ▼`}
+                {expanded ? tr.collapse : `${tr.expand} (${node.children.length}) ▼`}
               </button>
             )}
           </div>
@@ -62,21 +75,28 @@ function TreeNodeItem({
           {node.description && <p className="muted">{node.description}</p>}
           <div className="org-meta-row">
             <span className="org-manager-badge">
-              <strong>Trưởng đơn vị:</strong>{' '}
-              {node.manager ? `${node.manager.fullName}${node.manager.email ? ` (${node.manager.email})` : ''}` : 'Chưa phân công'}
+              <strong>{tr.manager}</strong>{' '}
+              {node.manager
+                ? `${node.manager.fullName}${node.manager.email ? ` (${node.manager.email})` : ''}`
+                : tr.unassigned}
             </span>
             <span className="badge">
-              {node.members.length} nhân sự
+              {node.members.length} {tr.members}
             </span>
           </div>
 
           {hasMembers && (
             <div className="org-members-preview">
-              {node.members.map(m => (
+              {node.members.map((m) => (
                 <span key={m.userId} className="org-member-chip" title={m.email}>
                   <strong>{m.fullName}</strong>
                   {m.positionTitle && <small>· {m.positionTitle}</small>}
-                  {m.managerName && <small> (QL: {m.managerName})</small>}
+                  {m.managerName && (
+                    <small>
+                      {' '}
+                      ({tr.managerShort}: {m.managerName})
+                    </small>
+                  )}
                 </span>
               ))}
             </div>
@@ -86,7 +106,7 @@ function TreeNodeItem({
 
       {hasChildren && expanded && (
         <ul className="org-tree-node-list" style={{ marginTop: 12 }}>
-          {node.children.map(child => (
+          {node.children.map((child) => (
             <TreeNodeItem key={child.id} node={child} depth={depth + 1} />
           ))}
         </ul>
@@ -96,6 +116,8 @@ function TreeNodeItem({
 }
 
 export function OrgChartView({ profile }: { profile: Profile }) {
+  const { locale } = useTranslation();
+  const tr = organizationMessages[locale];
   const [data, setData] = useState<OrgChartData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -104,8 +126,8 @@ export function OrgChartView({ profile }: { profile: Profile }) {
     setLoading(true);
     setError('');
     request<OrgChartData>(`/api/organizations/${profile.organization.id}/org-chart`)
-      .then(res => setData(res))
-      .catch(err => setError(errorText(err)))
+      .then((res) => setData(res))
+      .catch((err) => setError(errorText(err)))
       .finally(() => setLoading(false));
   };
 
@@ -113,9 +135,9 @@ export function OrgChartView({ profile }: { profile: Profile }) {
     loadData();
   }, [profile.organization.id]);
 
-  if (loading) return <p role="status">Đang tải sơ đồ tổ chức…</p>;
+  if (loading) return <p role="status">{tr.loading}</p>;
   if (error) return <ErrorMessage text={error} onRetry={loadData} />;
-  if (!data) return <p>Không có dữ liệu sơ đồ tổ chức.</p>;
+  if (!data) return <p>{tr.noData}</p>;
 
   return (
     <div>
@@ -124,21 +146,21 @@ export function OrgChartView({ profile }: { profile: Profile }) {
           <div className="org-stat-icon">🏢</div>
           <div>
             <div className="org-stat-value">{data.totalDepartments}</div>
-            <div className="org-stat-label">Tổng số phòng ban</div>
+            <div className="org-stat-label">{tr.departmentsTotal}</div>
           </div>
         </div>
         <div className="org-stat-card">
           <div className="org-stat-icon blue">💼</div>
           <div>
             <div className="org-stat-value">{data.totalPositions}</div>
-            <div className="org-stat-label">Tổng số vị trí</div>
+            <div className="org-stat-label">{tr.positionsTotal}</div>
           </div>
         </div>
         <div className="org-stat-card">
           <div className="org-stat-icon green">👥</div>
           <div>
             <div className="org-stat-value">{data.totalMembers}</div>
-            <div className="org-stat-label">Tổng số thành viên</div>
+            <div className="org-stat-label">{tr.membersTotal}</div>
           </div>
         </div>
       </div>
@@ -146,31 +168,51 @@ export function OrgChartView({ profile }: { profile: Profile }) {
       <div className="org-tree-wrapper">
         <div className="org-tree-root-card">
           <div>
-            <span className="eyebrow">TỔ CHỨC CẤP CAO NHẤT</span>
-            <h2>{data.organization.name} {data.organization.code ? `(${data.organization.code})` : ''}</h2>
-            {data.organization.description && <p className="muted" style={{ margin: '4px 0 0' }}>{data.organization.description}</p>}
+            <span className="eyebrow">{tr.root}</span>
+            <h2>
+              {data.organization.name} {data.organization.code ? `(${data.organization.code})` : ''}
+            </h2>
+            {data.organization.description && (
+              <p className="muted" style={{ margin: '4px 0 0' }}>
+                {data.organization.description}
+              </p>
+            )}
           </div>
-          <button className="secondary" onClick={loadData}>Làm mới</button>
+          <button className="secondary" onClick={loadData}>
+            {tr.refresh}
+          </button>
         </div>
 
         {data.departmentTree.length === 0 ? (
-          <p className="muted">Chưa có phòng ban nào được thiết lập trong tổ chức.</p>
+          <p className="muted">{tr.noDepartments}</p>
         ) : (
           <ul className="org-tree-node-list">
-            {data.departmentTree.map(rootNode => (
+            {data.departmentTree.map((rootNode) => (
               <TreeNodeItem key={rootNode.id} node={rootNode} />
             ))}
           </ul>
         )}
 
         {data.unassignedMembers && data.unassignedMembers.length > 0 && (
-          <div style={{ marginTop: 24, padding: 16, background: '#faf9fc', borderRadius: 8, border: '1px dashed #dbdade' }}>
+          <div
+            style={{
+              marginTop: 24,
+              padding: 16,
+              background: '#faf9fc',
+              borderRadius: 8,
+              border: '1px dashed #dbdade',
+            }}
+          >
             <h4 style={{ margin: '0 0 10px', color: '#5d596c' }}>
-              Thành viên chưa phân bổ phòng ban ({data.unassignedMembers.length})
+              {tr.unassignedMembers} ({data.unassignedMembers.length})
             </h4>
             <div className="org-members-preview">
-              {data.unassignedMembers.map(m => (
-                <span key={m.userId} className="org-member-chip" style={{ background: '#f8f7fa', color: '#5d596c' }}>
+              {data.unassignedMembers.map((m) => (
+                <span
+                  key={m.userId}
+                  className="org-member-chip"
+                  style={{ background: '#f8f7fa', color: '#5d596c' }}
+                >
                   <strong>{m.fullName}</strong> ({m.email})
                 </span>
               ))}
@@ -186,13 +228,18 @@ export function OrgChartView({ profile }: { profile: Profile }) {
 // 2. DEPARTMENTS PANEL (ORG-001.2)
 // ============================================================================
 export function DepartmentsPanel({ profile }: { profile: Profile }) {
+  const { locale, t } = useTranslation();
+  const tr = organizationMessages[locale];
   const [departments, setDepartments] = useState<Department[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState<{
+    kind: 'created' | 'updated' | 'deleted';
+    name: string;
+  } | null>(null);
 
   // Modals state
   const [modalOpen, setModalOpen] = useState(false);
@@ -208,7 +255,8 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
   const [members, setMembers] = useState<Account[]>([]);
 
   const orgId = profile.organization.id;
-  const canManage = profile.permissions.manageOrg || ['ADMIN', 'HR'].includes(profile.organization.role);
+  const canManage =
+    profile.permissions.manageOrg || ['ADMIN', 'HR'].includes(profile.organization.role);
 
   const loadDepartments = () => {
     setLoading(true);
@@ -216,12 +264,14 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
     const params = new URLSearchParams({ page: String(page), limit: '20' });
     if (search.trim()) params.set('q', search.trim());
 
-    request<{ items: Department[]; total: number }>(`/api/organizations/${orgId}/departments?${params}`)
-      .then(res => {
+    request<{ items: Department[]; total: number }>(
+      `/api/organizations/${orgId}/departments?${params}`,
+    )
+      .then((res) => {
         setDepartments(res.items);
         setTotal(res.total);
       })
-      .catch(err => setError(errorText(err)))
+      .catch((err) => setError(errorText(err)))
       .finally(() => setLoading(false));
   };
 
@@ -232,7 +282,7 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
   useEffect(() => {
     if (canManage) {
       request<{ items: Account[] }>(`/api/organizations/${orgId}/users?limit=100&status=active`)
-        .then(res => setMembers(res.items))
+        .then((res) => setMembers(res.items))
         .catch(() => {});
     }
   }, [orgId, canManage]);
@@ -245,7 +295,7 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
     setFormParentId('');
     setFormManagerId('');
     setError('');
-    setSuccess('');
+    setSuccess(null);
     setModalOpen(true);
   };
 
@@ -257,7 +307,7 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
     setFormParentId(dept.parentId || '');
     setFormManagerId(dept.managerUserId || '');
     setError('');
-    setSuccess('');
+    setSuccess(null);
     setModalOpen(true);
   };
 
@@ -270,7 +320,7 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
     e.preventDefault();
     setSubmitting(true);
     setError('');
-    setSuccess('');
+    setSuccess(null);
 
     try {
       if (editingDept) {
@@ -285,7 +335,7 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
           },
           'PATCH',
         );
-        setSuccess(`Đã cập nhật phòng ban ${formName}.`);
+        setSuccess({ kind: 'updated', name: formName });
       } else {
         await request(`/api/organizations/${orgId}/departments`, {
           code: formCode.trim().toUpperCase(),
@@ -294,7 +344,7 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
           parentId: formParentId || null,
           managerUserId: formManagerId || null,
         });
-        setSuccess(`Đã tạo phòng ban ${formName}.`);
+        setSuccess({ kind: 'created', name: formName });
       }
       closeModal();
       loadDepartments();
@@ -306,12 +356,12 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
   };
 
   const handleDelete = async (dept: Department) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa phòng ban "${dept.name}" (${dept.code})?`)) return;
+    if (!window.confirm(`${tr.deleteConfirm} "${dept.name}" (${dept.code})?`)) return;
     setError('');
-    setSuccess('');
+    setSuccess(null);
     try {
       await request(`/api/organizations/${orgId}/departments/${dept.id}`, {}, 'DELETE');
-      setSuccess(`Đã xóa phòng ban "${dept.name}".`);
+      setSuccess({ kind: 'deleted', name: `"${dept.name}"` });
       loadDepartments();
     } catch (err) {
       setError(errorText(err));
@@ -323,7 +373,7 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
       <div className="org-toolbar">
         <form
           className="org-filters"
-          onSubmit={e => {
+          onSubmit={(e) => {
             e.preventDefault();
             setPage(1);
             loadDepartments();
@@ -331,59 +381,83 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
         >
           <input
             type="search"
-            placeholder="Tìm theo mã hoặc tên phòng ban…"
+            placeholder={tr.searchDepartments}
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ minWidth: 260 }}
+            onChange={(e) => setSearch(e.target.value)}
           />
-          <button type="submit" className="primary">Tìm kiếm</button>
+          <button type="submit" className="primary">
+            {tr.search}
+          </button>
         </form>
 
         {canManage && (
           <button type="button" className="primary primary-action" onClick={openCreateModal}>
-            + Thêm phòng ban mới
+            {tr.addDepartment}
           </button>
         )}
       </div>
 
       <ErrorMessage text={error} onRetry={loadDepartments} />
-      <SuccessMessage text={success} />
+      <SuccessMessage
+        text={
+          success
+            ? `${success.kind === 'created' ? tr.departmentCreated : success.kind === 'updated' ? tr.departmentUpdated : tr.deleted} ${success.name}.`
+            : ''
+        }
+      />
 
       <div className="table-wrap" aria-busy={loading}>
         <table>
-          <caption>{loading ? 'Đang tải…' : error ? 'Danh sách phòng ban chưa tải được' : `${total} phòng ban trong tổ chức`}</caption>
+          <caption>
+            {loading
+              ? tr.loadingList
+              : error
+                ? tr.departmentsLoadError
+                : `${total} ${tr.departmentCount}`}
+          </caption>
           <thead>
             <tr>
-              <th>Mã đơn vị</th>
-              <th>Tên phòng ban</th>
-              <th>Đơn vị cấp trên</th>
-              <th>Trưởng đơn vị</th>
-              <th>Nhân sự</th>
-              <th>Trực thuộc</th>
-              {canManage && <th>Thao tác</th>}
+              <th>{tr.unitCode}</th>
+              <th>{tr.departmentName}</th>
+              <th>{tr.parentUnit}</th>
+              <th>{tr.managerName}</th>
+              <th>{tr.staff}</th>
+              <th>{tr.children}</th>
+              {canManage && <th>{tr.actions}</th>}
             </tr>
           </thead>
           <tbody>
-            {departments.map(dept => (
+            {departments.map((dept) => (
               <tr key={dept.id}>
-                <td><span className="org-code-badge">{dept.code}</span></td>
+                <td>
+                  <span className="org-code-badge">{dept.code}</span>
+                </td>
                 <td>
                   <strong>{dept.name}</strong>
                   {dept.description && <small>{dept.description}</small>}
                 </td>
                 <td>{dept.parentName || '—'}</td>
                 <td>{dept.managerName ? `${dept.managerName}` : '—'}</td>
-                <td><span className="badge">{dept.memberCount}</span></td>
-                <td><span className="badge">{dept.childCount}</span></td>
+                <td>
+                  <span className="badge">{dept.memberCount}</span>
+                </td>
+                <td>
+                  <span className="badge">{dept.childCount}</span>
+                </td>
                 {canManage && (
                   <td>
                     <div className="org-action-cell">
-                      <button className="org-btn-edit secondary" onClick={() => openEditModal(dept)}>Sửa</button>
+                      <button
+                        className="org-btn-edit secondary"
+                        onClick={() => openEditModal(dept)}
+                      >
+                        {tr.edit}
+                      </button>
                       <button
                         className="org-btn-delete secondary"
                         onClick={() => handleDelete(dept)}
                       >
-                        Xóa
+                        {tr.delete}
                       </button>
                     </div>
                   </td>
@@ -392,7 +466,7 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
             ))}
             {!loading && !error && departments.length === 0 && (
               <tr>
-                <td colSpan={canManage ? 7 : 6}>Không tìm thấy phòng ban nào.</td>
+                <td colSpan={canManage ? 7 : 6}>{tr.noDepartmentsFound}</td>
               </tr>
             )}
           </tbody>
@@ -400,100 +474,122 @@ export function DepartmentsPanel({ profile }: { profile: Profile }) {
       </div>
 
       <div className="pagination">
-        <button disabled={page === 1 || loading} onClick={() => setPage(p => p - 1)}>
-          ← Trước
+        <button disabled={page === 1 || loading} onClick={() => setPage((p) => p - 1)}>
+          {tr.previous}
         </button>
-        <span>Trang {page} / {Math.max(1, Math.ceil(total / 20))}</span>
-        <button disabled={page * 20 >= total || loading} onClick={() => setPage(p => p + 1)}>
-          Sau →
+        <span>
+          {tr.page} {page} / {Math.max(1, Math.ceil(total / 20))}
+        </span>
+        <button disabled={page * 20 >= total || loading} onClick={() => setPage((p) => p + 1)}>
+          {tr.next}
         </button>
       </div>
 
       {modalOpen && (
-        <div className="org-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
+        <div
+          className="org-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !submitting) closeModal();
+          }}
+        >
           <div className="org-modal-dialog">
             <div className="org-modal-header">
-              <h2>{editingDept ? 'Chỉnh sửa phòng ban' : 'Thêm phòng ban mới'}</h2>
-              <button className="secondary" onClick={closeModal}>×</button>
+              <h2>{editingDept ? tr.editDepartment : tr.newDepartment}</h2>
+              <button
+                type="button"
+                className="secondary"
+                onClick={closeModal}
+                disabled={submitting}
+                aria-label={t('closeDialog')}
+              >
+                ×
+              </button>
             </div>
             <form onSubmit={handleSubmit}>
               <ErrorMessage text={error} />
               <label className="field">
-                Mã phòng ban (DUY NHẤT)
+                {tr.departmentCode}
                 <input
                   required
                   maxLength={30}
                   value={formCode}
-                  onChange={e => setFormCode(e.target.value.toUpperCase())}
+                  onChange={(e) => setFormCode(e.target.value.toUpperCase())}
                   placeholder="VD: HR_DEPT, SALES_HCM"
                   disabled={submitting}
                 />
               </label>
 
               <label className="field">
-                Tên phòng ban
+                {tr.departmentName}
                 <input
                   required
                   maxLength={100}
                   value={formName}
-                  onChange={e => setFormName(e.target.value)}
-                  placeholder="VD: Phòng Nhân sự, Ban Giám đốc"
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder={tr.nameExample}
                   disabled={submitting}
                 />
               </label>
 
               <label className="field">
-                Đơn vị cấp trên (nếu có)
-                <select
+                {tr.parentOptional}
+                <SearchableSelect
                   value={formParentId}
-                  onChange={e => setFormParentId(e.target.value)}
+                  onChange={setFormParentId}
                   disabled={submitting}
-                >
-                  <option value="">Không có (Đơn vị gốc)</option>
-                  {departments
-                    .filter(d => !editingDept || d.id !== editingDept.id)
-                    .map(d => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} ({d.code})
-                      </option>
-                    ))}
-                </select>
+                  options={[
+                    { value: '', label: tr.rootUnit },
+                    ...departments
+                      .filter((d) => !editingDept || d.id !== editingDept.id)
+                      .map((d) => ({
+                        value: d.id,
+                        label: `${d.name} (${d.code})`,
+                        keywords: `${d.name} ${d.code}`,
+                      })),
+                  ]}
+                />
               </label>
 
               <label className="field">
-                Trưởng đơn vị (quản lý)
-                <select
+                {tr.managerLabel}
+                <SearchableSelect
                   value={formManagerId}
-                  onChange={e => setFormManagerId(e.target.value)}
+                  onChange={setFormManagerId}
                   disabled={submitting}
-                >
-                  <option value="">Chưa phân công</option>
-                  {members.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.fullName} ({m.email})
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: tr.unassigned },
+                    ...members.map((m) => ({
+                      value: m.id,
+                      label: `${m.fullName} (${m.email})`,
+                      keywords: `${m.fullName} ${m.email}`,
+                    })),
+                  ]}
+                />
               </label>
 
               <label className="field">
-                Mô tả chức năng
+                {tr.description}
                 <textarea
                   maxLength={500}
                   value={formDesc}
-                  onChange={e => setFormDesc(e.target.value)}
-                  placeholder="Mô tả chức năng, nhiệm vụ phòng ban…"
+                  onChange={(e) => setFormDesc(e.target.value)}
+                  placeholder={tr.descriptionPlaceholder}
                   disabled={submitting}
                   rows={3}
                 />
               </label>
 
               <div className="org-modal-footer">
-                <button type="button" className="secondary" onClick={closeModal} disabled={submitting}>
-                  Hủy
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={closeModal}
+                  disabled={submitting}
+                >
+                  {tr.cancel}
                 </button>
                 <button type="submit" className="primary" disabled={submitting}>
-                  {submitting ? 'Đang lưu…' : editingDept ? 'Cập nhật' : 'Tạo mới'}
+                  {submitting ? tr.saving : editingDept ? tr.update : tr.create}
                 </button>
               </div>
             </form>
@@ -512,7 +608,9 @@ async function loadCatalogOptions<T>(endpoint: string, activeOnly = true): Promi
   let page = 1;
   let result: { items: T[]; total: number };
   do {
-    result = await request(`${endpoint}?limit=100&page=${page}${activeOnly ? '&isActive=true' : ''}`);
+    result = await request(
+      `${endpoint}?limit=100&page=${page}${activeOnly ? '&isActive=true' : ''}`,
+    );
     items.push(...result.items);
     page += 1;
   } while (result.items.length === 100 && items.length < result.total);
@@ -520,6 +618,7 @@ async function loadCatalogOptions<T>(endpoint: string, activeOnly = true): Promi
 }
 
 export function PositionsPanel({ profile }: { profile: Profile }) {
+  const { t } = useTranslation();
   const [positions, setPositions] = useState<Position[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [total, setTotal] = useState(0);
@@ -550,7 +649,8 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
 
   const orgId = profile.organization.id;
   const endpoint = `/api/organizations/${orgId}`;
-  const canManage = profile.permissions.manageOrg || ['ADMIN', 'HR'].includes(profile.organization.role);
+  const canManage =
+    profile.permissions.manageOrg || ['ADMIN', 'HR'].includes(profile.organization.role);
 
   const loadPositions = () => {
     const version = ++listRequest.current;
@@ -563,35 +663,56 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
     if (reportingTo.length) params.set('managerPositionId', reportingTo[reportingTo.length - 1].id);
 
     request<{ items: Position[]; total: number }>(`/api/organizations/${orgId}/positions?${params}`)
-      .then(res => {
+      .then((res) => {
         if (version !== listRequest.current) return;
         setPositions(res.items);
         setTotal(res.total);
       })
-      .catch(err => { if (version === listRequest.current) setError(errorText(err)); })
-      .finally(() => { if (version === listRequest.current) setLoading(false); });
+      .catch((err) => {
+        if (version === listRequest.current) setError(errorText(err));
+      })
+      .finally(() => {
+        if (version === listRequest.current) setLoading(false);
+      });
   };
 
   useEffect(() => {
     loadPositions();
-    return () => { listRequest.current += 1; };
+    return () => {
+      listRequest.current += 1;
+    };
   }, [orgId, page, selectedDeptId, appliedSearch, statusFilter, reportingTo]);
 
   useEffect(() => {
     let current = true;
     loadCatalogOptions<Department>(endpoint + '/departments', false)
-      .then(items => { if (current) setDepartments(items); })
-      .catch(cause => { if (current) setError(errorText(cause)); });
-    return () => { current = false; };
+      .then((items) => {
+        if (current) setDepartments(items);
+      })
+      .catch((cause) => {
+        if (current) setError(errorText(cause));
+      });
+    return () => {
+      current = false;
+    };
   }, [endpoint]);
 
   useEffect(() => {
     if (!modalOpen) return;
     let current = true;
-    Promise.all([loadCatalogOptions<JobTitle>(endpoint + '/job-titles'), loadCatalogOptions<Position>(endpoint + '/positions')])
-      .then(([titles, managers]) => { if (current) setOptions({ titles, managers }); })
-      .catch(cause => { if (current) setOptionsError(errorText(cause)); });
-    return () => { current = false; };
+    Promise.all([
+      loadCatalogOptions<JobTitle>(endpoint + '/job-titles'),
+      loadCatalogOptions<Position>(endpoint + '/positions'),
+    ])
+      .then(([titles, managers]) => {
+        if (current) setOptions({ titles, managers });
+      })
+      .catch((cause) => {
+        if (current) setOptionsError(errorText(cause));
+      });
+    return () => {
+      current = false;
+    };
   }, [endpoint, modalOpen]);
 
   const openCreateModal = () => {
@@ -645,9 +766,15 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
             code: formCode.trim().toUpperCase(),
             title: formTitle.trim(),
             description: formDesc.trim() || null,
-            ...(formDeptId !== (editingPos.departmentId || '') && { departmentId: formDeptId || null }),
-            ...(formJobTitleId !== (editingPos.jobTitleId || '') && { jobTitleId: formJobTitleId || null }),
-            ...(formManagerId !== (editingPos.managerPositionId || '') && { managerPositionId: formManagerId || null }),
+            ...(formDeptId !== (editingPos.departmentId || '') && {
+              departmentId: formDeptId || null,
+            }),
+            ...(formJobTitleId !== (editingPos.jobTitleId || '') && {
+              jobTitleId: formJobTitleId || null,
+            }),
+            ...(formManagerId !== (editingPos.managerPositionId || '') && {
+              managerPositionId: formManagerId || null,
+            }),
             isActive: formActive,
           },
           'PATCH',
@@ -692,7 +819,7 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
       <div className="org-toolbar">
         <form
           className="org-filters"
-          onSubmit={e => {
+          onSubmit={(e) => {
             e.preventDefault();
             setPage(1);
             setAppliedSearch(search.trim());
@@ -704,33 +831,39 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
             maxLength={100}
             placeholder="Tìm theo mã hoặc tên vị trí…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ minWidth: 240 }}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <SearchableSelect
+            ariaLabel="Lọc phòng ban"
+            value={selectedDeptId}
+            options={[
+              { value: '', label: 'Tất cả phòng ban' },
+              ...departments.map((d) => ({
+                value: d.id,
+                label: `${d.name} (${d.code})`,
+                keywords: `${d.name} ${d.code}`,
+              })),
+            ]}
+            onChange={(val) => {
+              setSelectedDeptId(val);
+              setPage(1);
+            }}
           />
           <select
-            aria-label="Lọc phòng ban"
-            value={selectedDeptId}
-            onChange={e => {
-              setSelectedDeptId(e.target.value);
+            aria-label="Lọc trạng thái vị trí"
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value);
               setPage(1);
             }}
           >
-            <option value="">Tất cả phòng ban</option>
-            {departments.map(d => (
-              <option key={d.id} value={d.id}>
-                {d.name} ({d.code})
-              </option>
-            ))}
-          </select>
-          <select aria-label="Lọc trạng thái vị trí" value={statusFilter} onChange={event => {
-            setStatusFilter(event.target.value);
-            setPage(1);
-          }}>
             <option value="">Tất cả trạng thái</option>
             <option value="true">Đang hoạt động</option>
             <option value="false">Ngừng sử dụng</option>
           </select>
-          <button type="submit" className="primary">Tìm kiếm</button>
+          <button type="submit" className="primary">
+            Tìm kiếm
+          </button>
         </form>
 
         {canManage && (
@@ -739,19 +872,41 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
           </button>
         )}
       </div>
-      {reportingTo.length > 0 && <nav className="org-action-cell" aria-label="Cây báo cáo">
-        <button className="secondary" onClick={() => { setReportingTo([]); setPage(1); }}>Tất cả vị trí</button>
-        {reportingTo.map((position, index) => <button key={position.id} className="secondary"
-          aria-current={index === reportingTo.length - 1 ? 'page' : undefined}
-          onClick={() => { setReportingTo(reportingTo.slice(0, index + 1)); setPage(1); }}>{position.title}</button>)}
-      </nav>}
+      {reportingTo.length > 0 && (
+        <nav className="org-action-cell" aria-label="Cây báo cáo">
+          <button
+            className="secondary"
+            onClick={() => {
+              setReportingTo([]);
+              setPage(1);
+            }}
+          >
+            Tất cả vị trí
+          </button>
+          {reportingTo.map((position, index) => (
+            <button
+              key={position.id}
+              className="secondary"
+              aria-current={index === reportingTo.length - 1 ? 'page' : undefined}
+              onClick={() => {
+                setReportingTo(reportingTo.slice(0, index + 1));
+                setPage(1);
+              }}
+            >
+              {position.title}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <ErrorMessage text={error} onRetry={loadPositions} />
       <SuccessMessage text={success} />
 
       <div className="table-wrap" aria-busy={loading}>
         <table>
-          <caption>{loading ? 'Đang tải…' : error ? 'Danh sách vị trí chưa tải được' : `${total} vị trí`}</caption>
+          <caption>
+            {loading ? 'Đang tải…' : error ? 'Danh sách vị trí chưa tải được' : `${total} vị trí`}
+          </caption>
           <thead>
             <tr>
               <th>Mã vị trí</th>
@@ -765,9 +920,11 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
             </tr>
           </thead>
           <tbody>
-            {positions.map(pos => (
+            {positions.map((pos) => (
               <tr key={pos.id}>
-                <td><span className="org-code-badge">{pos.code}</span></td>
+                <td>
+                  <span className="org-code-badge">{pos.code}</span>
+                </td>
                 <td>
                   <strong>{pos.title}</strong>
                   {pos.description && <small>{pos.description}</small>}
@@ -775,20 +932,31 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
                 <td>{pos.departmentName || 'Chung cho tổ chức'}</td>
                 <td>{pos.jobTitleName || 'Chưa gán'}</td>
                 <td>{pos.managerPositionTitle || '—'}</td>
-                <td><span className="badge">{pos.memberCount}</span></td>
-                <td><span className="badge">{pos.isActive ? 'Đang hoạt động' : 'Tạm khóa'}</span></td>
+                <td>
+                  <span className="badge">{pos.memberCount}</span>
+                </td>
+                <td>
+                  <span className="badge">{pos.isActive ? 'Đang hoạt động' : 'Tạm khóa'}</span>
+                </td>
                 {canManage && (
                   <td>
                     <div className="org-action-cell">
-                      <button className="org-btn-edit secondary" onClick={() => openEditModal(pos)}>Sửa</button>
-                      <button className="secondary" onClick={() => {
-                        setReportingTo([...reportingTo, pos]);
-                        setSearch('');
-                        setAppliedSearch('');
-                        setSelectedDeptId('');
-                        setStatusFilter('');
-                        setPage(1);
-                      }}>Xem cấp dưới</button>
+                      <button className="org-btn-edit secondary" onClick={() => openEditModal(pos)}>
+                        Sửa
+                      </button>
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          setReportingTo([...reportingTo, pos]);
+                          setSearch('');
+                          setAppliedSearch('');
+                          setSelectedDeptId('');
+                          setStatusFilter('');
+                          setPage(1);
+                        }}
+                      >
+                        Xem cấp dưới
+                      </button>
                       <button
                         className="org-btn-delete secondary"
                         onClick={() => handleDelete(pos)}
@@ -810,21 +978,36 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
       </div>
 
       <div className="pagination">
-        <button disabled={page === 1 || loading} onClick={() => setPage(p => p - 1)}>
+        <button disabled={page === 1 || loading} onClick={() => setPage((p) => p - 1)}>
           ← Trước
         </button>
-        <span>Trang {page} / {Math.max(1, Math.ceil(total / 20))}</span>
-        <button disabled={page * 20 >= total || loading} onClick={() => setPage(p => p + 1)}>
+        <span>
+          Trang {page} / {Math.max(1, Math.ceil(total / 20))}
+        </span>
+        <button disabled={page * 20 >= total || loading} onClick={() => setPage((p) => p + 1)}>
           Sau →
         </button>
       </div>
 
       {modalOpen && (
-        <div className="org-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
+        <div
+          className="org-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !submitting) closeModal();
+          }}
+        >
           <div className="org-modal-dialog">
             <div className="org-modal-header">
               <h2>{editingPos ? 'Chỉnh sửa vị trí' : 'Thêm vị trí mới'}</h2>
-              <button className="secondary" onClick={closeModal}>×</button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={closeModal}
+                disabled={submitting}
+                aria-label={t('closeDialog')}
+              >
+                ×
+              </button>
             </div>
             <form onSubmit={handleSubmit}>
               <ErrorMessage text={error} />
@@ -834,7 +1017,7 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
                   required
                   maxLength={30}
                   value={formCode}
-                  onChange={e => setFormCode(e.target.value.toUpperCase())}
+                  onChange={(e) => setFormCode(e.target.value.toUpperCase())}
                   placeholder="VD: DEV_LEAD, HR_EXEC"
                   disabled={submitting}
                 />
@@ -846,7 +1029,7 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
                   required
                   maxLength={100}
                   value={formTitle}
-                  onChange={e => setFormTitle(e.target.value)}
+                  onChange={(e) => setFormTitle(e.target.value)}
                   placeholder="VD: Trưởng nhóm phát triển, Chuyên viên tuyển dụng"
                   disabled={submitting}
                 />
@@ -854,18 +1037,19 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
 
               <label className="field">
                 Thuộc phòng ban (tùy chọn)
-                <select
+                <SearchableSelect
                   value={formDeptId}
-                  onChange={e => setFormDeptId(e.target.value)}
+                  onChange={setFormDeptId}
                   disabled={submitting}
-                >
-                  <option value="">Toàn công ty / Chưa chỉ định</option>
-                  {departments.map(d => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} ({d.code})
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'Toàn công ty / Chưa chỉ định' },
+                    ...departments.map((d) => ({
+                      value: d.id,
+                      label: `${d.name} (${d.code})`,
+                      keywords: `${d.name} ${d.code}`,
+                    })),
+                  ]}
+                />
               </label>
 
               <label className="field">
@@ -873,35 +1057,74 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
                 <textarea
                   maxLength={500}
                   value={formDesc}
-                  onChange={e => setFormDesc(e.target.value)}
+                  onChange={(e) => setFormDesc(e.target.value)}
                   placeholder="Mô tả công việc và trách nhiệm chính…"
                   disabled={submitting}
                   rows={3}
                 />
               </label>
               {optionsError && <ErrorMessage text={optionsError} />}
-              <label className="field">Chức danh
-                <select value={formJobTitleId} onChange={event => setFormJobTitleId(event.target.value)} disabled={submitting || !options}>
-                  <option value="">Chưa gán chức danh</option>
-                  {formJobTitleId && !options?.titles.some(title => title.id === formJobTitleId) && <option value={formJobTitleId}>{editingPos?.jobTitleName}</option>}
-                  {options?.titles.map(title => <option key={title.id} value={title.id}>{title.name} ({title.code})</option>)}
-                </select>
+              <label className="field">
+                Chức danh
+                <SearchableSelect
+                  value={formJobTitleId}
+                  onChange={setFormJobTitleId}
+                  disabled={submitting || !options}
+                  options={[
+                    { value: '', label: 'Chưa gán chức danh' },
+                    ...(formJobTitleId &&
+                    !options?.titles.some((title) => title.id === formJobTitleId)
+                      ? [{ value: formJobTitleId, label: editingPos?.jobTitleName || '' }]
+                      : []),
+                    ...(options?.titles.map((title) => ({
+                      value: title.id,
+                      label: `${title.name} (${title.code})`,
+                      keywords: `${title.name} ${title.code}`,
+                    })) ?? []),
+                  ]}
+                />
               </label>
-              <label className="field">Vị trí cấp trên
-                <select value={formManagerId} onChange={event => setFormManagerId(event.target.value)} disabled={submitting || !options}>
-                  <option value="">Không có cấp trên</option>
-                  {formManagerId && !options?.managers.some(position => position.id === formManagerId) && <option value={formManagerId}>{editingPos?.managerPositionTitle}</option>}
-                  {options?.managers.filter(position => position.id !== editingPos?.id).map(position => <option key={position.id} value={position.id}>{position.title} ({position.code})</option>)}
-                </select>
+              <label className="field">
+                Vị trí cấp trên
+                <SearchableSelect
+                  value={formManagerId}
+                  onChange={setFormManagerId}
+                  disabled={submitting || !options}
+                  options={[
+                    { value: '', label: 'Không có cấp trên' },
+                    ...(formManagerId &&
+                    !options?.managers.some((position) => position.id === formManagerId)
+                      ? [{ value: formManagerId, label: editingPos?.managerPositionTitle || '' }]
+                      : []),
+                    ...(options?.managers
+                      .filter((position) => position.id !== editingPos?.id)
+                      .map((position) => ({
+                        value: position.id,
+                        label: `${position.title} (${position.code})`,
+                        keywords: `${position.title} ${position.code}`,
+                      })) ?? []),
+                  ]}
+                />
               </label>
-              <label className="field">Trạng thái vị trí
-                <select value={String(formActive)} onChange={event => setFormActive(event.target.value === 'true')} disabled={submitting}>
-                  <option value="true">Đang hoạt động</option><option value="false">Ngừng sử dụng</option>
+              <label className="field">
+                Trạng thái vị trí
+                <select
+                  value={String(formActive)}
+                  onChange={(event) => setFormActive(event.target.value === 'true')}
+                  disabled={submitting}
+                >
+                  <option value="true">Đang hoạt động</option>
+                  <option value="false">Ngừng sử dụng</option>
                 </select>
               </label>
 
               <div className="org-modal-footer">
-                <button type="button" className="secondary" onClick={closeModal} disabled={submitting}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={closeModal}
+                  disabled={submitting}
+                >
                   Hủy
                 </button>
                 <button type="submit" className="primary" disabled={submitting}>
@@ -937,13 +1160,13 @@ export function OrganizationPanel({ profile }: { profile: Profile }) {
   const loadOrg = () => {
     setLoading(true);
     request<{ organization: OrgDetails }>(`/api/organizations/${orgId}`)
-      .then(res => {
+      .then((res) => {
         setDetails(res.organization);
         setFormName(res.organization.name);
         setFormCode(res.organization.code || '');
         setFormDesc(res.organization.description || '');
       })
-      .catch(err => setError(errorText(err)))
+      .catch((err) => setError(errorText(err)))
       .finally(() => setLoading(false));
   };
 
@@ -1001,7 +1224,9 @@ export function OrganizationPanel({ profile }: { profile: Profile }) {
         <dl className="dash-personal-details">
           <div>
             <dt>Tên công ty / tổ chức</dt>
-            <dd><strong>{details.name}</strong></dd>
+            <dd>
+              <strong>{details.name}</strong>
+            </dd>
           </div>
           <div>
             <dt>Mã định danh tổ chức</dt>
@@ -1013,11 +1238,17 @@ export function OrganizationPanel({ profile }: { profile: Profile }) {
           </div>
           <div>
             <dt>Tổ chức cấp trên</dt>
-            <dd>{details.parentOrganization ? `${details.parentOrganization.name} (${details.parentOrganization.code || ''})` : 'Tổ chức độc lập'}</dd>
+            <dd>
+              {details.parentOrganization
+                ? `${details.parentOrganization.name} (${details.parentOrganization.code || ''})`
+                : 'Tổ chức độc lập'}
+            </dd>
           </div>
           <div>
             <dt>Trạng thái</dt>
-            <dd><span className="badge">{details.isActive ? 'Đang hoạt động' : 'Tạm dừng'}</span></dd>
+            <dd>
+              <span className="badge">{details.isActive ? 'Đang hoạt động' : 'Tạm dừng'}</span>
+            </dd>
           </div>
           <div>
             <dt>Ngày thành lập trên hệ thống</dt>
@@ -1034,7 +1265,7 @@ export function OrganizationPanel({ profile }: { profile: Profile }) {
               required
               maxLength={100}
               value={formName}
-              onChange={e => setFormName(e.target.value)}
+              onChange={(e) => setFormName(e.target.value)}
               disabled={submitting}
             />
           </label>
@@ -1044,7 +1275,7 @@ export function OrganizationPanel({ profile }: { profile: Profile }) {
             <input
               maxLength={30}
               value={formCode}
-              onChange={e => setFormCode(e.target.value.toUpperCase())}
+              onChange={(e) => setFormCode(e.target.value.toUpperCase())}
               placeholder="VD: CORP_HQ"
               disabled={submitting}
             />
@@ -1055,14 +1286,19 @@ export function OrganizationPanel({ profile }: { profile: Profile }) {
             <textarea
               maxLength={500}
               value={formDesc}
-              onChange={e => setFormDesc(e.target.value)}
+              onChange={(e) => setFormDesc(e.target.value)}
               disabled={submitting}
               rows={3}
             />
           </label>
 
           <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
-            <button type="button" className="secondary" onClick={() => setEditing(false)} disabled={submitting}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setEditing(false)}
+              disabled={submitting}
+            >
               Hủy
             </button>
             <button type="submit" className="primary" disabled={submitting}>
@@ -1087,6 +1323,8 @@ export function OrganizationView({
   activeTab?: 'org-chart' | 'departments' | 'positions' | 'organization';
   onNavigate?: (tab: string) => void;
 }) {
+  const { locale } = useTranslation();
+  const tr = organizationMessages[locale];
   const [tab, setTab] = useState(activeTab);
   const [catalog, setCatalog] = useState<'positions' | 'titles'>('positions');
   const canManageCatalog = ['ADMIN', 'HR'].includes(profile.organization.role);
@@ -1103,22 +1341,28 @@ export function OrganizationView({
   };
 
   const titles: Record<string, string> = {
-    'org-chart': 'Sơ đồ tổ chức',
-    departments: 'Quản lý phòng ban',
-    positions: 'Chức danh và vị trí',
-    organization: 'Thông tin tổ chức',
+    'org-chart': tr.chart,
+    departments: tr.departmentManagement,
+    positions: tr.positions,
+    organization: tr.info,
   };
 
   return (
     <div className="org-view">
-      <h1 className="dash-page-title" style={{ position: 'static', width: 'auto', height: 'auto', clipPath: 'none' }}>
-        {titles[tab] || 'Cơ cấu tổ chức'}
+      <h1
+        className="dash-page-title"
+        style={{ position: 'static', width: 'auto', height: 'auto', clipPath: 'none' }}
+      >
+        {titles[tab] || tr.structure}
       </h1>
-      <p className="dash-page-subtitle" style={{ position: 'static', width: 'auto', height: 'auto', clipPath: 'none' }}>
+      <p
+        className="dash-page-subtitle"
+        style={{ position: 'static', width: 'auto', height: 'auto', clipPath: 'none' }}
+      >
         {profile.organization.name}
       </p>
 
-      <div className="org-tabs" role="tablist" aria-label="Điều hướng cơ cấu tổ chức">
+      <div className="org-tabs" role="tablist" aria-label={tr.navigation}>
         <button
           role="tab"
           type="button"
@@ -1126,7 +1370,7 @@ export function OrganizationView({
           aria-selected={tab === 'org-chart'}
           onClick={() => selectTab('org-chart')}
         >
-          <span>Sơ đồ tổ chức</span>
+          <span>{tr.chart}</span>
         </button>
         <button
           role="tab"
@@ -1135,7 +1379,7 @@ export function OrganizationView({
           aria-selected={tab === 'departments'}
           onClick={() => selectTab('departments')}
         >
-          <span>Phòng ban</span>
+          <span>{tr.departments}</span>
         </button>
         <button
           role="tab"
@@ -1144,7 +1388,7 @@ export function OrganizationView({
           aria-selected={tab === 'positions'}
           onClick={() => selectTab('positions')}
         >
-          <span>Chức danh và vị trí</span>
+          <span>{tr.positions}</span>
         </button>
         {profile.organization.role === 'ADMIN' && (
           <button
@@ -1154,22 +1398,42 @@ export function OrganizationView({
             aria-selected={tab === 'organization'}
             onClick={() => selectTab('organization')}
           >
-            <span>Thông tin tổ chức</span>
+            <span>{tr.info}</span>
           </button>
         )}
       </div>
 
       {tab === 'org-chart' && <OrgChartView profile={profile} />}
       {tab === 'departments' && <DepartmentsPanel profile={profile} />}
-      {tab === 'positions' && <>
-        {canManageCatalog && <div className="org-action-cell" role="group" aria-label="Danh mục tổ chức">
-          <button type="button" className="secondary" aria-pressed={catalog === 'positions'} onClick={() => setCatalog('positions')}>Vị trí công việc</button>
-          <button type="button" className="secondary" aria-pressed={catalog === 'titles'} onClick={() => setCatalog('titles')}>Danh mục chức danh</button>
-        </div>}
-        {canManageCatalog && catalog === 'titles'
-          ? <JobTitlesPanel organizationId={profile.organization.id} />
-          : <PositionsPanel profile={profile} />}
-      </>}
+      {tab === 'positions' && (
+        <>
+          {canManageCatalog && (
+            <div className="org-action-cell" role="group" aria-label={tr.catalog}>
+              <button
+                type="button"
+                className="secondary"
+                aria-pressed={catalog === 'positions'}
+                onClick={() => setCatalog('positions')}
+              >
+                {tr.jobPositions}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                aria-pressed={catalog === 'titles'}
+                onClick={() => setCatalog('titles')}
+              >
+                {tr.jobTitles}
+              </button>
+            </div>
+          )}
+          {canManageCatalog && catalog === 'titles' ? (
+            <JobTitlesPanel organizationId={profile.organization.id} />
+          ) : (
+            <PositionsPanel profile={profile} />
+          )}
+        </>
+      )}
       {tab === 'organization' && <OrganizationPanel profile={profile} />}
     </div>
   );

@@ -5,6 +5,7 @@ Bạn là Manager Agent của ManagerHR theo Agent Governance V5.1.
 **TASK AUTH-001:** Xây dựng module đăng nhập, đăng ký chỉ bằng lời mời HR/Admin và quên/đặt lại mật khẩu. KHÔNG tạo đăng ký công khai.
 
 BẮT BUỘC:
+
 1. Đọc `AGENTS.md`, `policy/ownership.json`, `policy/model-routing.json`, `policy/token-budget.json`, `policy/skill-routing.json`, `docs/AUTH-INVITE-DESIGN.md`, `contracts/api.md`, `docs/AUTH-TEST-MATRIX.md` và `docs/AGENT-TASK-AUTH-001.md`; chỉ mở các file nguồn liên quan.
 2. Kiểm tra framework hiện có trước khi viết code. Nếu repo trống, chọn một stack TypeScript tối giản phù hợp CI hiện hữu (ưu tiên Next.js + PostgreSQL + một giải pháp auth đã được kiểm chứng; không tạo backend thứ hai trùng chức năng). Ghi lựa chọn vào tài liệu kiến trúc.
 3. Dùng `.codex/skills/*/SKILL.md` đã được phê duyệt theo vai trò: agent-orchestration, database-migrations, api-development, frontend-standards, test-engineering, security-review, code-review; mỗi subtask chỉ nạp 1–2 Skill thực sự cần. Không tải Skill mới.

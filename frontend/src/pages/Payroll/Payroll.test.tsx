@@ -1,11 +1,12 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Payroll } from './Payroll';
 import { request, type Profile } from '../../services/api';
+import { setLocale } from '../../i18n';
 
-vi.mock('../../services/api', async original => ({
-  ...await original<typeof import('../../services/api')>(),
+vi.mock('../../services/api', async (original) => ({
+  ...(await original<typeof import('../../services/api')>()),
   request: vi.fn(),
 }));
 
@@ -14,14 +15,30 @@ const mock = vi.mocked(request);
 const adminProfile: Profile = {
   user: { id: 'u-1', email: 'admin@payroll.test', fullName: 'Admin User' },
   organization: { id: 'org-1', name: 'Payroll Org', role: 'ADMIN' },
-  permissions: { invite: true, grantHR: true, readUsers: true, manageUsers: true, assignRoles: true, viewAudit: true, manageOrg: true },
+  permissions: {
+    invite: true,
+    grantHR: true,
+    readUsers: true,
+    manageUsers: true,
+    assignRoles: true,
+    viewAudit: true,
+    manageOrg: true,
+  },
   deliveryMode: 'DEV_ONLY',
 };
 
 const employeeProfile: Profile = {
   user: { id: 'u-2', email: 'emp@payroll.test', fullName: 'Employee User' },
   organization: { id: 'org-1', name: 'Payroll Org', role: 'EMPLOYEE' },
-  permissions: { invite: false, grantHR: false, readUsers: false, manageUsers: false, assignRoles: false, viewAudit: false, manageOrg: false },
+  permissions: {
+    invite: false,
+    grantHR: false,
+    readUsers: false,
+    manageUsers: false,
+    assignRoles: false,
+    viewAudit: false,
+    manageOrg: false,
+  },
   deliveryMode: 'DEV_ONLY',
 };
 
@@ -71,15 +88,43 @@ const mockSlip = {
 };
 
 const mockItems = [
-  { id: 'i-1', componentName: 'Lương cơ bản', type: 'BASE_SALARY', amount: '22000000.00', notes: null },
-  { id: 'i-2', componentName: 'Phụ cấp ăn trưa', type: 'ALLOWANCE', amount: '1000000.00', notes: null },
+  {
+    id: 'i-1',
+    componentName: 'Lương cơ bản',
+    type: 'BASE_SALARY',
+    amount: '22000000.00',
+    notes: null,
+  },
+  {
+    id: 'i-2',
+    componentName: 'Phụ cấp ăn trưa',
+    type: 'ALLOWANCE',
+    amount: '1000000.00',
+    notes: null,
+  },
   { id: 'i-3', componentName: 'Đoàn phí', type: 'DEDUCTION', amount: '500000.00', notes: null },
 ];
 
 afterEach(() => {
+  setLocale('vi');
   cleanup();
   mock.mockReset();
   vi.restoreAllMocks();
+});
+
+it('updates payroll navigation when the language changes', () => {
+  mock.mockResolvedValue({ items: [] } as never);
+  setLocale('vi');
+  render(<Payroll profile={adminProfile} />);
+  expect(
+    screen.getByRole('heading', { name: 'Quản lý Tiền lương & Bảng lương' }),
+  ).toBeInTheDocument();
+  act(() => setLocale('en'));
+  expect(screen.getByRole('heading', { name: 'Payroll management' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reconciliation & accounting' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '+ Open payroll period' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Pay components & allowances' }));
+  expect(screen.getByText('Pay components and allowances')).toBeInTheDocument();
 });
 
 it('renders payroll period summary and allows draft calculation for HR/Admin', async () => {
@@ -87,7 +132,11 @@ it('renders payroll period summary and allows draft calculation for HR/Admin', a
     if (path.endsWith('/payroll/periods')) {
       return { items: [mockPeriod] };
     }
-    if (path.includes('/payroll/periods/period-1') && !path.includes('/slips') && !path.includes('/calculate')) {
+    if (
+      path.includes('/payroll/periods/period-1') &&
+      !path.includes('/slips') &&
+      !path.includes('/calculate')
+    ) {
       return { period: mockPeriod, summary: mockSummary };
     }
     if (path.includes('/payroll/periods/period-1/slips')) {
@@ -101,7 +150,9 @@ it('renders payroll period summary and allows draft calculation for HR/Admin', a
 
   render(<Payroll profile={adminProfile} view="periods" />);
 
-  expect(await screen.findByText('Kỳ lương Tháng 1/2026 (KY-2026-01) — Bản nháp')).toBeInTheDocument();
+  expect(
+    await screen.findByText('Kỳ lương Tháng 1/2026 (KY-2026-01) — Bản nháp'),
+  ).toBeInTheDocument();
   expect(await screen.findByText('Tổng quỹ lương Gross')).toBeInTheDocument();
   expect(await screen.findByText('NV-001')).toBeInTheDocument();
   expect(await screen.findByText('Nguyen Van A')).toBeInTheDocument();
@@ -113,7 +164,7 @@ it('renders payroll period summary and allows draft calculation for HR/Admin', a
   await waitFor(() => {
     expect(mock).toHaveBeenCalledWith(
       '/api/organizations/org-1/payroll/periods/period-1/calculate',
-      {}
+      {},
     );
   });
   expect(await screen.findByText(/Đã tính toán xong bảng lương nháp/i)).toBeInTheDocument();
@@ -182,14 +233,19 @@ it('allows employee to view self-service payslip history and detail breakdown', 
 });
 
 it('renders accounting and reconciliation tab and allows running reconciliation', async () => {
-  mock.mockImplementation(async (path: string, options?: unknown, method?: string) => {
+  mock.mockImplementation(async (path: string) => {
     if (path.endsWith('/payroll/periods')) {
       return { items: [{ ...mockPeriod, status: 'APPROVED' }], total: 1 };
     }
     if (path.includes('/payroll/periods/period-1/slips')) {
       return { items: [mockSlip], total: 1 };
     }
-    if (path.includes('/payroll/periods/period-1') && !path.includes('/reconcile') && !path.includes('/accounting') && !path.includes('/liabilities')) {
+    if (
+      path.includes('/payroll/periods/period-1') &&
+      !path.includes('/reconcile') &&
+      !path.includes('/accounting') &&
+      !path.includes('/liabilities')
+    ) {
       return { period: { ...mockPeriod, status: 'APPROVED' }, summary: mockSummary };
     }
     if (path.includes('/payroll/periods/period-1/reconciliation')) {
@@ -257,12 +313,16 @@ it('renders accounting and reconciliation tab and allows running reconciliation'
   fireEvent.click(reconcileBtn);
 
   await waitFor(() => {
-    expect(mock).toHaveBeenCalledWith('/api/organizations/org-1/payroll/periods/period-1/reconcile', {}, 'POST');
+    expect(mock).toHaveBeenCalledWith(
+      '/api/organizations/org-1/payroll/periods/period-1/reconcile',
+      {},
+      'POST',
+    );
   });
 });
 
 it('renders compliance & statutory reporting tab and executes compliance scan', async () => {
-  mock.mockImplementation(async (path: string, options?: unknown, method?: string) => {
+  mock.mockImplementation(async (path: string) => {
     if (path.endsWith('/payroll/periods')) {
       return { items: [mockPeriod] };
     }
@@ -368,6 +428,10 @@ it('renders compliance & statutory reporting tab and executes compliance scan', 
   fireEvent.click(scanBtn);
 
   await waitFor(() => {
-    expect(mock).toHaveBeenCalledWith('/api/organizations/org-1/payroll/compliance/check/period-1', {}, 'POST');
+    expect(mock).toHaveBeenCalledWith(
+      '/api/organizations/org-1/payroll/compliance/check/period-1',
+      {},
+      'POST',
+    );
   });
 });

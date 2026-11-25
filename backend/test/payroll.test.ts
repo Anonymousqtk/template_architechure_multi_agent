@@ -35,7 +35,9 @@ class Client {
       method,
       headers: {
         Cookie: [...this.cookies.values()].join('; '),
-        ...(method === 'GET' ? {} : { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrf }),
+        ...(method === 'GET'
+          ? {}
+          : { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrf }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
@@ -45,7 +47,11 @@ class Client {
     }
     const text = await r.text();
     let parsedBody: any = null;
-    try { parsedBody = text ? JSON.parse(text) : null; } catch { parsedBody = text; }
+    try {
+      parsedBody = text ? JSON.parse(text) : null;
+    } catch {
+      parsedBody = text;
+    }
     return { status: r.status, body: parsedBody, text };
   }
   async login(email: string) {
@@ -61,8 +67,14 @@ async function actor(role: string) {
 
 async function user(email: string, role: string, tenant = org) {
   const id = randomUUID();
-  await pool.query('INSERT INTO users(id, email, full_name, password_hash, email_verified_at) VALUES($1, $2, $2, $3, now())', [id, email, hash]);
-  await pool.query('INSERT INTO memberships(id, user_id, organization_id, role) VALUES($1, $2, $3, $4)', [randomUUID(), id, tenant, role]);
+  await pool.query(
+    'INSERT INTO users(id, email, full_name, password_hash, email_verified_at) VALUES($1, $2, $2, $3, now())',
+    [id, email, hash],
+  );
+  await pool.query(
+    'INSERT INTO memberships(id, user_id, organization_id, role) VALUES($1, $2, $3, $4)',
+    [randomUUID(), id, tenant, role],
+  );
   return id;
 }
 
@@ -73,24 +85,34 @@ beforeAll(async () => {
   hash = await hashPassword(password);
   const app = createApp({
     pool,
-    config: { origin, production: false, requireMfa: false, csrfSecret: 'payroll-tests-only-'.repeat(4) },
+    config: {
+      origin,
+      production: false,
+      requireMfa: false,
+      csrfSecret: 'payroll-tests-only-'.repeat(4),
+    },
     rateLimit: 1000,
   });
   server = app.listen(0, '127.0.0.1');
-  await new Promise<void>(r => server.once('listening', r));
+  await new Promise<void>((r) => server.once('listening', r));
   const a = server.address();
   if (!a || typeof a === 'string') throw new Error('No server');
   base = `http://127.0.0.1:${a.port}`;
 }, 30000);
 
 beforeEach(async () => {
-  await pool.query('TRUNCATE organizations, users, memberships, departments, positions, user_sessions, invitations, auth_audit_events, auth_rate_limits, salary_components, employee_salary_profiles, payroll_periods, payroll_slips, payroll_slip_items CASCADE');
+  await pool.query(
+    'TRUNCATE organizations, users, memberships, departments, positions, user_sessions, invitations, auth_audit_events, auth_rate_limits, salary_components, employee_salary_profiles, payroll_periods, payroll_slips, payroll_slip_items CASCADE',
+  );
   org = randomUUID();
   otherOrg = randomUUID();
   departmentId = randomUUID();
   positionId = randomUUID();
 
-  await pool.query("INSERT INTO organizations(id, name) VALUES($1, 'Payroll Corp'), ($2, 'Other Corp')", [org, otherOrg]);
+  await pool.query(
+    "INSERT INTO organizations(id, name) VALUES($1, 'Payroll Corp'), ($2, 'Other Corp')",
+    [org, otherOrg],
+  );
 
   adminId = await user('admin@payroll.test', 'ADMIN');
   hrId = await user('hr@payroll.test', 'HR');
@@ -98,28 +120,31 @@ beforeEach(async () => {
   employeeUserId = await user('employee@payroll.test', 'EMPLOYEE');
   outsiderUserId = await user('outsider@payroll.test', 'EMPLOYEE', otherOrg);
 
-  await pool.query('INSERT INTO departments(id, organization_id, code, name, manager_user_id) VALUES($1, $2, $3, $4, $5)', [
-    departmentId, org, 'ENG', 'Engineering', managerId,
-  ]);
-  await pool.query('INSERT INTO positions(id, organization_id, department_id, code, title) VALUES($1, $2, $3, $4, $5)', [
-    positionId, org, departmentId, 'SE', 'Software Engineer',
-  ]);
-  await pool.query('UPDATE memberships SET department_id = $1, position_id = $2, manager_user_id = $3 WHERE organization_id = $4 AND user_id = $5', [
-    departmentId, positionId, managerId, org, employeeUserId,
-  ]);
+  await pool.query(
+    'INSERT INTO departments(id, organization_id, code, name, manager_user_id) VALUES($1, $2, $3, $4, $5)',
+    [departmentId, org, 'ENG', 'Engineering', managerId],
+  );
+  await pool.query(
+    'INSERT INTO positions(id, organization_id, department_id, code, title) VALUES($1, $2, $3, $4, $5)',
+    [positionId, org, departmentId, 'SE', 'Software Engineer'],
+  );
+  await pool.query(
+    'UPDATE memberships SET department_id = $1, position_id = $2, manager_user_id = $3 WHERE organization_id = $4 AND user_id = $5',
+    [departmentId, positionId, managerId, org, employeeUserId],
+  );
 
   // Create an employee linked to employeeUserId
   employeeId = randomUUID();
   await pool.query(
     `INSERT INTO employees(id, organization_id, user_id, employee_code, full_name, hire_date, employment_status, department_id, position_id, manager_user_id)
      VALUES ($1, $2, $3, 'EMP-001', 'Test Employee', '2025-01-01', 'ACTIVE', $4, $5, $6)`,
-    [employeeId, org, employeeUserId, departmentId, positionId, managerId]
+    [employeeId, org, employeeUserId, departmentId, positionId, managerId],
   );
 });
 
 afterAll(async () => {
   server.closeAllConnections();
-  await new Promise<void>(r => server.close(() => r()));
+  await new Promise<void>((r) => server.close(() => r()));
   await pool.end();
 });
 
@@ -187,36 +212,54 @@ describe('PAY-001 Payroll, Salary Components & Allowance Management', () => {
     const emp = await actor('employee');
 
     // Create an allowance and deduction component
-    const lunchComp = (await admin.call(`${payrollPath()}/components`, 'POST', {
-      code: 'LUNCH', name: 'Ăn trưa', type: 'ALLOWANCE', defaultAmount: 730000,
-    })).body.id;
-    const unionComp = (await admin.call(`${payrollPath()}/components`, 'POST', {
-      code: 'UNION', name: 'Đoàn phí', type: 'DEDUCTION', defaultAmount: 100000,
-    })).body.id;
+    const lunchComp = (
+      await admin.call(`${payrollPath()}/components`, 'POST', {
+        code: 'LUNCH',
+        name: 'Ăn trưa',
+        type: 'ALLOWANCE',
+        defaultAmount: 730000,
+      })
+    ).body.id;
+    const unionComp = (
+      await admin.call(`${payrollPath()}/components`, 'POST', {
+        code: 'UNION',
+        name: 'Đoàn phí',
+        type: 'DEDUCTION',
+        defaultAmount: 100000,
+      })
+    ).body.id;
 
     // 1. Invalid date (effectiveTo < effectiveFrom) returns 400
-    const invalidDate = await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
-      salaryMode: 'GROSS',
-      baseSalary: 22000000,
-      effectiveFrom: '2026-02-01',
-      effectiveTo: '2026-01-01',
-      components: [],
-    });
+    const invalidDate = await hr.call(
+      `${payrollPath()}/employees/${employeeId}/salary-profile`,
+      'PUT',
+      {
+        salaryMode: 'GROSS',
+        baseSalary: 22000000,
+        effectiveFrom: '2026-02-01',
+        effectiveTo: '2026-01-01',
+        components: [],
+      },
+    );
     expect(invalidDate.status).toBe(400);
 
     // 2. Set employee salary profile
-    const setProfile = await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
-      salaryMode: 'GROSS',
-      baseSalary: 22000000,
-      effectiveFrom: '2026-01-01',
-      currency: 'VND',
-      bankAccountNumber: '123456789',
-      bankName: 'Vietcombank',
-      components: [
-        { componentId: lunchComp, amount: 730000 },
-        { componentId: unionComp, amount: 100000 },
-      ],
-    });
+    const setProfile = await hr.call(
+      `${payrollPath()}/employees/${employeeId}/salary-profile`,
+      'PUT',
+      {
+        salaryMode: 'GROSS',
+        baseSalary: 22000000,
+        effectiveFrom: '2026-01-01',
+        currency: 'VND',
+        bankAccountNumber: '123456789',
+        bankName: 'Vietcombank',
+        components: [
+          { componentId: lunchComp, amount: 730000 },
+          { componentId: unionComp, amount: 100000 },
+        ],
+      },
+    );
     expect(setProfile.status).toBe(200);
 
     // 3. Employee can read own salary profile
@@ -226,12 +269,16 @@ describe('PAY-001 Payroll, Salary Components & Allowance Management', () => {
     expect(empRead.body.components.length).toBe(2);
 
     // 4. Employee cannot mutate profile (403)
-    const empMutate = await emp.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
-      salaryMode: 'NET',
-      baseSalary: 50000000,
-      effectiveFrom: '2026-01-01',
-      components: [],
-    });
+    const empMutate = await emp.call(
+      `${payrollPath()}/employees/${employeeId}/salary-profile`,
+      'PUT',
+      {
+        salaryMode: 'NET',
+        baseSalary: 50000000,
+        effectiveFrom: '2026-01-01',
+        components: [],
+      },
+    );
     expect(empMutate.status).toBe(403);
   });
 
@@ -242,12 +289,22 @@ describe('PAY-001 Payroll, Salary Components & Allowance Management', () => {
     const mgr = await actor('manager');
 
     // Create components
-    const allowance = (await admin.call(`${payrollPath()}/components`, 'POST', {
-      code: 'ALLOW_TRANSPORT', name: 'Xăng xe', type: 'ALLOWANCE', defaultAmount: 1000000,
-    })).body.id;
-    const deduction = (await admin.call(`${payrollPath()}/components`, 'POST', {
-      code: 'DEDUCT_HEALTH', name: 'Bảo hiểm tự nguyện', type: 'DEDUCTION', defaultAmount: 500000,
-    })).body.id;
+    const allowance = (
+      await admin.call(`${payrollPath()}/components`, 'POST', {
+        code: 'ALLOW_TRANSPORT',
+        name: 'Xăng xe',
+        type: 'ALLOWANCE',
+        defaultAmount: 1000000,
+      })
+    ).body.id;
+    const deduction = (
+      await admin.call(`${payrollPath()}/components`, 'POST', {
+        code: 'DEDUCT_HEALTH',
+        name: 'Bảo hiểm tự nguyện',
+        type: 'DEDUCTION',
+        defaultAmount: 500000,
+      })
+    ).body.id;
 
     // Set salary profile: Base = 22,000,000, Allowance = 1,000,000, Deduction = 500,000
     await hr.call(`${payrollPath()}/employees/${employeeId}/salary-profile`, 'PUT', {
@@ -309,7 +366,7 @@ describe('PAY-001 Payroll, Salary Components & Allowance Management', () => {
     // Audit verification: verify PAYROLL_CALCULATED was recorded without financial values
     const auditRes = await pool.query(
       "SELECT event_type, metadata FROM auth_audit_events WHERE organization_id = $1 AND event_type = 'PAYROLL_CALCULATED'",
-      [org]
+      [org],
     );
     expect(auditRes.rowCount).toBeGreaterThanOrEqual(1);
     const meta = auditRes.rows[0].metadata;
@@ -323,13 +380,15 @@ describe('PAY-001 Payroll, Salary Components & Allowance Management', () => {
     const hr = await actor('hr');
 
     // Create period
-    const period = (await admin.call(`${payrollPath()}/periods`, 'POST', {
-      code: 'PR-2026-02',
-      name: 'Kỳ lương Tháng 2/2026',
-      startDate: '2026-02-01',
-      endDate: '2026-02-28',
-      standardWorkingDays: 20,
-    })).body;
+    const period = (
+      await admin.call(`${payrollPath()}/periods`, 'POST', {
+        code: 'PR-2026-02',
+        name: 'Kỳ lương Tháng 2/2026',
+        startDate: '2026-02-01',
+        endDate: '2026-02-28',
+        standardWorkingDays: 20,
+      })
+    ).body;
 
     // 1. Invalid status transition (DRAFT -> APPROVED directly fails)
     const directApprove = await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', {
@@ -379,16 +438,26 @@ describe('PAY-001 Payroll, Salary Components & Allowance Management', () => {
     await outsider.login('outsider@payroll.test');
 
     // Create component in org
-    const compId = (await admin.call(`${payrollPath()}/components`, 'POST', {
-      code: 'PRIVATE', name: 'Riêng tư', type: 'ALLOWANCE', defaultAmount: 1000000,
-    })).body.id;
+    const compId = (
+      await admin.call(`${payrollPath()}/components`, 'POST', {
+        code: 'PRIVATE',
+        name: 'Riêng tư',
+        type: 'ALLOWANCE',
+        defaultAmount: 1000000,
+      })
+    ).body.id;
 
     // Outsider cannot access org's payroll endpoints
     const crossList = await outsider.call(`${payrollPath()}/components`);
     expect(crossList.status).toBe(403);
 
     const crossComp = await outsider.call(`${payrollPath()}/components/${compId}`, 'PUT', {
-      name: 'Hack', calculationType: 'FIXED', isTaxable: false, isStatutory: false, defaultAmount: 0, active: true,
+      name: 'Hack',
+      calculationType: 'FIXED',
+      isTaxable: false,
+      isStatutory: false,
+      defaultAmount: 0,
+      active: true,
     });
     expect(crossComp.status).toBe(403);
   });
@@ -425,7 +494,9 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     // Outsider (different org) is blocked
     const outsider = new Client();
     await outsider.login('outsider@payroll.test');
-    const outsiderHist = await outsider.call(`${payrollPath()}/employees/${employeeId}/salary-history`);
+    const outsiderHist = await outsider.call(
+      `${payrollPath()}/employees/${employeeId}/salary-history`,
+    );
     expect(outsiderHist.status).toBe(403);
   });
 
@@ -474,7 +545,9 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
 
     const outsider = new Client();
     await outsider.login('outsider@payroll.test');
-    const outsiderLog = await outsider.call(`${payrollPath()}/employees/${employeeId}/adjustment-log`);
+    const outsiderLog = await outsider.call(
+      `${payrollPath()}/employees/${employeeId}/adjustment-log`,
+    );
     expect(outsiderLog.status).toBe(403);
   });
 
@@ -503,26 +576,34 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     expect(getByEmp.body.contributions).toBeInstanceOf(Array);
 
     // Validation: terminationDate before enrollmentDate
-    const badDates = await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance`, 'PUT', {
-      siCode: '0123456789',
-      insuredName: 'Nguyễn Văn A',
-      enrollmentDate: '2024-06-01',
-      terminationDate: '2024-01-01',
-      siSalary: 6_500_000,
-      currency: 'VND',
-      status: 'ACTIVE',
-    });
+    const badDates = await hr.call(
+      `${payrollPath()}/employees/${employeeId}/social-insurance`,
+      'PUT',
+      {
+        siCode: '0123456789',
+        insuredName: 'Nguyễn Văn A',
+        enrollmentDate: '2024-06-01',
+        terminationDate: '2024-01-01',
+        siSalary: 6_500_000,
+        currency: 'VND',
+        status: 'ACTIVE',
+      },
+    );
     expect(badDates.status).toBe(400);
 
     // Employee cannot write (PUT is ADMIN/HR only)
-    const empPut = await emp.call(`${payrollPath()}/employees/${employeeId}/social-insurance`, 'PUT', {
-      siCode: '0000000000',
-      insuredName: 'Hack',
-      enrollmentDate: '2024-01-01',
-      siSalary: 1,
-      currency: 'VND',
-      status: 'ACTIVE',
-    });
+    const empPut = await emp.call(
+      `${payrollPath()}/employees/${employeeId}/social-insurance`,
+      'PUT',
+      {
+        siCode: '0000000000',
+        insuredName: 'Hack',
+        enrollmentDate: '2024-01-01',
+        siSalary: 1,
+        currency: 'VND',
+        status: 'ACTIVE',
+      },
+    );
     expect(empPut.status).toBe(403);
   });
 
@@ -540,27 +621,35 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     });
 
     // Valid: first of month
-    const ok = await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance/contributions`, 'POST', {
-      contributionMonth: '2026-10-01',
-      siSalary: 7_200_000,
-      employeeRate: 0.08,
-      employerRate: 0.175,
-      employeeAmount: 576_000,
-      employerAmount: 1_260_000,
-      status: 'CONFIRMED',
-    });
+    const ok = await hr.call(
+      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`,
+      'POST',
+      {
+        contributionMonth: '2026-10-01',
+        siSalary: 7_200_000,
+        employeeRate: 0.08,
+        employerRate: 0.175,
+        employeeAmount: 576_000,
+        employerAmount: 1_260_000,
+        status: 'CONFIRMED',
+      },
+    );
     expect(ok.status).toBe(201);
 
     // Invalid: not first of month
-    const bad = await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance/contributions`, 'POST', {
-      contributionMonth: '2026-10-15',
-      siSalary: 7_200_000,
-      employeeRate: 0.08,
-      employerRate: 0.175,
-      employeeAmount: 576_000,
-      employerAmount: 1_260_000,
-      status: 'PENDING',
-    });
+    const bad = await hr.call(
+      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`,
+      'POST',
+      {
+        contributionMonth: '2026-10-15',
+        siSalary: 7_200_000,
+        employeeRate: 0.08,
+        employerRate: 0.175,
+        employeeAmount: 576_000,
+        employerAmount: 1_260_000,
+        status: 'PENDING',
+      },
+    );
     expect(bad.status).toBe(400);
     expect(bad.body.code).toBe('CONTRIBUTION_MONTH_MUST_BE_FIRST_OF_MONTH');
   });
@@ -578,18 +667,22 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
       status: 'ACTIVE',
     });
 
-    await hr.call(`${payrollPath()}/employees/${employeeId}/social-insurance/contributions`, 'POST', {
-      contributionMonth: '2026-09-01',
-      siSalary: 8_000_000,
-      employeeRate: 0.08,
-      employerRate: 0.175,
-      employeeAmount: 640_000,
-      employerAmount: 1_400_000,
-      status: 'CONFIRMED',
-    });
+    await hr.call(
+      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`,
+      'POST',
+      {
+        contributionMonth: '2026-09-01',
+        siSalary: 8_000_000,
+        employeeRate: 0.08,
+        employerRate: 0.175,
+        employeeAmount: 640_000,
+        employerAmount: 1_400_000,
+        status: 'CONFIRMED',
+      },
+    );
 
     const empContrib = await emp.call(
-      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`
+      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`,
     );
     expect(empContrib.status).toBe(200);
     expect(empContrib.body.items).toHaveLength(1);
@@ -599,7 +692,7 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     const outsider = new Client();
     await outsider.login('outsider@payroll.test');
     const blocked = await outsider.call(
-      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`
+      `${payrollPath()}/employees/${employeeId}/social-insurance/contributions`,
     );
     expect(blocked.status).toBe(403);
   });
@@ -669,7 +762,11 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     const pId = createPeriod.body.id;
 
     // 2. Generating journal on unapproved/uncalculated period must be rejected
-    const unapprovedGen = await hr.call(`${payrollPath()}/periods/${pId}/accounting/generate`, 'POST', {});
+    const unapprovedGen = await hr.call(
+      `${payrollPath()}/periods/${pId}/accounting/generate`,
+      'POST',
+      {},
+    );
     expect(unapprovedGen.status).toBe(409);
     expect(unapprovedGen.body.code).toBe('PAYROLL_PERIOD_NOT_APPROVED_OR_CLOSED');
 
@@ -681,7 +778,11 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     await hr.call(`${payrollPath()}/periods/${pId}/status`, 'PATCH', { status: 'APPROVED' });
 
     // 5. Generate journal entry with status POSTED
-    const genRes = await hr.call(`${payrollPath()}/periods/${pId}/accounting/generate?status=POSTED`, 'POST', {});
+    const genRes = await hr.call(
+      `${payrollPath()}/periods/${pId}/accounting/generate?status=POSTED`,
+      'POST',
+      {},
+    );
     expect(genRes.status).toBe(201);
     expect(genRes.body.status).toBe('POSTED');
     expect(genRes.body.totalDebit).toBe(genRes.body.totalCredit);
@@ -704,11 +805,17 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
 
     // 7. Immutability: database trigger guards posted entry from direct modification
     await expect(
-      pool.query(`UPDATE payroll_journal_entries SET total_debit = 999999 WHERE id = $1`, [entryId])
+      pool.query(`UPDATE payroll_journal_entries SET total_debit = 999999 WHERE id = $1`, [
+        entryId,
+      ]),
     ).rejects.toThrow(/cannot modify a posted journal entry/);
 
     // 8. Reversal: creates linked reversal entry
-    const revRes = await hr.call(`${payrollPath()}/accounting/entries/${entryId}/reverse`, 'POST', {});
+    const revRes = await hr.call(
+      `${payrollPath()}/accounting/entries/${entryId}/reverse`,
+      'POST',
+      {},
+    );
     expect(revRes.status).toBe(200);
     expect(revRes.body.ok).toBe(true);
     expect(revRes.body.reversalEntryId).toBeDefined();
@@ -719,7 +826,9 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     expect(origCheck.body.entry.reversalEntryId).toBe(revRes.body.reversalEntryId);
 
     // Verify reversal entry lines have swapped Debit/Credit
-    const revDetail = await hr.call(`${payrollPath()}/accounting/entries/${revRes.body.reversalEntryId}`);
+    const revDetail = await hr.call(
+      `${payrollPath()}/accounting/entries/${revRes.body.reversalEntryId}`,
+    );
     expect(revDetail.body.entry.status).toBe('POSTED');
     expect(revDetail.body.lines[0].debitAmount).toBe(detailRes.body.lines[0].creditAmount);
     expect(revDetail.body.lines[0].creditAmount).toBe(detailRes.body.lines[0].debitAmount);
@@ -740,15 +849,19 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
 
     // 1. Create period & calculate slips
     const pCode = `KY-REC-${Date.now().toString().slice(-6)}`;
-    const period = (await admin.call(`${payrollPath()}/periods`, 'POST', {
-      code: pCode,
-      name: `Kỳ đối chiếu ${pCode}`,
-      startDate: '2026-06-01',
-      endDate: '2026-06-30',
-      standardWorkingDays: 22,
-    })).body;
+    const period = (
+      await admin.call(`${payrollPath()}/periods`, 'POST', {
+        code: pCode,
+        name: `Kỳ đối chiếu ${pCode}`,
+        startDate: '2026-06-01',
+        endDate: '2026-06-30',
+        standardWorkingDays: 22,
+      })
+    ).body;
     await hr.call(`${payrollPath()}/periods/${period.id}/calculate`, 'POST', {});
-    await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', { status: 'UNDER_REVIEW' });
+    await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', {
+      status: 'UNDER_REVIEW',
+    });
     await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', { status: 'APPROVED' });
 
     // Read slips to get employee net pay
@@ -797,11 +910,18 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     expect(recRes.body.discrepancies[0].type).toBe('UNDERPAID');
 
     // 4. Resolve discrepancy
-    const discId = recRes.body.discrepancies[0].id || (await hr.call(`${payrollPath()}/periods/${period.id}/reconciliation`)).body.discrepancies[0].id;
-    const resolveRes = await hr.call(`${payrollPath()}/reconciliation/discrepancies/${discId}`, 'PATCH', {
-      resolutionStatus: 'RESOLVED',
-      resolutionNotes: 'Đã bổ sung đợt chi trả bù',
-    });
+    const discId =
+      recRes.body.discrepancies[0].id ||
+      (await hr.call(`${payrollPath()}/periods/${period.id}/reconciliation`)).body.discrepancies[0]
+        .id;
+    const resolveRes = await hr.call(
+      `${payrollPath()}/reconciliation/discrepancies/${discId}`,
+      'PATCH',
+      {
+        resolutionStatus: 'RESOLVED',
+        resolutionNotes: 'Đã bổ sung đợt chi trả bù',
+      },
+    );
     expect(resolveRes.status).toBe(200);
 
     // Reconciliation status updated to RESOLVED
@@ -819,14 +939,20 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     expect(summaryLiab.body.totals.totalPaid).toBeDefined();
 
     // 6. CSV Export: journal, reconciliation, disbursements
-    const exportJournal = await hr.call(`${payrollPath()}/periods/${period.id}/accounting/export?type=journal&format=json`);
+    const exportJournal = await hr.call(
+      `${payrollPath()}/periods/${period.id}/accounting/export?type=journal&format=json`,
+    );
     expect(exportJournal.status).toBe(200);
 
-    const exportRec = await hr.call(`${payrollPath()}/periods/${period.id}/accounting/export?type=reconciliation&format=json`);
+    const exportRec = await hr.call(
+      `${payrollPath()}/periods/${period.id}/accounting/export?type=reconciliation&format=json`,
+    );
     expect(exportRec.status).toBe(200);
     expect(exportRec.body.items.length).toBeGreaterThan(0);
 
-    const exportDisb = await hr.call(`${payrollPath()}/periods/${period.id}/accounting/export?type=disbursements&format=json`);
+    const exportDisb = await hr.call(
+      `${payrollPath()}/periods/${period.id}/accounting/export?type=disbursements&format=json`,
+    );
     expect(exportDisb.status).toBe(200);
     expect(exportDisb.body.items.length).toBeGreaterThan(0);
   });
@@ -863,14 +989,20 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     const depId = depRes.body.dependent.id;
 
     // HR verifies dependent
-    const verifyRes = await hr.call(`${payrollPath()}/compliance/dependents/${depId}/verify`, 'PATCH', {
-      isVerified: true,
-    });
+    const verifyRes = await hr.call(
+      `${payrollPath()}/compliance/dependents/${depId}/verify`,
+      'PATCH',
+      {
+        isVerified: true,
+      },
+    );
     expect(verifyRes.status).toBe(200);
     expect(verifyRes.body.isVerified).toBe(true);
 
     // List dependents
-    const listDeps = await hr.call(`${payrollPath()}/compliance/dependents?employeeId=${employeeId}`);
+    const listDeps = await hr.call(
+      `${payrollPath()}/compliance/dependents?employeeId=${employeeId}`,
+    );
     expect(listDeps.status).toBe(200);
     expect(listDeps.body.dependents.length).toBeGreaterThanOrEqual(1);
     expect(listDeps.body.dependents[0].isVerified).toBe(true);
@@ -891,15 +1023,19 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
 
     // Create and approve payroll period
     const pCode = `KY-CMP-${Date.now().toString().slice(-6)}`;
-    const period = (await admin.call(`${payrollPath()}/periods`, 'POST', {
-      code: pCode,
-      name: `Kỳ tuân thủ ${pCode}`,
-      startDate: '2026-07-01',
-      endDate: '2026-07-31',
-      standardWorkingDays: 22,
-    })).body;
+    const period = (
+      await admin.call(`${payrollPath()}/periods`, 'POST', {
+        code: pCode,
+        name: `Kỳ tuân thủ ${pCode}`,
+        startDate: '2026-07-01',
+        endDate: '2026-07-31',
+        standardWorkingDays: 22,
+      })
+    ).body;
     await hr.call(`${payrollPath()}/periods/${period.id}/calculate`, 'POST', {});
-    await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', { status: 'UNDER_REVIEW' });
+    await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', {
+      status: 'UNDER_REVIEW',
+    });
     await hr.call(`${payrollPath()}/periods/${period.id}/status`, 'PATCH', { status: 'APPROVED' });
 
     // 1. Personal Income Tax (PIT) report calculation
@@ -959,18 +1095,26 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     expect(draftExport.status).toBe(400);
 
     // Approve report
-    const approveRes = await hr.call(`${payrollPath()}/compliance/reports/${reportId}/approve`, 'POST', {});
+    const approveRes = await hr.call(
+      `${payrollPath()}/compliance/reports/${reportId}/approve`,
+      'POST',
+      {},
+    );
     expect(approveRes.status).toBe(200);
     expect(approveRes.body.status).toBe('APPROVED');
 
     // Lock report (Admin only)
-    const lockRes = await admin.call(`${payrollPath()}/compliance/reports/${reportId}/lock`, 'POST', {});
+    const lockRes = await admin.call(
+      `${payrollPath()}/compliance/reports/${reportId}/lock`,
+      'POST',
+      {},
+    );
     expect(lockRes.status).toBe(200);
     expect(lockRes.body.status).toBe('LOCKED');
 
     // Database trigger: Cannot modify LOCKED report
     await expect(
-      pool.query(`UPDATE compliance_reports SET title = 'Changed' WHERE id = $1`, [reportId])
+      pool.query(`UPDATE compliance_reports SET title = 'Changed' WHERE id = $1`, [reportId]),
     ).rejects.toThrow(/Cannot modify a LOCKED compliance report/);
 
     // Unverified statutory exports must fail before recording an export.
@@ -980,11 +1124,13 @@ describe('PAY-001 Enhancement: Salary history & BHXH', () => {
     const audit = await pool.query(
       `SELECT count(*)::int AS count FROM compliance_audit_logs
        WHERE organization_id = $1 AND target_id = $2 AND action = 'EXPORT_OFFICIAL_REPORT'`,
-      [org, reportId]
+      [org, reportId],
     );
     expect(audit.rows[0].count).toBe(0);
 
     const employee = await actor('employee');
-    expect((await employee.call(`${payrollPath()}/compliance/reports/${reportId}/export`)).status).toBe(403);
+    expect(
+      (await employee.call(`${payrollPath()}/compliance/reports/${reportId}/export`)).status,
+    ).toBe(403);
   });
 });

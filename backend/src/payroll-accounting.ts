@@ -1,4 +1,4 @@
-import type { Express, Response, NextFunction } from 'express';
+import type { Express } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
@@ -14,7 +14,7 @@ interface OrgStructureDeps {
     userId?: string,
     orgId?: string,
     targetUserId?: string,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
   ) => Promise<void>;
   requireIdentity: (req: Authed) => { userId: string; orgId: string; role: string };
 }
@@ -123,17 +123,72 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
       await transaction(async (db) => {
         // Standard Accounts per VAS
         const standardAccounts = [
-          { code: '3341', name: 'Phải trả người lao động (Lương)', type: 'LIABILITY', desc: 'Thanh toán tiền lương' },
-          { code: '6422', name: 'Chi phí quản lý doanh nghiệp (Lương & phụ cấp)', type: 'EXPENSE', desc: 'Chi phí tiền lương khối quản lý' },
-          { code: '6421', name: 'Chi phí bán hàng (Lương & phụ cấp)', type: 'EXPENSE', desc: 'Chi phí tiền lương khối kinh doanh / bán hàng' },
-          { code: '622', name: 'Chi phí nhân công trực tiếp', type: 'EXPENSE', desc: 'Chi phí nhân công sản xuất trực tiếp' },
-          { code: '3383', name: 'Bảo hiểm xã hội', type: 'LIABILITY', desc: 'BHXH người lao động & doanh nghiệp' },
-          { code: '3384', name: 'Bảo hiểm y tế', type: 'LIABILITY', desc: 'BHYT người lao động & doanh nghiệp' },
-          { code: '3386', name: 'Bảo hiểm thất nghiệp', type: 'LIABILITY', desc: 'BHTN người lao động & doanh nghiệp' },
-          { code: '3382', name: 'Kinh phí công đoàn', type: 'LIABILITY', desc: 'Kinh phí công đoàn 2%' },
-          { code: '3335', name: 'Thuế thu nhập cá nhân', type: 'LIABILITY', desc: 'Khấu trừ thuế TNCN người lao động' },
-          { code: '1121', name: 'Tiền gửi ngân hàng (VND)', type: 'ASSET', desc: 'Tài khoản thanh toán chuyển khoản lương' },
-          { code: '1111', name: 'Tiền mặt tại quỹ (VND)', type: 'ASSET', desc: 'Thanh toán tiền mặt' },
+          {
+            code: '3341',
+            name: 'Phải trả người lao động (Lương)',
+            type: 'LIABILITY',
+            desc: 'Thanh toán tiền lương',
+          },
+          {
+            code: '6422',
+            name: 'Chi phí quản lý doanh nghiệp (Lương & phụ cấp)',
+            type: 'EXPENSE',
+            desc: 'Chi phí tiền lương khối quản lý',
+          },
+          {
+            code: '6421',
+            name: 'Chi phí bán hàng (Lương & phụ cấp)',
+            type: 'EXPENSE',
+            desc: 'Chi phí tiền lương khối kinh doanh / bán hàng',
+          },
+          {
+            code: '622',
+            name: 'Chi phí nhân công trực tiếp',
+            type: 'EXPENSE',
+            desc: 'Chi phí nhân công sản xuất trực tiếp',
+          },
+          {
+            code: '3383',
+            name: 'Bảo hiểm xã hội',
+            type: 'LIABILITY',
+            desc: 'BHXH người lao động & doanh nghiệp',
+          },
+          {
+            code: '3384',
+            name: 'Bảo hiểm y tế',
+            type: 'LIABILITY',
+            desc: 'BHYT người lao động & doanh nghiệp',
+          },
+          {
+            code: '3386',
+            name: 'Bảo hiểm thất nghiệp',
+            type: 'LIABILITY',
+            desc: 'BHTN người lao động & doanh nghiệp',
+          },
+          {
+            code: '3382',
+            name: 'Kinh phí công đoàn',
+            type: 'LIABILITY',
+            desc: 'Kinh phí công đoàn 2%',
+          },
+          {
+            code: '3335',
+            name: 'Thuế thu nhập cá nhân',
+            type: 'LIABILITY',
+            desc: 'Khấu trừ thuế TNCN người lao động',
+          },
+          {
+            code: '1121',
+            name: 'Tiền gửi ngân hàng (VND)',
+            type: 'ASSET',
+            desc: 'Tài khoản thanh toán chuyển khoản lương',
+          },
+          {
+            code: '1111',
+            name: 'Tiền mặt tại quỹ (VND)',
+            type: 'ASSET',
+            desc: 'Thanh toán tiền mặt',
+          },
         ];
 
         const accountMap = new Map<string, string>();
@@ -141,7 +196,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         for (const acc of standardAccounts) {
           const existing = await db.query(
             `SELECT id FROM accounting_accounts WHERE organization_id = $1 AND upper(btrim(code)) = upper($2)`,
-            [identity.orgId, acc.code]
+            [identity.orgId, acc.code],
           );
           if (existing.rowCount && existing.rows[0]) {
             accountMap.set(acc.code, existing.rows[0].id);
@@ -150,7 +205,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
             await db.query(
               `INSERT INTO accounting_accounts (id, organization_id, code, name, type, description, is_active)
                VALUES ($1, $2, $3, $4, $5, $6, true)`,
-              [id, identity.orgId, acc.code, acc.name, acc.type, acc.desc]
+              [id, identity.orgId, acc.code, acc.name, acc.type, acc.desc],
             );
             accountMap.set(acc.code, id);
           }
@@ -158,13 +213,55 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
 
         // Standard Rules
         const defaultRules = [
-          { ruleCode: 'BASE_SALARY_EXPENSE', name: 'Hạch toán lương cơ bản', componentType: 'BASE_SALARY', debit: '6422', credit: '3341' },
-          { ruleCode: 'ALLOWANCE_EXPENSE', name: 'Hạch toán phụ cấp', componentType: 'ALLOWANCE', debit: '6422', credit: '3341' },
-          { ruleCode: 'BONUS_EXPENSE', name: 'Hạch toán tiền thưởng', componentType: 'BONUS', debit: '6422', credit: '3341' },
-          { ruleCode: 'OVERTIME_EXPENSE', name: 'Hạch toán làm thêm giờ', componentType: 'OVERTIME', debit: '6422', credit: '3341' },
-          { ruleCode: 'SI_DEDUCTION', name: 'Khấu trừ BHXH', componentType: 'STATUTORY_SI', debit: '3341', credit: '3383' },
-          { ruleCode: 'TAX_DEDUCTION', name: 'Khấu trừ thuế TNCN', componentType: 'TAX', debit: '3341', credit: '3335' },
-          { ruleCode: 'NET_PAY_PAYMENT', name: 'Chi trả lương thực lĩnh', componentType: 'NET_PAY', debit: '3341', credit: '1121' },
+          {
+            ruleCode: 'BASE_SALARY_EXPENSE',
+            name: 'Hạch toán lương cơ bản',
+            componentType: 'BASE_SALARY',
+            debit: '6422',
+            credit: '3341',
+          },
+          {
+            ruleCode: 'ALLOWANCE_EXPENSE',
+            name: 'Hạch toán phụ cấp',
+            componentType: 'ALLOWANCE',
+            debit: '6422',
+            credit: '3341',
+          },
+          {
+            ruleCode: 'BONUS_EXPENSE',
+            name: 'Hạch toán tiền thưởng',
+            componentType: 'BONUS',
+            debit: '6422',
+            credit: '3341',
+          },
+          {
+            ruleCode: 'OVERTIME_EXPENSE',
+            name: 'Hạch toán làm thêm giờ',
+            componentType: 'OVERTIME',
+            debit: '6422',
+            credit: '3341',
+          },
+          {
+            ruleCode: 'SI_DEDUCTION',
+            name: 'Khấu trừ BHXH',
+            componentType: 'STATUTORY_SI',
+            debit: '3341',
+            credit: '3383',
+          },
+          {
+            ruleCode: 'TAX_DEDUCTION',
+            name: 'Khấu trừ thuế TNCN',
+            componentType: 'TAX',
+            debit: '3341',
+            credit: '3335',
+          },
+          {
+            ruleCode: 'NET_PAY_PAYMENT',
+            name: 'Chi trả lương thực lĩnh',
+            componentType: 'NET_PAY',
+            debit: '3341',
+            credit: '1121',
+          },
         ];
 
         for (const rule of defaultRules) {
@@ -174,14 +271,22 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
 
           const existing = await db.query(
             `SELECT id FROM accounting_rules WHERE organization_id = $1 AND upper(btrim(rule_code)) = upper($2)`,
-            [identity.orgId, rule.ruleCode]
+            [identity.orgId, rule.ruleCode],
           );
           if (!existing.rowCount) {
             const ruleId = randomUUID();
             await db.query(
               `INSERT INTO accounting_rules (id, organization_id, rule_code, name, component_type, debit_account_id, credit_account_id, is_active)
                VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
-              [ruleId, identity.orgId, rule.ruleCode, rule.name, rule.componentType, debitId, creditId]
+              [
+                ruleId,
+                identity.orgId,
+                rule.ruleCode,
+                rule.name,
+                rule.componentType,
+                debitId,
+                creditId,
+              ],
             );
           }
         }
@@ -192,7 +297,9 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         });
       });
 
-      return res.status(200).json({ ok: true, message: 'Seeded default accounts and posting rules' });
+      return res
+        .status(200)
+        .json({ ok: true, message: 'Seeded default accounts and posting rules' });
     } catch (err) {
       next(err);
     }
@@ -225,7 +332,10 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
       }
 
       const where = clauses.join(' AND ');
-      const countRes = await pool.query(`SELECT COUNT(*)::int AS count FROM accounting_accounts WHERE ${where}`, params);
+      const countRes = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM accounting_accounts WHERE ${where}`,
+        params,
+      );
       const total = countRes.rows[0].count;
 
       params.push(limit, (page - 1) * limit);
@@ -236,7 +346,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          WHERE ${where}
          ORDER BY code ASC
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
-        params
+        params,
       );
 
       return res.status(200).json({
@@ -260,7 +370,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
 
       const dup = await pool.query(
         `SELECT id FROM accounting_accounts WHERE organization_id = $1 AND upper(btrim(code)) = upper($2)`,
-        [identity.orgId, data.code]
+        [identity.orgId, data.code],
       );
       if (dup.rowCount) fail(409, 'ACCOUNT_CODE_EXISTS');
 
@@ -269,7 +379,15 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         await db.query(
           `INSERT INTO accounting_accounts (id, organization_id, code, name, type, description, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [id, identity.orgId, data.code.toUpperCase(), data.name, data.type, data.description || null, data.isActive]
+          [
+            id,
+            identity.orgId,
+            data.code.toUpperCase(),
+            data.name,
+            data.type,
+            data.description || null,
+            data.isActive,
+          ],
         );
         await audit(db, 'ACCOUNTING_ACCOUNT_CREATED', identity.userId, identity.orgId, undefined, {
           accountId: id,
@@ -294,7 +412,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
 
       const existing = await pool.query(
         `SELECT id, code FROM accounting_accounts WHERE id = $1 AND organization_id = $2`,
-        [accountId, identity.orgId]
+        [accountId, identity.orgId],
       );
       if (!existing.rowCount) fail(404, 'ACCOUNT_NOT_FOUND');
 
@@ -306,7 +424,13 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
                is_active = COALESCE($3, is_active),
                updated_at = now()
            WHERE id = $4 AND organization_id = $5`,
-          [data.name || null, data.description !== undefined ? data.description : null, data.isActive !== undefined ? data.isActive : null, accountId, identity.orgId]
+          [
+            data.name || null,
+            data.description !== undefined ? data.description : null,
+            data.isActive !== undefined ? data.isActive : null,
+            accountId,
+            identity.orgId,
+          ],
         );
         await audit(db, 'ACCOUNTING_ACCOUNT_UPDATED', identity.userId, identity.orgId, undefined, {
           accountId,
@@ -342,7 +466,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          JOIN accounting_accounts ca ON ca.id = r.credit_account_id AND ca.organization_id = r.organization_id
          WHERE r.organization_id = $1
          ORDER BY r.rule_code ASC`,
-        [identity.orgId]
+        [identity.orgId],
       );
 
       return res.status(200).json({ items: rows.rows });
@@ -359,19 +483,28 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
       const data = ruleCreateSchema.parse(req.body);
 
       // Verify accounts exist and belong to tenant
-      const debitAcc = await pool.query(`SELECT id FROM accounting_accounts WHERE id = $1 AND organization_id = $2`, [data.debitAccountId, identity.orgId]);
+      const debitAcc = await pool.query(
+        `SELECT id FROM accounting_accounts WHERE id = $1 AND organization_id = $2`,
+        [data.debitAccountId, identity.orgId],
+      );
       if (!debitAcc.rowCount) fail(404, 'DEBIT_ACCOUNT_NOT_FOUND');
-      const creditAcc = await pool.query(`SELECT id FROM accounting_accounts WHERE id = $1 AND organization_id = $2`, [data.creditAccountId, identity.orgId]);
+      const creditAcc = await pool.query(
+        `SELECT id FROM accounting_accounts WHERE id = $1 AND organization_id = $2`,
+        [data.creditAccountId, identity.orgId],
+      );
       if (!creditAcc.rowCount) fail(404, 'CREDIT_ACCOUNT_NOT_FOUND');
 
       if (data.departmentId) {
-        const dept = await pool.query(`SELECT id FROM departments WHERE id = $1 AND organization_id = $2`, [data.departmentId, identity.orgId]);
+        const dept = await pool.query(
+          `SELECT id FROM departments WHERE id = $1 AND organization_id = $2`,
+          [data.departmentId, identity.orgId],
+        );
         if (!dept.rowCount) fail(404, 'DEPARTMENT_NOT_FOUND');
       }
 
       const dup = await pool.query(
         `SELECT id FROM accounting_rules WHERE organization_id = $1 AND upper(btrim(rule_code)) = upper($2)`,
-        [identity.orgId, data.ruleCode]
+        [identity.orgId, data.ruleCode],
       );
       if (dup.rowCount) fail(409, 'RULE_CODE_EXISTS');
 
@@ -380,7 +513,17 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         await db.query(
           `INSERT INTO accounting_rules (id, organization_id, rule_code, name, component_type, department_id, debit_account_id, credit_account_id, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [id, identity.orgId, data.ruleCode.toUpperCase(), data.name, data.componentType, data.departmentId || null, data.debitAccountId, data.creditAccountId, data.isActive]
+          [
+            id,
+            identity.orgId,
+            data.ruleCode.toUpperCase(),
+            data.name,
+            data.componentType,
+            data.departmentId || null,
+            data.debitAccountId,
+            data.creditAccountId,
+            data.isActive,
+          ],
         );
         await audit(db, 'ACCOUNTING_RULE_CREATED', identity.userId, identity.orgId, undefined, {
           ruleId: id,
@@ -402,15 +545,24 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
       const ruleId = uuidSchema.parse(req.params.id);
       const data = ruleUpdateSchema.parse(req.body);
 
-      const existing = await pool.query(`SELECT id, rule_code FROM accounting_rules WHERE id = $1 AND organization_id = $2`, [ruleId, identity.orgId]);
+      const existing = await pool.query(
+        `SELECT id, rule_code FROM accounting_rules WHERE id = $1 AND organization_id = $2`,
+        [ruleId, identity.orgId],
+      );
       if (!existing.rowCount) fail(404, 'RULE_NOT_FOUND');
 
       if (data.debitAccountId) {
-        const debitAcc = await pool.query(`SELECT id FROM accounting_accounts WHERE id = $1 AND organization_id = $2`, [data.debitAccountId, identity.orgId]);
+        const debitAcc = await pool.query(
+          `SELECT id FROM accounting_accounts WHERE id = $1 AND organization_id = $2`,
+          [data.debitAccountId, identity.orgId],
+        );
         if (!debitAcc.rowCount) fail(404, 'DEBIT_ACCOUNT_NOT_FOUND');
       }
       if (data.creditAccountId) {
-        const creditAcc = await pool.query(`SELECT id FROM accounting_accounts WHERE id = $1 AND organization_id = $2`, [data.creditAccountId, identity.orgId]);
+        const creditAcc = await pool.query(
+          `SELECT id FROM accounting_accounts WHERE id = $1 AND organization_id = $2`,
+          [data.creditAccountId, identity.orgId],
+        );
         if (!creditAcc.rowCount) fail(404, 'CREDIT_ACCOUNT_NOT_FOUND');
       }
 
@@ -423,7 +575,14 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
                is_active = COALESCE($4, is_active),
                updated_at = now()
            WHERE id = $5 AND organization_id = $6`,
-          [data.name || null, data.debitAccountId || null, data.creditAccountId || null, data.isActive !== undefined ? data.isActive : null, ruleId, identity.orgId]
+          [
+            data.name || null,
+            data.debitAccountId || null,
+            data.creditAccountId || null,
+            data.isActive !== undefined ? data.isActive : null,
+            ruleId,
+            identity.orgId,
+          ],
         );
         await audit(db, 'ACCOUNTING_RULE_UPDATED', identity.userId, identity.orgId, undefined, {
           ruleId,
@@ -453,7 +612,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         `SELECT id, code, name, status, start_date AS "startDate", end_date AS "endDate"
          FROM payroll_periods
          WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PAYROLL_PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
@@ -467,7 +626,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         `SELECT id, rule_code, component_type, department_id, debit_account_id, credit_account_id
          FROM accounting_rules
          WHERE organization_id = $1 AND is_active = true`,
-        [identity.orgId]
+        [identity.orgId],
       );
       if (!rulesRes.rowCount) {
         fail(400, 'NO_ACTIVE_ACCOUNTING_RULES_FOUND');
@@ -482,7 +641,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
          LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
          WHERE s.period_id = $1 AND s.organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       if (!slipsRes.rowCount) {
@@ -497,7 +656,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          JOIN payroll_slips s ON s.id = si.slip_id AND s.organization_id = si.organization_id
          JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
          WHERE s.period_id = $1 AND s.organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       // Find best rule matching componentType and departmentId (or fallback to org-wide rule)
@@ -522,7 +681,13 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
       }
       const postingMap = new Map<string, PostingLineAccumulator>();
 
-      function addPosting(debitAcc: string, creditAcc: string, deptId: string | null, desc: string, cents: bigint) {
+      function addPosting(
+        debitAcc: string,
+        creditAcc: string,
+        deptId: string | null,
+        desc: string,
+        cents: bigint,
+      ) {
         if (cents <= 0n) return;
         const key = `${debitAcc}__${creditAcc}__${deptId || 'NONE'}__${desc}`;
         const existing = postingMap.get(key);
@@ -546,7 +711,13 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         if (baseCents > 0n) {
           const rule = findRule('BASE_SALARY', deptId);
           if (rule) {
-            addPosting(rule.debit_account_id, rule.credit_account_id, deptId, 'Lương cơ bản', baseCents);
+            addPosting(
+              rule.debit_account_id,
+              rule.credit_account_id,
+              deptId,
+              'Lương cơ bản',
+              baseCents,
+            );
           }
         }
 
@@ -554,7 +725,13 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         if (otCents > 0n) {
           const rule = findRule('OVERTIME', deptId) || findRule('BASE_SALARY', deptId);
           if (rule) {
-            addPosting(rule.debit_account_id, rule.credit_account_id, deptId, 'Lương làm thêm giờ', otCents);
+            addPosting(
+              rule.debit_account_id,
+              rule.credit_account_id,
+              deptId,
+              'Lương làm thêm giờ',
+              otCents,
+            );
           }
         }
       }
@@ -567,10 +744,24 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
 
         if (item.type === 'ALLOWANCE') {
           const rule = findRule('ALLOWANCE', deptId) || findRule('BASE_SALARY', deptId);
-          if (rule) addPosting(rule.debit_account_id, rule.credit_account_id, deptId, `Phụ cấp: ${item.component_name}`, cents);
+          if (rule)
+            addPosting(
+              rule.debit_account_id,
+              rule.credit_account_id,
+              deptId,
+              `Phụ cấp: ${item.component_name}`,
+              cents,
+            );
         } else if (item.type === 'BONUS') {
           const rule = findRule('BONUS', deptId) || findRule('BASE_SALARY', deptId);
-          if (rule) addPosting(rule.debit_account_id, rule.credit_account_id, deptId, `Thưởng: ${item.component_name}`, cents);
+          if (rule)
+            addPosting(
+              rule.debit_account_id,
+              rule.credit_account_id,
+              deptId,
+              `Thưởng: ${item.component_name}`,
+              cents,
+            );
         } else if (item.type === 'DEDUCTION') {
           // If item name contains BHXH / BHYT / BHTN / Bảo hiểm -> STATUTORY_SI
           const isSI = /bảo hiểm|bhxh|bhyt|bhtn/i.test(item.component_name);
@@ -581,7 +772,13 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
           if (!rule) rule = findRule('DEDUCTION', deptId);
 
           if (rule) {
-            addPosting(rule.debit_account_id, rule.credit_account_id, deptId, `Khấu trừ: ${item.component_name}`, cents);
+            addPosting(
+              rule.debit_account_id,
+              rule.credit_account_id,
+              deptId,
+              `Khấu trừ: ${item.component_name}`,
+              cents,
+            );
           }
         }
       }
@@ -653,7 +850,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
             totalDebitStr,
             totalCreditStr,
             `Bút toán chi phí lương kỳ ${period.name}`,
-          ]
+          ],
         );
 
         let order = 1;
@@ -672,7 +869,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
               fromCents(line.creditAmountCents),
               line.description,
               order++,
-            ]
+            ],
           );
         }
 
@@ -682,7 +879,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
             `UPDATE payroll_journal_entries
              SET status = 'POSTED', posted_by = $1, posted_at = now(), updated_at = now()
              WHERE id = $2 AND organization_id = $3`,
-            [identity.userId, entryId, identity.orgId]
+            [identity.userId, entryId, identity.orgId],
           );
         }
 
@@ -728,7 +925,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          LEFT JOIN users u_rev ON u_rev.id = e.reversed_by
          WHERE e.period_id = $1 AND e.organization_id = $2
          ORDER BY e.entry_date DESC, e.created_at DESC`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       return res.status(200).json({ items: rows.rows });
@@ -756,7 +953,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          LEFT JOIN users u_post ON u_post.id = e.posted_by
          LEFT JOIN users u_rev ON u_rev.id = e.reversed_by
          WHERE e.id = $1 AND e.organization_id = $2`,
-        [entryId, identity.orgId]
+        [entryId, identity.orgId],
       );
       if (!entryRes.rowCount) fail(404, 'JOURNAL_ENTRY_NOT_FOUND');
 
@@ -770,7 +967,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          LEFT JOIN departments d ON d.id = l.department_id AND d.organization_id = l.organization_id
          WHERE l.entry_id = $1 AND l.organization_id = $2
          ORDER BY l.line_order ASC`,
-        [entryId, identity.orgId]
+        [entryId, identity.orgId],
       );
 
       return res.status(200).json({
@@ -793,7 +990,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         `SELECT id, entry_number, status, total_debit, total_credit
          FROM payroll_journal_entries
          WHERE id = $1 AND organization_id = $2`,
-        [entryId, identity.orgId]
+        [entryId, identity.orgId],
       );
       if (!entryRes.rowCount) fail(404, 'JOURNAL_ENTRY_NOT_FOUND');
       const entry = entryRes.rows[0];
@@ -811,7 +1008,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
           `UPDATE payroll_journal_entries
            SET status = 'POSTED', posted_by = $1, posted_at = now(), updated_at = now()
            WHERE id = $2 AND organization_id = $3`,
-          [identity.userId, entryId, identity.orgId]
+          [identity.userId, entryId, identity.orgId],
         );
         await audit(db, 'PAYROLL_JOURNAL_POSTED', identity.userId, identity.orgId, undefined, {
           entryId,
@@ -836,7 +1033,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         `SELECT id, period_id, entry_number, status, total_debit, total_credit, description
          FROM payroll_journal_entries
          WHERE id = $1 AND organization_id = $2`,
-        [entryId, identity.orgId]
+        [entryId, identity.orgId],
       );
       if (!entryRes.rowCount) fail(404, 'JOURNAL_ENTRY_NOT_FOUND');
       const original = entryRes.rows[0];
@@ -851,7 +1048,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          FROM payroll_journal_entry_lines
          WHERE entry_id = $1 AND organization_id = $2
          ORDER BY line_order ASC`,
-        [entryId, identity.orgId]
+        [entryId, identity.orgId],
       );
 
       const reversalId = randomUUID();
@@ -870,9 +1067,9 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
             reversalNumber,
             reversalDate,
             original.total_credit, // Swapped total debit
-            original.total_debit,  // Swapped total credit
+            original.total_debit, // Swapped total credit
             `Đảo bút toán chứng từ ${original.entry_number}`,
-          ]
+          ],
         );
 
         // 2. Insert lines with swapped Debit and Credit
@@ -888,10 +1085,10 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
               line.account_id,
               line.department_id,
               line.credit_amount, // Swapped!
-              line.debit_amount,  // Swapped!
+              line.debit_amount, // Swapped!
               `Đảo: ${line.description}`,
               line.line_order,
-            ]
+            ],
           );
         }
 
@@ -900,7 +1097,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
           `UPDATE payroll_journal_entries
            SET status = 'POSTED', posted_by = $1, posted_at = now(), updated_at = now()
            WHERE id = $2 AND organization_id = $3`,
-          [identity.userId, reversalId, identity.orgId]
+          [identity.userId, reversalId, identity.orgId],
         );
 
         // 4. Mark original entry as REVERSED and link reversal entry
@@ -908,7 +1105,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
           `UPDATE payroll_journal_entries
            SET status = 'REVERSED', reversed_by = $1, reversed_at = now(), reversal_entry_id = $2, updated_at = now()
            WHERE id = $3 AND organization_id = $4`,
-          [identity.userId, reversalId, entryId, identity.orgId]
+          [identity.userId, reversalId, entryId, identity.orgId],
         );
 
         await audit(db, 'PAYROLL_JOURNAL_REVERSED', identity.userId, identity.orgId, undefined, {
@@ -942,7 +1139,10 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
       const periodId = uuidSchema.parse(req.params.id);
       const data = disbursementBatchSchema.parse(req.body);
 
-      const periodRes = await pool.query(`SELECT id FROM payroll_periods WHERE id = $1 AND organization_id = $2`, [periodId, identity.orgId]);
+      const periodRes = await pool.query(
+        `SELECT id FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
+        [periodId, identity.orgId],
+      );
       if (!periodRes.rowCount) fail(404, 'PAYROLL_PERIOD_NOT_FOUND');
 
       const insertedIds: string[] = [];
@@ -950,13 +1150,16 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
       await transaction(async (db) => {
         for (const item of data.items) {
           // Check employee exists
-          const empRes = await db.query(`SELECT id FROM employees WHERE id = $1 AND organization_id = $2`, [item.employeeId, identity.orgId]);
+          const empRes = await db.query(
+            `SELECT id FROM employees WHERE id = $1 AND organization_id = $2`,
+            [item.employeeId, identity.orgId],
+          );
           if (!empRes.rowCount) fail(404, `EMPLOYEE_NOT_FOUND: ${item.employeeId}`);
 
           // Check duplicate disbursement code
           const dupCode = await db.query(
             `SELECT id FROM payroll_disbursements WHERE organization_id = $1 AND upper(btrim(disbursement_code)) = upper($2)`,
-            [identity.orgId, item.disbursementCode]
+            [identity.orgId, item.disbursementCode],
           );
           if (dupCode.rowCount) fail(409, `DISBURSEMENT_CODE_EXISTS: ${item.disbursementCode}`);
 
@@ -978,7 +1181,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
               item.paymentDate,
               item.referenceCode || null,
               item.notes || null,
-            ]
+            ],
           );
           insertedIds.push(disbId);
 
@@ -989,15 +1192,27 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
                SET bank_name = COALESCE(bank_name, $1),
                    bank_account_number = COALESCE(bank_account_number, $2)
                WHERE id = $3 AND organization_id = $4`,
-              [item.bankName || null, item.bankAccountNumber || null, item.employeeId, identity.orgId]
+              [
+                item.bankName || null,
+                item.bankAccountNumber || null,
+                item.employeeId,
+                identity.orgId,
+              ],
             );
           }
         }
 
-        await audit(db, 'PAYROLL_DISBURSEMENT_RECORDED', identity.userId, identity.orgId, undefined, {
-          periodId,
-          count: data.items.length,
-        });
+        await audit(
+          db,
+          'PAYROLL_DISBURSEMENT_RECORDED',
+          identity.userId,
+          identity.orgId,
+          undefined,
+          {
+            periodId,
+            count: data.items.length,
+          },
+        );
       });
 
       return res.status(201).json({ ok: true, count: insertedIds.length, ids: insertedIds });
@@ -1016,7 +1231,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
 
       const countRes = await pool.query(
         `SELECT COUNT(*)::int AS count FROM payroll_disbursements WHERE period_id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       const total = countRes.rows[0].count;
 
@@ -1032,7 +1247,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          WHERE d.period_id = $1 AND d.organization_id = $2
          ORDER BY d.payment_date DESC, d.created_at DESC
          LIMIT $3 OFFSET $4`,
-        [periodId, identity.orgId, limit, (page - 1) * limit]
+        [periodId, identity.orgId, limit, (page - 1) * limit],
       );
 
       return res.status(200).json({
@@ -1060,15 +1275,13 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
 
       const periodRes = await pool.query(
         `SELECT id, code, name, status FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PAYROLL_PERIOD_NOT_FOUND');
-      const period = periodRes.rows[0];
-
       // Read all payslips
       const slipsRes = await pool.query(
         `SELECT id, employee_id, net_pay, gross_pay FROM payroll_slips WHERE period_id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       // Read all COMPLETED disbursements
@@ -1076,7 +1289,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         `SELECT id, employee_id, slip_id, amount, disbursement_code
          FROM payroll_disbursements
          WHERE period_id = $1 AND organization_id = $2 AND status = 'COMPLETED'`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       // Map disbursements by employee
@@ -1200,7 +1413,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
         // Upsert reconciliation
         const existingRec = await db.query(
           `SELECT id FROM payroll_reconciliations WHERE period_id = $1 AND organization_id = $2`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
 
         if (existingRec.rowCount) {
@@ -1232,10 +1445,13 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
               identity.userId,
               recId,
               identity.orgId,
-            ]
+            ],
           );
           // Delete old discrepancies
-          await db.query(`DELETE FROM payroll_reconciliation_discrepancies WHERE reconciliation_id = $1 AND organization_id = $2`, [recId, identity.orgId]);
+          await db.query(
+            `DELETE FROM payroll_reconciliation_discrepancies WHERE reconciliation_id = $1 AND organization_id = $2`,
+            [recId, identity.orgId],
+          );
         } else {
           await db.query(
             `INSERT INTO payroll_reconciliations (id, organization_id, period_id, reconciliation_date, status, total_expected_slips, total_expected_amount, total_disbursed_slips, total_disbursed_amount, difference_amount, matched_count, discrepancy_count, reconciled_by, reconciled_at)
@@ -1253,7 +1469,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
               matchedCount,
               discrepancies.length,
               identity.userId,
-            ]
+            ],
           );
         }
 
@@ -1275,13 +1491,18 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
               disc.disbursedAmount,
               disc.differenceAmount,
               disc.notes,
-            ]
+            ],
           );
         }
 
         // Update Payroll Liabilities
         const liabEndingCents = diffTotalCents;
-        const liabStatus = liabEndingCents === 0n ? 'SETTLED' : totalDisbursedCents > 0n ? 'PARTIALLY_SETTLED' : 'OPEN';
+        const liabStatus =
+          liabEndingCents === 0n
+            ? 'SETTLED'
+            : totalDisbursedCents > 0n
+              ? 'PARTIALLY_SETTLED'
+              : 'OPEN';
 
         await db.query(
           `INSERT INTO payroll_liabilities (id, organization_id, period_id, beginning_balance, incurred_amount, paid_amount, ending_balance, status, last_reconciled_at)
@@ -1301,7 +1522,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
             fromCents(totalDisbursedCents),
             fromCents(liabEndingCents),
             liabStatus,
-          ]
+          ],
         );
 
         await audit(db, 'PAYROLL_RECONCILIATION_RUN', identity.userId, identity.orgId, undefined, {
@@ -1352,7 +1573,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          FROM payroll_reconciliations r
          LEFT JOIN users u ON u.id = r.reconciled_by
          WHERE r.period_id = $1 AND r.organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       if (!recRes.rowCount) {
@@ -1375,7 +1596,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          LEFT JOIN users u_res ON u_res.id = d.resolved_by
          WHERE d.reconciliation_id = $1 AND d.organization_id = $2
          ORDER BY d.created_at ASC`,
-        [rec.id, identity.orgId]
+        [rec.id, identity.orgId],
       );
 
       return res.status(200).json({
@@ -1397,7 +1618,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
 
       const discRes = await pool.query(
         `SELECT id, reconciliation_id, type FROM payroll_reconciliation_discrepancies WHERE id = $1 AND organization_id = $2`,
-        [discId, identity.orgId]
+        [discId, identity.orgId],
       );
       if (!discRes.rowCount) fail(404, 'DISCREPANCY_NOT_FOUND');
       const disc = discRes.rows[0];
@@ -1411,7 +1632,13 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
                resolved_at = now(),
                updated_at = now()
            WHERE id = $4 AND organization_id = $5`,
-          [data.resolutionStatus, data.resolutionNotes !== undefined ? data.resolutionNotes : null, identity.userId, discId, identity.orgId]
+          [
+            data.resolutionStatus,
+            data.resolutionNotes !== undefined ? data.resolutionNotes : null,
+            identity.userId,
+            discId,
+            identity.orgId,
+          ],
         );
 
         // Check if all discrepancies are resolved or ignored
@@ -1419,7 +1646,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
           `SELECT COUNT(*)::int AS count
            FROM payroll_reconciliation_discrepancies
            WHERE reconciliation_id = $1 AND organization_id = $2 AND resolution_status NOT IN ('RESOLVED', 'IGNORED')`,
-          [disc.reconciliation_id, identity.orgId]
+          [disc.reconciliation_id, identity.orgId],
         );
 
         if (remaining.rows[0].count === 0) {
@@ -1427,18 +1654,27 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
             `UPDATE payroll_reconciliations
              SET status = 'RESOLVED', updated_at = now()
              WHERE id = $1 AND organization_id = $2`,
-            [disc.reconciliation_id, identity.orgId]
+            [disc.reconciliation_id, identity.orgId],
           );
         }
 
-        await audit(db, 'PAYROLL_DISCREPANCY_RESOLVED', identity.userId, identity.orgId, undefined, {
-          discrepancyId: discId,
-          type: disc.type,
-          resolutionStatus: data.resolutionStatus,
-        });
+        await audit(
+          db,
+          'PAYROLL_DISCREPANCY_RESOLVED',
+          identity.userId,
+          identity.orgId,
+          undefined,
+          {
+            discrepancyId: discId,
+            type: disc.type,
+            resolutionStatus: data.resolutionStatus,
+          },
+        );
       });
 
-      return res.status(200).json({ ok: true, discrepancyId: discId, resolutionStatus: data.resolutionStatus });
+      return res
+        .status(200)
+        .json({ ok: true, discrepancyId: discId, resolutionStatus: data.resolutionStatus });
     } catch (err) {
       next(err);
     }
@@ -1463,26 +1699,30 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          FROM payroll_liabilities l
          JOIN payroll_periods p ON p.id = l.period_id AND p.organization_id = l.organization_id
          WHERE l.period_id = $1 AND l.organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       if (!liabRes.rowCount) {
         // Return computed real-time snapshot even if not yet saved to liabilities table
-        const periodRes = await pool.query(`SELECT id, code, name FROM payroll_periods WHERE id = $1 AND organization_id = $2`, [periodId, identity.orgId]);
+        const periodRes = await pool.query(
+          `SELECT id, code, name FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
+          [periodId, identity.orgId],
+        );
         if (!periodRes.rowCount) fail(404, 'PAYROLL_PERIOD_NOT_FOUND');
 
         const slipSum = await pool.query(
           `SELECT COALESCE(SUM(net_pay), 0.00) AS "incurredAmount" FROM payroll_slips WHERE period_id = $1 AND organization_id = $2`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         const disbSum = await pool.query(
           `SELECT COALESCE(SUM(amount), 0.00) AS "paidAmount" FROM payroll_disbursements WHERE period_id = $1 AND organization_id = $2 AND status = 'COMPLETED'`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         const incurred = slipSum.rows[0].incurredAmount;
         const paid = disbSum.rows[0].paidAmount;
         const diff = fromCents(toCents(incurred) - toCents(paid));
-        const status = toCents(diff) === 0n ? 'SETTLED' : toCents(paid) > 0n ? 'PARTIALLY_SETTLED' : 'OPEN';
+        const status =
+          toCents(diff) === 0n ? 'SETTLED' : toCents(paid) > 0n ? 'PARTIALLY_SETTLED' : 'OPEN';
 
         return res.status(200).json({
           liability: {
@@ -1522,7 +1762,7 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
          JOIN payroll_periods p ON p.id = l.period_id AND p.organization_id = l.organization_id
          WHERE l.organization_id = $1
          ORDER BY p.start_date DESC`,
-        [identity.orgId]
+        [identity.orgId],
       );
 
       let totalIncurredCents = 0n;
@@ -1558,29 +1798,18 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
       const identity = requireIdentity(req);
       assertAccountingAccess(identity.role);
       const periodId = uuidSchema.parse(req.params.id);
-      const exportType = typeof req.query.type === 'string' ? req.query.type.toLowerCase() : 'journal';
+      const exportType =
+        typeof req.query.type === 'string' ? req.query.type.toLowerCase() : 'journal';
       const format = typeof req.query.format === 'string' ? req.query.format.toLowerCase() : 'csv';
 
-      const periodRes = await pool.query(`SELECT id, code, name FROM payroll_periods WHERE id = $1 AND organization_id = $2`, [periodId, identity.orgId]);
+      const periodRes = await pool.query(
+        `SELECT id, code, name FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
+        [periodId, identity.orgId],
+      );
       if (!periodRes.rowCount) fail(404, 'PAYROLL_PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
 
       if (exportType === 'journal') {
-        const rows = await pool.query(
-          `SELECT e.entry_number AS "entryNumber", e.entry_date AS "entryDate", e.description AS "entryDesc",
-                  da.code AS "debitAccount", ca.code AS "creditAccount",
-                  l.debit_amount AS "debitAmount", l.credit_amount AS "creditAmount",
-                  l.description AS "lineDesc", d.name AS "departmentName", e.status
-           FROM payroll_journal_entries e
-           JOIN payroll_journal_entry_lines l ON l.entry_id = e.id AND l.organization_id = e.organization_id
-           JOIN accounting_accounts da ON da.id = l.account_id AND da.organization_id = l.organization_id AND l.debit_amount > 0
-           LEFT JOIN accounting_accounts ca ON ca.id = l.account_id AND ca.organization_id = l.organization_id AND l.credit_amount > 0
-           LEFT JOIN departments d ON d.id = l.department_id AND d.organization_id = l.organization_id
-           WHERE e.period_id = $1 AND e.organization_id = $2
-           ORDER BY e.entry_number, l.line_order`,
-          [periodId, identity.orgId]
-        );
-
         // Fetch all lines directly
         const allLines = await pool.query(
           `SELECT e.entry_number AS "entryNumber", e.entry_date AS "entryDate", e.description AS "entryDesc",
@@ -1593,29 +1822,42 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
            LEFT JOIN departments d ON d.id = l.department_id AND d.organization_id = l.organization_id
            WHERE e.period_id = $1 AND e.organization_id = $2
            ORDER BY e.entry_number, l.line_order`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
 
         if (format === 'json') {
           return res.status(200).json({ items: allLines.rows });
         }
 
-        const headers = ['Số chứng từ', 'Ngày hạch toán', 'Diễn giải chứng từ', 'Mã tài khoản', 'Tên tài khoản', 'Số tiền Nợ', 'Số tiền Có', 'Diễn giải dòng', 'Phòng ban', 'Trạng thái'];
+        const headers = [
+          'Số chứng từ',
+          'Ngày hạch toán',
+          'Diễn giải chứng từ',
+          'Mã tài khoản',
+          'Tên tài khoản',
+          'Số tiền Nợ',
+          'Số tiền Có',
+          'Diễn giải dòng',
+          'Phòng ban',
+          'Trạng thái',
+        ];
         const csvRows = [headers.map(escapeCsvField).join(',')];
 
         for (const r of allLines.rows) {
-          csvRows.push([
-            escapeCsvField(r.entryNumber),
-            escapeCsvField(r.entryDate),
-            escapeCsvField(r.entryDesc),
-            escapeCsvField(r.accountCode),
-            escapeCsvField(r.accountName),
-            escapeCsvField(r.debitAmount),
-            escapeCsvField(r.creditAmount),
-            escapeCsvField(r.lineDesc),
-            escapeCsvField(r.departmentName || ''),
-            escapeCsvField(r.status),
-          ].join(','));
+          csvRows.push(
+            [
+              escapeCsvField(r.entryNumber),
+              escapeCsvField(r.entryDate),
+              escapeCsvField(r.entryDesc),
+              escapeCsvField(r.accountCode),
+              escapeCsvField(r.accountName),
+              escapeCsvField(r.debitAmount),
+              escapeCsvField(r.creditAmount),
+              escapeCsvField(r.lineDesc),
+              escapeCsvField(r.departmentName || ''),
+              escapeCsvField(r.status),
+            ].join(','),
+          );
         }
 
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -1638,31 +1880,45 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
            WHERE s.period_id = $1 AND s.organization_id = $2
            GROUP BY e.employee_code, u.full_name, d.name, s.net_pay, disc.type, disc.resolution_status, disc.resolution_notes
            ORDER BY e.employee_code`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
 
         if (format === 'json') {
           return res.status(200).json({ items: rows.rows });
         }
 
-        const headers = ['Mã nhân viên', 'Họ tên', 'Phòng ban', 'Lương thực lĩnh', 'Đã chi trả', 'Sai lệch', 'Trạng thái xử lý', 'Ghi chú'];
+        const headers = [
+          'Mã nhân viên',
+          'Họ tên',
+          'Phòng ban',
+          'Lương thực lĩnh',
+          'Đã chi trả',
+          'Sai lệch',
+          'Trạng thái xử lý',
+          'Ghi chú',
+        ];
         const csvRows = [headers.map(escapeCsvField).join(',')];
 
         for (const r of rows.rows) {
-          csvRows.push([
-            escapeCsvField(r.employeeCode),
-            escapeCsvField(r.employeeName || ''),
-            escapeCsvField(r.departmentName || ''),
-            escapeCsvField(r.netPay),
-            escapeCsvField(r.disbursedAmount),
-            escapeCsvField(r.discrepancyType || 'KHỚP'),
-            escapeCsvField(r.resolutionStatus || ''),
-            escapeCsvField(r.resolutionNotes || ''),
-          ].join(','));
+          csvRows.push(
+            [
+              escapeCsvField(r.employeeCode),
+              escapeCsvField(r.employeeName || ''),
+              escapeCsvField(r.departmentName || ''),
+              escapeCsvField(r.netPay),
+              escapeCsvField(r.disbursedAmount),
+              escapeCsvField(r.discrepancyType || 'KHỚP'),
+              escapeCsvField(r.resolutionStatus || ''),
+              escapeCsvField(r.resolutionNotes || ''),
+            ].join(','),
+          );
         }
 
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="reconciliation_${period.code}.csv"`);
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="reconciliation_${period.code}.csv"`,
+        );
         return res.status(200).send('\uFEFF' + csvRows.join('\r\n'));
       } else if (exportType === 'disbursements') {
         const rows = await pool.query(
@@ -1676,34 +1932,51 @@ export function registerPayrollAccountingRoutes(app: Express, deps: OrgStructure
            LEFT JOIN users u ON u.id = e.user_id
            WHERE d.period_id = $1 AND d.organization_id = $2
            ORDER BY d.payment_date, d.disbursement_code`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
 
         if (format === 'json') {
           return res.status(200).json({ items: rows.rows });
         }
 
-        const headers = ['Mã giao dịch', 'Mã nhân viên', 'Họ tên', 'Ngân hàng', 'Số tài khoản', 'Số tiền', 'Ngày chi trả', 'Phương thức', 'Mã tham chiếu', 'Trạng thái', 'Ghi chú'];
+        const headers = [
+          'Mã giao dịch',
+          'Mã nhân viên',
+          'Họ tên',
+          'Ngân hàng',
+          'Số tài khoản',
+          'Số tiền',
+          'Ngày chi trả',
+          'Phương thức',
+          'Mã tham chiếu',
+          'Trạng thái',
+          'Ghi chú',
+        ];
         const csvRows = [headers.map(escapeCsvField).join(',')];
 
         for (const r of rows.rows) {
-          csvRows.push([
-            escapeCsvField(r.disbursementCode),
-            escapeCsvField(r.employeeCode),
-            escapeCsvField(r.employeeName || ''),
-            escapeCsvField(r.bankName || ''),
-            escapeCsvField(r.bankAccountNumber || ''),
-            escapeCsvField(r.amount),
-            escapeCsvField(r.paymentDate),
-            escapeCsvField(r.paymentMethod),
-            escapeCsvField(r.referenceCode || ''),
-            escapeCsvField(r.status),
-            escapeCsvField(r.notes || ''),
-          ].join(','));
+          csvRows.push(
+            [
+              escapeCsvField(r.disbursementCode),
+              escapeCsvField(r.employeeCode),
+              escapeCsvField(r.employeeName || ''),
+              escapeCsvField(r.bankName || ''),
+              escapeCsvField(r.bankAccountNumber || ''),
+              escapeCsvField(r.amount),
+              escapeCsvField(r.paymentDate),
+              escapeCsvField(r.paymentMethod),
+              escapeCsvField(r.referenceCode || ''),
+              escapeCsvField(r.status),
+              escapeCsvField(r.notes || ''),
+            ].join(','),
+          );
         }
 
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="disbursements_${period.code}.csv"`);
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="disbursements_${period.code}.csv"`,
+        );
         return res.status(200).send('\uFEFF' + csvRows.join('\r\n'));
       } else {
         fail(400, 'INVALID_EXPORT_TYPE');

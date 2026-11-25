@@ -1,4 +1,5 @@
 # Project progress
+
 Update only on meaningful milestones.
 
 AUTH-002: implemented organization-scoped users/RBAC/profile/audit.44backend+16frontend+21governance tests PASS; disposable upgrade and local preview verified. V5.3 continuation Manager-only. Release PARTIAL pending trusted CI/SAST and human high-risk review. See AUTH-002-REPORT.md.

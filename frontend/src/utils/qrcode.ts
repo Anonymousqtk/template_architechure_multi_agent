@@ -123,21 +123,49 @@ const VERSIONS: VersionSpec[] = [
     version: 8,
     totalCodewords: 242,
     L: { dataCodewords: 194, ecPerBlock: 24, blocks: [[2, 97]] },
-    M: { dataCodewords: 154, ecPerBlock: 22, blocks: [[2, 38], [2, 39]] },
+    M: {
+      dataCodewords: 154,
+      ecPerBlock: 22,
+      blocks: [
+        [2, 38],
+        [2, 39],
+      ],
+    },
     alignments: [6, 24, 42],
   },
   {
     version: 9,
     totalCodewords: 292,
     L: { dataCodewords: 232, ecPerBlock: 30, blocks: [[2, 116]] },
-    M: { dataCodewords: 182, ecPerBlock: 22, blocks: [[3, 36], [2, 37]] },
+    M: {
+      dataCodewords: 182,
+      ecPerBlock: 22,
+      blocks: [
+        [3, 36],
+        [2, 37],
+      ],
+    },
     alignments: [6, 26, 46],
   },
   {
     version: 10,
     totalCodewords: 346,
-    L: { dataCodewords: 274, ecPerBlock: 18, blocks: [[2, 68], [2, 69]] },
-    M: { dataCodewords: 216, ecPerBlock: 26, blocks: [[4, 43], [1, 44]] },
+    L: {
+      dataCodewords: 274,
+      ecPerBlock: 18,
+      blocks: [
+        [2, 68],
+        [2, 69],
+      ],
+    },
+    M: {
+      dataCodewords: 216,
+      ecPerBlock: 26,
+      blocks: [
+        [4, 43],
+        [1, 44],
+      ],
+    },
     alignments: [6, 28, 50],
   },
 ];
@@ -158,7 +186,7 @@ class BitBuffer {
       this.buffer.push(0);
     }
     if (bit) {
-      this.buffer[bufIndex] |= 0x80 >>> (this.length % 8);
+      this.buffer[bufIndex] |= 0x80 >>> this.length % 8;
     }
     this.length++;
   }
@@ -251,9 +279,7 @@ export function createQrMatrix(text: string, eccLevel: EccLevel = 'M'): boolean[
 
   // Matrix generation
   const size = selectedSpec.version * 4 + 17;
-  const matrix: (boolean | null)[][] = Array.from({ length: size }, () =>
-    Array(size).fill(null)
-  );
+  const matrix: (boolean | null)[][] = Array.from({ length: size }, () => Array(size).fill(null));
 
   // 1. Finder patterns at top-left, top-right, bottom-left
   function placeFinder(startX: number, startY: number) {
@@ -288,11 +314,7 @@ export function createQrMatrix(text: string, eccLevel: EccLevel = 'M'): boolean[
       if (matrix[cy][cx] !== null) continue; // Skip finders
       for (let y = -2; y <= 2; y++) {
         for (let x = -2; x <= 2; x++) {
-          if (
-            Math.abs(x) === 2 ||
-            Math.abs(y) === 2 ||
-            (x === 0 && y === 0)
-          ) {
+          if (Math.abs(x) === 2 || Math.abs(y) === 2 || (x === 0 && y === 0)) {
             matrix[cy + y][cx + x] = true;
           } else {
             matrix[cy + y][cx + x] = false;
@@ -398,7 +420,7 @@ export function createQrMatrix(text: string, eccLevel: EccLevel = 'M'): boolean[
     else matrix[8][14 - i] = bit;
   }
 
-  return matrix.map(row => row.map(cell => Boolean(cell)));
+  return matrix.map((row) => row.map((cell) => Boolean(cell)));
 }
 
 function isFunctionModule(x: number, y: number, size: number, aligns: number[]): boolean {

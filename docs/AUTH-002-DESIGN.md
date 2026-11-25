@@ -4,12 +4,12 @@ Risk HIGH. Extend AUTH-001; do not duplicate identities, memberships, sessions, 
 
 ## Least-privilege matrix
 
-| Role | Account read/list | Status | Assign role/manager | Audit |
-|---|---|---|---|---|
-| ADMIN | All memberships in own organization | Own organization; protect last Admin | Other members in own organization | Organization audit |
-| HR | Own profile and EMPLOYEE memberships in own organization | EMPLOYEE only, never self | Denied | Denied |
-| MANAGER | Own profile and directly assigned EMPLOYEE memberships | Denied | Denied | Denied |
-| EMPLOYEE | Own profile only; list denied | Denied | Denied | Denied |
+| Role     | Account read/list                                        | Status                               | Assign role/manager               | Audit              |
+| -------- | -------------------------------------------------------- | ------------------------------------ | --------------------------------- | ------------------ |
+| ADMIN    | All memberships in own organization                      | Own organization; protect last Admin | Other members in own organization | Organization audit |
+| HR       | Own profile and EMPLOYEE memberships in own organization | EMPLOYEE only, never self            | Denied                            | Denied             |
+| MANAGER  | Own profile and directly assigned EMPLOYEE memberships   | Denied                               | Denied                            | Denied             |
+| EMPLOYEE | Own profile only; list denied                            | Denied                               | Denied                            | Denied             |
 
 Every operation verifies active user, organization, membership and session. Unknown role/action denies. No global account activation/deactivation API: status toggles membership.is_active in the current organization. This avoids allowing one tenant to disable another tenant's identity. Global users.is_active remains an AUTH-001 security gate. Manager assignments reference a membership in the same organization and can be assigned only by Admin to an active MANAGER. Manager may read direct EMPLOYEE reports only; assignment cannot widen access to HR/Admin. Self-management of role/status/manager assignment is denied. No password hashes, tokens or session IDs in safe user DTOs.
 

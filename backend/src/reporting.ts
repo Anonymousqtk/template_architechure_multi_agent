@@ -4,17 +4,83 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import { managementScope } from './management-scope.js';
 import { escapeLike, type OrgStructureDeps } from './organization-structure.js';
+import { calculatePitTax, type PitBracket } from './payroll-compliance.js';
+import { registerReportBuilderRoutes } from './report-builder-routes.js';
 import { fail, type Authed, type Identity } from './types.js';
 
 const uuid = z.string().uuid();
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+export const DEFAULT_PIT_BRACKETS: PitBracket[] = [
+  { upTo: 5000000.0, rate: 0.05, quickDeduction: 0 },
+  { upTo: 10000000.0, rate: 0.1, quickDeduction: 250000.0 },
+  { upTo: 18000000.0, rate: 0.15, quickDeduction: 750000.0 },
+  { upTo: 32000000.0, rate: 0.2, quickDeduction: 1650000.0 },
+  { upTo: 52000000.0, rate: 0.25, quickDeduction: 3250000.0 },
+  { upTo: 80000000.0, rate: 0.3, quickDeduction: 5850000.0 },
+  { upTo: null, rate: 0.35, quickDeduction: 9850000.0 },
+];
+
+export const ANNUAL_PIT_BRACKETS: PitBracket[] = [
+  { upTo: 60000000.0, rate: 0.05, quickDeduction: 0 },
+  { upTo: 120000000.0, rate: 0.1, quickDeduction: 3000000.0 },
+  { upTo: 216000000.0, rate: 0.15, quickDeduction: 9000000.0 },
+  { upTo: 384000000.0, rate: 0.2, quickDeduction: 19800000.0 },
+  { upTo: 624000000.0, rate: 0.25, quickDeduction: 39000000.0 },
+  { upTo: 960000000.0, rate: 0.3, quickDeduction: 70200000.0 },
+  { upTo: null, rate: 0.35, quickDeduction: 118200000.0 },
+];
+
 type Db = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
+type QueryParameter = string | number | boolean | null | string[];
+
+interface ReportPeriod {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  start_date: string;
+  end_date: string;
+}
+
+interface PositionSummary {
+  id: string;
+  code: string;
+  title: string;
+  employeeCount: number;
+}
+
+interface JournalLineSummary {
+  id: string;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  departmentName: string;
+  debitAmount: string;
+  creditAmount: string;
+  description: string;
+  lineOrder: number;
+}
+
+interface PayrollSlipItemRow {
+  slip_id: string;
+  component_name: string;
+  type: string;
+  amount: string;
+}
 
 export interface ReportCatalogItem {
   id?: string;
   code: string;
-  category: 'EMPLOYEE' | 'ORGANIZATION' | 'ATTENDANCE' | 'LEAVE' | 'PAYROLL' | 'ACCOUNTING' | 'COMPLIANCE' | 'OTHER';
+  category:
+    | 'EMPLOYEE'
+    | 'ORGANIZATION'
+    | 'ATTENDANCE'
+    | 'LEAVE'
+    | 'PAYROLL'
+    | 'ACCOUNTING'
+    | 'COMPLIANCE'
+    | 'OTHER';
   name: string;
   description: string;
   minRole: 'ADMIN' | 'HR' | 'MANAGER' | 'EMPLOYEE';
@@ -27,99 +93,175 @@ export const DEFAULT_REPORT_CATALOG: ReportCatalogItem[] = [
     code: 'RPT-EMP-01',
     category: 'EMPLOYEE',
     name: 'Báo cáo nhân sự & biến động nhân sự',
-    description: 'Tổng hợp danh sách nhân viên, trạng thái hoạt động, cơ cấu phòng ban, chức vụ, loại hợp đồng và thâm niên làm việc.',
+    description:
+      'Tổng hợp danh sách nhân viên, trạng thái hoạt động, cơ cấu phòng ban, chức vụ, loại hợp đồng và thâm niên làm việc.',
     minRole: 'MANAGER',
     displayOrder: 1,
-    supportedFilters: ['departmentId', 'positionId', 'status', 'contractType', 'search', 'hireDateFrom', 'hireDateTo']
+    supportedFilters: [
+      'departmentId',
+      'positionId',
+      'status',
+      'contractType',
+      'search',
+      'hireDateFrom',
+      'hireDateTo',
+    ],
   },
   {
     code: 'RPT-ORG-01',
     category: 'ORGANIZATION',
     name: 'Báo cáo cơ cấu tổ chức & phòng ban',
-    description: 'Thống kê sơ đồ phân cấp phòng ban, chức vụ, số lượng nhân sự định biên và độ bao phủ quản lý.',
+    description:
+      'Thống kê sơ đồ phân cấp phòng ban, chức vụ, số lượng nhân sự định biên và độ bao phủ quản lý.',
     minRole: 'MANAGER',
     displayOrder: 2,
-    supportedFilters: ['departmentId', 'isActive']
+    supportedFilters: ['departmentId', 'isActive'],
   },
   {
     code: 'RPT-ATT-01',
     category: 'ATTENDANCE',
     name: 'Báo cáo tổng hợp chấm công & ca làm việc',
-    description: 'Thống kê chi tiết ca làm việc, số ngày công, đi muộn, về sớm, tăng ca và tỷ lệ hiện diện.',
+    description:
+      'Thống kê chi tiết ca làm việc, số ngày công, đi muộn, về sớm, tăng ca và tỷ lệ hiện diện.',
     minRole: 'EMPLOYEE',
     displayOrder: 3,
-    supportedFilters: ['startDate', 'endDate', 'departmentId', 'employeeId', 'status', 'search']
+    supportedFilters: ['startDate', 'endDate', 'departmentId', 'employeeId', 'status', 'search'],
   },
   {
     code: 'RPT-LEAVE-01',
     category: 'LEAVE',
     name: 'Báo cáo tình hình nghỉ phép & số dư phép',
-    description: 'Theo dõi hạn mức phép, số ngày đã sử dụng, số dư còn lại và chi tiết các đơn xin nghỉ phép.',
+    description:
+      'Theo dõi hạn mức phép, số ngày đã sử dụng, số dư còn lại và chi tiết các đơn xin nghỉ phép.',
     minRole: 'EMPLOYEE',
     displayOrder: 4,
-    supportedFilters: ['startDate', 'endDate', 'departmentId', 'leaveTypeId', 'employeeId', 'status', 'search']
+    supportedFilters: [
+      'startDate',
+      'endDate',
+      'departmentId',
+      'leaveTypeId',
+      'employeeId',
+      'status',
+      'search',
+    ],
   },
   {
     code: 'RPT-PAY-01',
     category: 'PAYROLL',
     name: 'Bảng lương tổng hợp & chi tiết theo kỳ',
-    description: 'Tổng hợp quỹ lương Gross, lương cơ bản, phụ cấp, thưởng, khấu trừ và thực lĩnh (Net) theo từng kỳ lương.',
+    description:
+      'Tổng hợp quỹ lương Gross, lương cơ bản, phụ cấp, thưởng, khấu trừ và thực lĩnh (Net) theo từng kỳ lương.',
     minRole: 'MANAGER',
     displayOrder: 5,
-    supportedFilters: ['periodId', 'departmentId', 'search']
+    supportedFilters: ['periodId', 'departmentId', 'search'],
   },
   {
     code: 'RPT-PAY-02',
     category: 'PAYROLL',
     name: 'Báo cáo cơ cấu phụ cấp, thưởng & khấu trừ',
-    description: 'Phân tích chi tiết từng cấu phần phụ cấp (chịu thuế/miễn thuế), thưởng và các khoản khấu trừ bảo hiểm, thuế, tạm ứng.',
+    description:
+      'Phân tích chi tiết từng cấu phần phụ cấp (chịu thuế/miễn thuế), thưởng và các khoản khấu trừ bảo hiểm, thuế, tạm ứng.',
     minRole: 'HR',
     displayOrder: 6,
-    supportedFilters: ['periodId', 'componentType', 'departmentId']
+    supportedFilters: ['periodId', 'componentType', 'departmentId'],
   },
   {
     code: 'RPT-PAY-03',
     category: 'PAYROLL',
     name: 'Báo cáo biến động quỹ lương giữa các kỳ (MoM)',
-    description: 'So sánh biến động quỹ lương Gross, Net, số lượng nhân sự và tỷ lệ tăng giảm giữa hai kỳ lương liên tiếp.',
+    description:
+      'So sánh biến động quỹ lương Gross, Net, số lượng nhân sự và tỷ lệ tăng giảm giữa hai kỳ lương liên tiếp.',
     minRole: 'HR',
     displayOrder: 7,
-    supportedFilters: ['periodId', 'comparePeriodId']
+    supportedFilters: ['periodId', 'comparePeriodId'],
   },
   {
     code: 'RPT-ACC-01',
     category: 'ACCOUNTING',
     name: 'Báo cáo phân bổ chi phí lương theo phòng ban & đơn vị',
-    description: 'Phân bổ chi phí lương Gross, bảo hiểm bắt buộc người sử dụng LĐ (21.5%) và kinh phí công đoàn (2%) sang tài khoản chi phí VAS (6422, 6421).',
+    description:
+      'Phân bổ chi phí lương Gross, bảo hiểm bắt buộc người sử dụng LĐ (21.5%) và kinh phí công đoàn (2%) sang tài khoản chi phí VAS (6422, 6421).',
     minRole: 'HR',
     displayOrder: 8,
-    supportedFilters: ['periodId', 'departmentId']
+    supportedFilters: ['periodId', 'departmentId'],
   },
   {
     code: 'RPT-ACC-02',
     category: 'ACCOUNTING',
     name: 'Báo cáo công nợ lương & đối chiếu thanh toán',
-    description: 'Đối chiếu công nợ lương phải trả người lao động (TK 3341), số tiền đã chi trả thực tế qua ngân hàng và số dư còn phải trả.',
+    description:
+      'Đối chiếu công nợ lương phải trả người lao động (TK 3341), số tiền đã chi trả thực tế qua ngân hàng và số dư còn phải trả.',
     minRole: 'HR',
     displayOrder: 9,
-    supportedFilters: ['periodId', 'status']
+    supportedFilters: ['periodId', 'status'],
   },
   {
     code: 'RPT-ACC-03',
     category: 'ACCOUNTING',
     name: 'Báo cáo sổ nhật ký bút toán kế toán lương',
-    description: 'Kiểm toán sổ nhật ký chung các bút toán kế toán lương, kiểm tra cân đối tổng Nợ = tổng Có và lưu vết đảo bút toán.',
+    description:
+      'Kiểm toán sổ nhật ký chung các bút toán kế toán lương, kiểm tra cân đối tổng Nợ = tổng Có và lưu vết đảo bút toán.',
     minRole: 'HR',
     displayOrder: 10,
-    supportedFilters: ['periodId', 'status', 'accountId']
-  }
+    supportedFilters: ['periodId', 'status', 'accountId'],
+  },
+  {
+    code: 'RPT-TAX-01',
+    category: 'COMPLIANCE',
+    name: 'Báo cáo tổng hợp thuế TNCN & Kê khai định kỳ (Mẫu 05/KK-TNCN)',
+    description:
+      'Tổng hợp thu nhập chịu thuế, giảm trừ gia cảnh (NQ 954/2020), thuế TNCN lũy tiến từng phần theo Thông tư 111/2013/TT-BTC và đối chiếu bảng lương.',
+    minRole: 'HR',
+    displayOrder: 11,
+    supportedFilters: ['periodId', 'departmentId', 'search'],
+  },
+  {
+    code: 'RPT-TAX-02',
+    category: 'COMPLIANCE',
+    name: 'Báo cáo quyết toán thuế TNCN năm (Mẫu 05/QTT-TNCN)',
+    description:
+      'Tổng hợp quyết toán thuế TNCN năm, cá nhân cư trú có HĐLĐ từ 3 tháng trở lên, ủy quyền quyết toán và xác định số thuế nộp thừa/thiếu.',
+    minRole: 'HR',
+    displayOrder: 12,
+    supportedFilters: ['year', 'departmentId', 'search'],
+  },
+  {
+    code: 'RPT-INS-01',
+    category: 'COMPLIANCE',
+    name: 'Báo cáo trích nộp BHXH, BHYT, BHTN & Kinh phí công đoàn',
+    description:
+      'Tổng hợp trích nộp BHXH (8%/17.5%), BHYT (1.5%/3%), BHTN (1%/1%), KPCĐ (2%) theo NĐ 73/2024, NĐ 74/2024 và đối chiếu bảng lương.',
+    minRole: 'HR',
+    displayOrder: 13,
+    supportedFilters: ['periodId', 'departmentId', 'search'],
+  },
+  {
+    code: 'RPT-INS-02',
+    category: 'COMPLIANCE',
+    name: 'Báo cáo tình hình biến động lao động tham gia bảo hiểm (Mẫu D02-LT)',
+    description:
+      'Danh sách tăng, giảm, điều chỉnh mức đóng BHXH, BHYT, BHTN theo Quyết định 595/QĐ-BHXH và Quyết định 490/QĐ-BHXH.',
+    minRole: 'HR',
+    displayOrder: 14,
+    supportedFilters: ['month', 'year', 'departmentId', 'search'],
+  },
+  {
+    code: 'RPT-LAB-01',
+    category: 'COMPLIANCE',
+    name: 'Báo cáo tình hình sử dụng lao động định kỳ (Mẫu 01/PLI)',
+    description:
+      'Báo cáo tình hình thay đổi lao động định kỳ 6 tháng và hàng năm theo Nghị định 145/2020/NĐ-CP gửi Sở LĐ-TB&XH.',
+    minRole: 'HR',
+    displayOrder: 15,
+    supportedFilters: ['year', 'half', 'departmentId', 'search'],
+  },
 ];
 
 const ROLE_RANKS: Record<string, number> = {
   ADMIN: 4,
   HR: 3,
   MANAGER: 2,
-  EMPLOYEE: 1
+  EMPLOYEE: 1,
 };
 
 export function canAccessReport(userRole: string, minRole: string): boolean {
@@ -146,8 +288,8 @@ export function toDecimal(cents: bigint): string {
 async function buildEmployeeScopeClause(
   db: Db,
   identity: Identity,
-  startParamIndex: number
-): Promise<{ clause: string; params: any[]; nextIndex: number }> {
+  startParamIndex: number,
+): Promise<{ clause: string; params: QueryParameter[]; nextIndex: number }> {
   if (['ADMIN', 'HR'].includes(identity.role)) {
     return { clause: '1=1', params: [], nextIndex: startParamIndex };
   }
@@ -156,7 +298,7 @@ async function buildEmployeeScopeClause(
     return {
       clause: `e.user_id = $${startParamIndex}`,
       params: [identity.userId],
-      nextIndex: startParamIndex + 1
+      nextIndex: startParamIndex + 1,
     };
   }
 
@@ -166,7 +308,7 @@ async function buildEmployeeScopeClause(
     return {
       clause: `e.user_id = $${startParamIndex}`,
       params: [identity.userId],
-      nextIndex: startParamIndex + 1
+      nextIndex: startParamIndex + 1,
     };
   }
 
@@ -177,12 +319,12 @@ async function buildEmployeeScopeClause(
   return {
     clause: `(e.department_id = ANY($${deptParamIdx}::uuid[]) OR e.user_id = ANY($${userParamIdx}::uuid[]) OR e.manager_user_id = $${selfParamIdx} OR e.user_id = $${selfParamIdx})`,
     params: [scope.departments, scope.users, identity.userId],
-    nextIndex: startParamIndex + 3
+    nextIndex: startParamIndex + 3,
   };
 }
 
 // Helper to sanitize CSV cells
-function escapeCsvCell(val: any): string {
+function escapeCsvCell(val: unknown): string {
   if (val === null || val === undefined) return '';
   const str = String(val);
   if (/[",\r\n]/.test(str)) {
@@ -192,7 +334,8 @@ function escapeCsvCell(val: any): string {
 }
 
 export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
-  const { pool, transaction, audit, requireIdentity } = deps;
+  registerReportBuilderRoutes(app, deps);
+  const { pool, audit, requireIdentity } = deps;
   const prefix = '/api/organizations/:organizationId/reports';
 
   function identityFor(req: Authed): Identity {
@@ -206,7 +349,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
   async function ensureDefaultCatalog(orgId: string): Promise<void> {
     const countRes = await pool.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM report_catalog WHERE organization_id = $1',
-      [orgId]
+      [orgId],
     );
     if (parseInt(countRes.rows[0].count, 10) === 0) {
       for (const item of DEFAULT_REPORT_CATALOG) {
@@ -223,8 +366,8 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             item.description,
             item.minRole,
             item.displayOrder,
-            JSON.stringify(item.supportedFilters)
-          ]
+            JSON.stringify(item.supportedFilters),
+          ],
         );
       }
     }
@@ -248,19 +391,19 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         description: string;
         min_role: string;
         display_order: number;
-        supported_filters: any;
+        supported_filters: string[];
       }>(
         `SELECT id, code, category, name, description, min_role, display_order, supported_filters
          FROM report_catalog
          WHERE organization_id = $1 AND is_active = true
          ORDER BY display_order ASC, code ASC`,
-        [identity.orgId]
+        [identity.orgId],
       );
 
       // Filter catalog based on caller role
       const available = rows.rows
-        .filter(r => canAccessReport(identity.role, r.min_role))
-        .map(r => ({
+        .filter((r) => canAccessReport(identity.role, r.min_role))
+        .map((r) => ({
           id: r.id,
           code: r.code,
           category: r.category,
@@ -268,7 +411,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           description: r.description,
           minRole: r.min_role,
           displayOrder: r.display_order,
-          supportedFilters: r.supported_filters
+          supportedFilters: r.supported_filters,
         }));
 
       res.json({ reports: available });
@@ -303,8 +446,8 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             item.description,
             item.minRole,
             item.displayOrder,
-            JSON.stringify(item.supportedFilters)
-          ]
+            JSON.stringify(item.supportedFilters),
+          ],
         );
       }
 
@@ -327,9 +470,13 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const departmentId = req.query.departmentId ? uuid.parse(req.query.departmentId) : undefined;
       const positionId = req.query.positionId ? uuid.parse(req.query.positionId) : undefined;
       const status = req.query.status ? String(req.query.status).toUpperCase() : undefined;
-      const contractType = req.query.contractType ? String(req.query.contractType).toUpperCase() : undefined;
+      const contractType = req.query.contractType
+        ? String(req.query.contractType).toUpperCase()
+        : undefined;
       const search = req.query.search ? String(req.query.search).trim() : undefined;
-      const hireDateFrom = req.query.hireDateFrom ? isoDate.parse(req.query.hireDateFrom) : undefined;
+      const hireDateFrom = req.query.hireDateFrom
+        ? isoDate.parse(req.query.hireDateFrom)
+        : undefined;
       const hireDateTo = req.query.hireDateTo ? isoDate.parse(req.query.hireDateTo) : undefined;
 
       const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
@@ -337,7 +484,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const offset = (page - 1) * pageSize;
 
       // Base query params
-      const params: any[] = [identity.orgId];
+      const params: QueryParameter[] = [identity.orgId];
       let paramIdx = 2;
 
       // Employee scope clause
@@ -374,7 +521,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       }
 
       // If contractType filter is requested
-      let contractJoin = `LEFT JOIN LATERAL (
+      const contractJoin = `LEFT JOIN LATERAL (
         SELECT contract_number, contract_type, status, start_date, end_date
         FROM employee_contracts c
         WHERE c.employee_id = e.id AND c.organization_id = e.organization_id AND c.status = 'ACTIVE'
@@ -404,7 +551,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         active_count: 0,
         on_leave_count: 0,
         terminated_count: 0,
-        avg_tenure_months: 0
+        avg_tenure_months: 0,
       };
 
       // 2. Department Breakdown
@@ -466,16 +613,22 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           onLeaveEmployees: summary.on_leave_count,
           terminatedEmployees: summary.terminated_count,
           averageTenureMonths: parseFloat(summary.avg_tenure_months || 0),
-          departmentBreakdown: deptBreakdownRes.rows.map(r => ({ name: r.department_name, count: r.count })),
-          contractBreakdown: contractBreakdownRes.rows.map(r => ({ type: r.contract_type, count: r.count }))
+          departmentBreakdown: deptBreakdownRes.rows.map((r) => ({
+            name: r.department_name,
+            count: r.count,
+          })),
+          contractBreakdown: contractBreakdownRes.rows.map((r) => ({
+            type: r.contract_type,
+            count: r.count,
+          })),
         },
         pagination: {
           page,
           pageSize,
           totalRows: summary.total_employees,
-          totalPages: Math.ceil(summary.total_employees / pageSize) || 1
+          totalPages: Math.ceil(summary.total_employees / pageSize) || 1,
         },
-        items: listRes.rows.map(r => ({
+        items: listRes.rows.map((r) => ({
           id: r.id,
           employeeCode: r.employee_code,
           fullName: r.full_name,
@@ -488,8 +641,8 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           managerName: r.manager_name || '—',
           contractType: r.contract_type || '—',
           contractNumber: r.contract_number || '—',
-          tenureMonths: r.tenure_months || 0
-        }))
+          tenureMonths: r.tenure_months || 0,
+        })),
       });
     } catch (err) {
       next(err);
@@ -508,7 +661,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const departmentId = req.query.departmentId ? uuid.parse(req.query.departmentId) : undefined;
       const isActive = req.query.isActive !== undefined ? req.query.isActive === 'true' : true;
 
-      const params: any[] = [identity.orgId];
+      const params: QueryParameter[] = [identity.orgId];
       let paramIdx = 2;
 
       let whereDept = `d.organization_id = $1`;
@@ -569,8 +722,14 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         WHERE p.organization_id = $1 AND p.is_active = true
         ORDER BY p.code ASC
       `;
-      const posRes = await pool.query(posQuery, [identity.orgId]);
-      const positionsByDept = new Map<string, any[]>();
+      const posRes = await pool.query<{
+        id: string;
+        department_id: string | null;
+        code: string;
+        title: string;
+        employee_count: number;
+      }>(posQuery, [identity.orgId]);
+      const positionsByDept = new Map<string, PositionSummary[]>();
       for (const pos of posRes.rows) {
         const dId = pos.department_id || 'unassigned';
         const arr = positionsByDept.get(dId) || [];
@@ -578,7 +737,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           id: pos.id,
           code: pos.code,
           title: pos.title,
-          employeeCount: pos.employee_count
+          employeeCount: pos.employee_count,
         });
         positionsByDept.set(dId, arr);
       }
@@ -588,7 +747,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       let totalPositions = 0;
       let withManagerCount = 0;
 
-      const departments = deptListRes.rows.map(d => {
+      const departments = deptListRes.rows.map((d) => {
         totalAssignedEmployees += d.active_employee_count;
         totalPositions += d.position_count;
         if (d.manager_name) withManagerCount++;
@@ -603,7 +762,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           isActive: d.is_active,
           employeeCount: d.active_employee_count,
           positionCount: d.position_count,
-          positions: positionsByDept.get(d.id) || []
+          positions: positionsByDept.get(d.id) || [],
         };
       });
 
@@ -613,9 +772,9 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           totalPositions,
           totalAssignedEmployees,
           departmentsWithManager: withManagerCount,
-          departmentsWithoutManager: totalDepartments - withManagerCount
+          departmentsWithoutManager: totalDepartments - withManagerCount,
         },
-        items: departments
+        items: departments,
       });
     } catch (err) {
       next(err);
@@ -635,7 +794,9 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const search = req.query.search ? String(req.query.search).trim() : undefined;
 
       const now = new Date();
-      const defaultStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+      const defaultStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+        .toISOString()
+        .slice(0, 10);
       const defaultEnd = now.toISOString().slice(0, 10);
 
       const startDate = req.query.startDate ? isoDate.parse(req.query.startDate) : defaultStart;
@@ -645,7 +806,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize || '20'), 10)));
       const offset = (page - 1) * pageSize;
 
-      const params: any[] = [identity.orgId, startDate, endDate];
+      const params: QueryParameter[] = [identity.orgId, startDate, endDate];
       let paramIdx = 4;
 
       const scope = await buildEmployeeScopeClause(pool, identity, paramIdx);
@@ -776,14 +937,15 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             checkedOutAt: row.checked_out_at || null,
             status: attStatus,
             lateMinutes: lateMins,
-            earlyMinutes: earlyMins
+            earlyMinutes: earlyMins,
           });
         }
       }
 
       const totalFiltered = processedRows.length;
       const paginatedItems = processedRows.slice(offset, offset + pageSize);
-      const attendanceRate = totalSchedules > 0 ? parseFloat(((presentCount / totalSchedules) * 100).toFixed(1)) : 100;
+      const attendanceRate =
+        totalSchedules > 0 ? parseFloat(((presentCount / totalSchedules) * 100).toFixed(1)) : 100;
 
       res.json({
         metrics: {
@@ -795,15 +957,15 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           absentCount,
           totalLateMinutes,
           totalEarlyMinutes,
-          attendanceRate
+          attendanceRate,
         },
         pagination: {
           page,
           pageSize,
           totalRows: totalFiltered,
-          totalPages: Math.ceil(totalFiltered / pageSize) || 1
+          totalPages: Math.ceil(totalFiltered / pageSize) || 1,
         },
-        items: paginatedItems
+        items: paginatedItems,
       });
     } catch (err) {
       next(err);
@@ -823,7 +985,9 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const search = req.query.search ? String(req.query.search).trim() : undefined;
 
       const now = new Date();
-      const defaultStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1)).toISOString().slice(0, 10);
+      const defaultStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1))
+        .toISOString()
+        .slice(0, 10);
       const defaultEnd = now.toISOString().slice(0, 10);
 
       const startDate = req.query.startDate ? isoDate.parse(req.query.startDate) : defaultStart;
@@ -834,7 +998,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const offset = (page - 1) * pageSize;
 
       // 1. Balances query
-      const bParams: any[] = [identity.orgId];
+      const bParams: QueryParameter[] = [identity.orgId];
       let bIdx = 2;
 
       const bScope = await buildEmployeeScopeClause(pool, identity, bIdx);
@@ -888,7 +1052,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       let totalChargedMinutes = 0;
       let totalRemainingMinutes = 0;
 
-      const balances = balanceRes.rows.map(r => {
+      const balances = balanceRes.rows.map((r) => {
         const allowance = r.allowance_minutes || 0;
         const charged = r.charged_minutes || 0;
         const remaining = Math.max(0, allowance - charged);
@@ -911,12 +1075,12 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           chargedDays: parseFloat((charged / 480).toFixed(2)),
           remainingMinutes: remaining,
           remainingDays: parseFloat((remaining / 480).toFixed(2)),
-          utilizationRate: rate
+          utilizationRate: rate,
         };
       });
 
       // 2. Leave requests in date range
-      const rParams: any[] = [identity.orgId, startDate, endDate];
+      const rParams: QueryParameter[] = [identity.orgId, startDate, endDate];
       let rIdx = 4;
 
       const rScope = await buildEmployeeScopeClause(pool, identity, rIdx);
@@ -964,9 +1128,9 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const requestsRes = await pool.query(requestsQuery, rParams);
 
       const totalLeaveRequests = requestsRes.rows.length;
-      const approvedCount = requestsRes.rows.filter(r => r.status === 'APPROVED').length;
-      const pendingCount = requestsRes.rows.filter(r => r.status === 'PENDING').length;
-      const rejectedCount = requestsRes.rows.filter(r => r.status === 'REJECTED').length;
+      const approvedCount = requestsRes.rows.filter((r) => r.status === 'APPROVED').length;
+      const pendingCount = requestsRes.rows.filter((r) => r.status === 'PENDING').length;
+      const rejectedCount = requestsRes.rows.filter((r) => r.status === 'REJECTED').length;
 
       const overallUtilizationRate =
         totalAllowanceMinutes > 0
@@ -985,16 +1149,16 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           totalLeaveRequests,
           approvedRequests: approvedCount,
           pendingRequests: pendingCount,
-          rejectedRequests: rejectedCount
+          rejectedRequests: rejectedCount,
         },
         pagination: {
           page,
           pageSize,
           totalRows,
-          totalPages: Math.ceil(totalRows / pageSize) || 1
+          totalPages: Math.ceil(totalRows / pageSize) || 1,
         },
         balances: paginatedBalances,
-        requests: requestsRes.rows.map(r => ({
+        requests: requestsRes.rows.map((r) => ({
           id: r.id,
           employeeCode: r.employee_code,
           fullName: r.full_name,
@@ -1007,8 +1171,8 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           status: r.status,
           reason: r.reason,
           reviewerName: r.reviewer_name || '—',
-          createdAt: r.created_at
-        }))
+          createdAt: r.created_at,
+        })),
       });
     } catch (err) {
       next(err);
@@ -1036,7 +1200,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       if (!periodId) {
         const latestPeriodRes = await pool.query<{ id: string }>(
           `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-          [identity.orgId]
+          [identity.orgId],
         );
         if (latestPeriodRes.rowCount && latestPeriodRes.rows[0]) {
           periodId = latestPeriodRes.rows[0].id;
@@ -1054,26 +1218,32 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             totalAllowances: '0.00',
             totalBonuses: '0.00',
             totalStandardDays: 0,
-            totalActualDays: 0
+            totalActualDays: 0,
           },
           pagination: { page, pageSize, totalRows: 0, totalPages: 1 },
-          items: []
+          items: [],
         });
       }
 
       const periodRes = await pool.query<{
-        id: string; code: string; name: string; start_date: string; end_date: string;
-        payment_date: string | null; standard_working_days: string; status: string;
+        id: string;
+        code: string;
+        name: string;
+        start_date: string;
+        end_date: string;
+        payment_date: string | null;
+        standard_working_days: string;
+        status: string;
       }>(
         `SELECT id, code, name, start_date::text, end_date::text, payment_date::text, standard_working_days::text, status
          FROM payroll_periods
          WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
 
-      const params: any[] = [identity.orgId, periodId];
+      const params: QueryParameter[] = [identity.orgId, periodId];
       let paramIdx = 3;
 
       const scope = await buildEmployeeScopeClause(pool, identity, paramIdx);
@@ -1170,7 +1340,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           paymentDate: period.payment_date,
           standardWorkingDays: parseFloat(period.standard_working_days || '22'),
           status: period.status,
-          isDraft: period.status !== 'CLOSED'
+          isDraft: period.status !== 'CLOSED',
         },
         metrics: {
           totalSlips,
@@ -1180,15 +1350,15 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           totalAllowances: toDecimal(toCents(agg?.sum_allowances || '0')),
           totalBonuses: toDecimal(toCents(agg?.sum_bonuses || '0')),
           totalStandardDays: parseFloat(agg?.sum_standard_days || '0'),
-          totalActualDays: parseFloat(agg?.sum_actual_days || '0')
+          totalActualDays: parseFloat(agg?.sum_actual_days || '0'),
         },
         pagination: {
           page,
           pageSize,
           totalRows: totalSlips,
-          totalPages: Math.ceil(totalSlips / pageSize) || 1
+          totalPages: Math.ceil(totalSlips / pageSize) || 1,
         },
-        items: listRes.rows.map(r => ({
+        items: listRes.rows.map((r) => ({
           slipId: r.slip_id,
           employeeCode: r.employee_code,
           fullName: r.full_name,
@@ -1203,8 +1373,8 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           bonusesAmount: toDecimal(toCents(r.bonuses_amount)),
           deductionsAmount: toDecimal(toCents(r.total_deductions)),
           netPay: toDecimal(toCents(r.net_pay)),
-          status: r.status
-        }))
+          status: r.status,
+        })),
       });
     } catch (err) {
       next(err);
@@ -1221,13 +1391,15 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       if (!canAccessReport(identity.role, 'HR')) fail(403, 'FORBIDDEN');
 
       let periodId = req.query.periodId ? uuid.parse(req.query.periodId) : undefined;
-      const componentType = req.query.componentType ? String(req.query.componentType).toUpperCase() : undefined;
+      const componentType = req.query.componentType
+        ? String(req.query.componentType).toUpperCase()
+        : undefined;
       const departmentId = req.query.departmentId ? uuid.parse(req.query.departmentId) : undefined;
 
       if (!periodId) {
         const latestPeriodRes = await pool.query<{ id: string }>(
           `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-          [identity.orgId]
+          [identity.orgId],
         );
         if (latestPeriodRes.rowCount && latestPeriodRes.rows[0]) {
           periodId = latestPeriodRes.rows[0].id;
@@ -1242,20 +1414,25 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             totalBonuses: '0.00',
             totalDeductions: '0.00',
             taxableAllowances: '0.00',
-            nonTaxableAllowances: '0.00'
+            nonTaxableAllowances: '0.00',
           },
-          items: []
+          items: [],
         });
       }
 
-      const periodRes = await pool.query<{ id: string; code: string; name: string; status: string }>(
+      const periodRes = await pool.query<{
+        id: string;
+        code: string;
+        name: string;
+        status: string;
+      }>(
         `SELECT id, code, name, status FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
 
-      const params: any[] = [identity.orgId, periodId];
+      const params: QueryParameter[] = [identity.orgId, periodId];
       let paramIdx = 3;
 
       let where = `i.organization_id = $1 AND s.period_id = $2`;
@@ -1289,10 +1466,12 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       let taxableAllowanceCents = 0n;
       let nonTaxableAllowanceCents = 0n;
 
-      const items = resRows.rows.map(r => {
+      const items = resRows.rows.map((r) => {
         const amtCents = toCents(r.total_amount);
         const nameLower = r.component_name.toLowerCase();
-        const isNonTaxable = /ăn trưa|xăng xe|đồng phục|trang phục|công tác phí|điện thoại/i.test(nameLower);
+        const isNonTaxable = /ăn trưa|xăng xe|đồng phục|trang phục|công tác phí|điện thoại/i.test(
+          nameLower,
+        );
 
         if (r.type === 'ALLOWANCE') {
           allowanceCents += amtCents;
@@ -1312,20 +1491,26 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           type: r.type,
           totalAmount: toDecimal(amtCents),
           recipientCount: r.recipient_count,
-          isTaxable: r.type === 'ALLOWANCE' ? !isNonTaxable : true
+          isTaxable: r.type === 'ALLOWANCE' ? !isNonTaxable : true,
         };
       });
 
       res.json({
-        period: { id: period.id, code: period.code, name: period.name, status: period.status, isDraft: period.status !== 'CLOSED' },
+        period: {
+          id: period.id,
+          code: period.code,
+          name: period.name,
+          status: period.status,
+          isDraft: period.status !== 'CLOSED',
+        },
         metrics: {
           totalAllowances: toDecimal(allowanceCents),
           totalBonuses: toDecimal(bonusCents),
           totalDeductions: toDecimal(deductionCents),
           taxableAllowances: toDecimal(taxableAllowanceCents),
-          nonTaxableAllowances: toDecimal(nonTaxableAllowanceCents)
+          nonTaxableAllowances: toDecimal(nonTaxableAllowanceCents),
         },
-        items
+        items,
       });
     } catch (err) {
       next(err);
@@ -1349,7 +1534,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       if (!periodId) {
         const latestPeriodRes = await pool.query<{ id: string }>(
           `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-          [identity.orgId]
+          [identity.orgId],
         );
         if (latestPeriodRes.rowCount && latestPeriodRes.rows[0]) {
           periodId = latestPeriodRes.rows[0].id;
@@ -1360,9 +1545,15 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         return res.json({ current: null, compare: null, variance: null, anomalousEmployees: [] });
       }
 
-      const curPeriodRes = await pool.query<{ id: string; code: string; name: string; start_date: string; status: string }>(
+      const curPeriodRes = await pool.query<{
+        id: string;
+        code: string;
+        name: string;
+        start_date: string;
+        status: string;
+      }>(
         `SELECT id, code, name, start_date::text, status FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!curPeriodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
       const curPeriod = curPeriodRes.rows[0];
@@ -1373,7 +1564,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           `SELECT id FROM payroll_periods
            WHERE organization_id = $1 AND start_date < $2::date
            ORDER BY start_date DESC LIMIT 1`,
-          [identity.orgId, curPeriod.start_date]
+          [identity.orgId, curPeriod.start_date],
         );
         if (compPeriodRes.rowCount && compPeriodRes.rows[0]) {
           comparePeriodId = compPeriodRes.rows[0].id;
@@ -1382,7 +1573,10 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
 
       // Query totals for current period
       const curSummary = await pool.query<{
-        headcount: number; sum_gross: string; sum_net: string; sum_deductions: string;
+        headcount: number;
+        sum_gross: string;
+        sum_net: string;
+        sum_deductions: string;
       }>(
         `SELECT
            count(*)::int AS headcount,
@@ -1391,24 +1585,41 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
            COALESCE(sum(total_deductions), 0)::text AS sum_deductions
          FROM payroll_slips
          WHERE organization_id = $1 AND period_id = $2`,
-        [identity.orgId, periodId]
+        [identity.orgId, periodId],
       );
-      const cur = curSummary.rows[0] || { headcount: 0, sum_gross: '0', sum_net: '0', sum_deductions: '0' };
-
-      let comp: { headcount: number; sum_gross: string; sum_net: string; sum_deductions: string } = {
-        headcount: 0, sum_gross: '0', sum_net: '0', sum_deductions: '0'
+      const cur = curSummary.rows[0] || {
+        headcount: 0,
+        sum_gross: '0',
+        sum_net: '0',
+        sum_deductions: '0',
       };
+
+      let comp: { headcount: number; sum_gross: string; sum_net: string; sum_deductions: string } =
+        {
+          headcount: 0,
+          sum_gross: '0',
+          sum_net: '0',
+          sum_deductions: '0',
+        };
       let compPeriod = null;
 
       if (comparePeriodId) {
-        const compPeriodRow = await pool.query<{ id: string; code: string; name: string; status: string }>(
+        const compPeriodRow = await pool.query<{
+          id: string;
+          code: string;
+          name: string;
+          status: string;
+        }>(
           `SELECT id, code, name, status FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-          [comparePeriodId, identity.orgId]
+          [comparePeriodId, identity.orgId],
         );
         if (compPeriodRow.rowCount && compPeriodRow.rows[0]) {
           compPeriod = compPeriodRow.rows[0];
           const compRes = await pool.query<{
-            headcount: number; sum_gross: string; sum_net: string; sum_deductions: string;
+            headcount: number;
+            sum_gross: string;
+            sum_net: string;
+            sum_deductions: string;
           }>(
             `SELECT
                count(*)::int AS headcount,
@@ -1417,7 +1628,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
                COALESCE(sum(total_deductions), 0)::text AS sum_deductions
              FROM payroll_slips
              WHERE organization_id = $1 AND period_id = $2`,
-            [identity.orgId, comparePeriodId]
+            [identity.orgId, comparePeriodId],
           );
           comp = compRes.rows[0] || comp;
         }
@@ -1426,20 +1637,30 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const curGrossCents = toCents(cur.sum_gross);
       const compGrossCents = toCents(comp.sum_gross);
       const grossDeltaCents = curGrossCents - compGrossCents;
-      const grossPercent = compGrossCents > 0n ? parseFloat(((Number(grossDeltaCents) / Number(compGrossCents)) * 100).toFixed(2)) : 0;
+      const grossPercent =
+        compGrossCents > 0n
+          ? parseFloat(((Number(grossDeltaCents) / Number(compGrossCents)) * 100).toFixed(2))
+          : 0;
 
       const curNetCents = toCents(cur.sum_net);
       const compNetCents = toCents(comp.sum_net);
       const netDeltaCents = curNetCents - compNetCents;
-      const netPercent = compNetCents > 0n ? parseFloat(((Number(netDeltaCents) / Number(compNetCents)) * 100).toFixed(2)) : 0;
+      const netPercent =
+        compNetCents > 0n
+          ? parseFloat(((Number(netDeltaCents) / Number(compNetCents)) * 100).toFixed(2))
+          : 0;
 
       const curDedCents = toCents(cur.sum_deductions);
       const compDedCents = toCents(comp.sum_deductions);
       const dedDeltaCents = curDedCents - compDedCents;
-      const dedPercent = compDedCents > 0n ? parseFloat(((Number(dedDeltaCents) / Number(compDedCents)) * 100).toFixed(2)) : 0;
+      const dedPercent =
+        compDedCents > 0n
+          ? parseFloat(((Number(dedDeltaCents) / Number(compDedCents)) * 100).toFixed(2))
+          : 0;
 
       const hcDelta = cur.headcount - comp.headcount;
-      const hcPercent = comp.headcount > 0 ? parseFloat(((hcDelta / comp.headcount) * 100).toFixed(1)) : 0;
+      const hcPercent =
+        comp.headcount > 0 ? parseFloat(((hcDelta / comp.headcount) * 100).toFixed(1)) : 0;
 
       // Employee variances and anomaly detection (variance >= 20%)
       const anomalousQuery = `
@@ -1458,7 +1679,11 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         WHERE s_cur.organization_id = $1 AND s_cur.period_id = $2
         ORDER BY e.employee_code ASC
       `;
-      const anomRes = await pool.query(anomalousQuery, [identity.orgId, periodId, comparePeriodId || '00000000-0000-0000-0000-000000000000']);
+      const anomRes = await pool.query(anomalousQuery, [
+        identity.orgId,
+        periodId,
+        comparePeriodId || '00000000-0000-0000-0000-000000000000',
+      ]);
       const evaluatedEmployees = [];
       const anomalousEmployees = [];
 
@@ -1487,7 +1712,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           currentNetPay: toDecimal(curNet),
           variancePercent: percent,
           percentChange: percent,
-          isAnomalous
+          isAnomalous,
         };
 
         evaluatedEmployees.push(empItem);
@@ -1496,16 +1721,18 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         }
       }
 
-      const previousPeriod = compPeriod ? {
-        id: compPeriod.id,
-        code: compPeriod.code,
-        name: compPeriod.name,
-        status: compPeriod.status,
-        headcount: comp.headcount,
-        totalGross: toDecimal(compGrossCents),
-        totalNet: toDecimal(compNetCents),
-        totalDeductions: toDecimal(compDedCents)
-      } : null;
+      const previousPeriod = compPeriod
+        ? {
+            id: compPeriod.id,
+            code: compPeriod.code,
+            name: compPeriod.name,
+            status: compPeriod.status,
+            headcount: comp.headcount,
+            totalGross: toDecimal(compGrossCents),
+            totalNet: toDecimal(compNetCents),
+            totalDeductions: toDecimal(compDedCents),
+          }
+        : null;
 
       res.json({
         currentPeriod: {
@@ -1516,7 +1743,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           headcount: cur.headcount,
           totalGross: toDecimal(curGrossCents),
           totalNet: toDecimal(curNetCents),
-          totalDeductions: toDecimal(curDedCents)
+          totalDeductions: toDecimal(curDedCents),
         },
         comparePeriod: previousPeriod,
         previousPeriod,
@@ -1528,7 +1755,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           netDelta: toDecimal(netDeltaCents),
           netPercent,
           deductionsDelta: toDecimal(dedDeltaCents),
-          deductionsPercent: dedPercent
+          deductionsPercent: dedPercent,
         },
         metrics: {
           currentGrossTotal: toDecimal(curGrossCents),
@@ -1542,10 +1769,10 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           currentHeadcount: cur.headcount,
           previousHeadcount: comp.headcount,
           headcountDelta: hcDelta,
-          anomalousCount: anomalousEmployees.length
+          anomalousCount: anomalousEmployees.length,
         },
         anomalousEmployees,
-        items: evaluatedEmployees
+        items: evaluatedEmployees,
       });
     } catch (err) {
       next(err);
@@ -1567,7 +1794,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       if (!periodId) {
         const latestPeriodRes = await pool.query<{ id: string }>(
           `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-          [identity.orgId]
+          [identity.orgId],
         );
         if (latestPeriodRes.rowCount && latestPeriodRes.rows[0]) {
           periodId = latestPeriodRes.rows[0].id;
@@ -1578,14 +1805,19 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         return res.json({ period: null, metrics: null, departments: [] });
       }
 
-      const periodRes = await pool.query<{ id: string; code: string; name: string; status: string }>(
+      const periodRes = await pool.query<{
+        id: string;
+        code: string;
+        name: string;
+        status: string;
+      }>(
         `SELECT id, code, name, status FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
 
-      const params: any[] = [identity.orgId, periodId];
+      const params: QueryParameter[] = [identity.orgId, periodId];
       let where = `s.organization_id = $1 AND s.period_id = $2`;
       if (departmentId) {
         where += ` AND e.department_id = $3`;
@@ -1615,7 +1847,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       let orgCtcCents = 0n;
       let totalHeadcount = 0;
 
-      const departments = deptRes.rows.map(d => {
+      const departments = deptRes.rows.map((d) => {
         const grossCents = toCents(d.total_gross);
         // Employer statutory insurance = 21.5% (17.5% BHXH + 3% BHYT + 1% BHTN)
         const employerSiCents = (grossCents * 215n) / 1000n;
@@ -1646,14 +1878,20 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           vasAccount: vasCode,
           vasAccountCode: vasCode,
           vasAccountName: vasLabel,
-          vasAccountFull: `${vasCode} - ${vasLabel}`
+          vasAccountFull: `${vasCode} - ${vasLabel}`,
         };
       });
 
       const costPerEmployeeCents = totalHeadcount > 0 ? orgCtcCents / BigInt(totalHeadcount) : 0n;
 
       res.json({
-        period: { id: period.id, code: period.code, name: period.name, status: period.status, isDraft: period.status !== 'CLOSED' },
+        period: {
+          id: period.id,
+          code: period.code,
+          name: period.name,
+          status: period.status,
+          isDraft: period.status !== 'CLOSED',
+        },
         metrics: {
           totalHeadcount,
           totalGross: toDecimal(orgGrossCents),
@@ -1664,14 +1902,14 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           totalTradeUnion: toDecimal(orgEmployerUnionCents),
           totalCostToCompany: toDecimal(orgCtcCents),
           totalCompanyCost: toDecimal(orgCtcCents),
-          costPerEmployee: toDecimal(costPerEmployeeCents)
+          costPerEmployee: toDecimal(costPerEmployeeCents),
         },
         departments,
-        allocations: departments.map(d => ({
+        allocations: departments.map((d) => ({
           ...d,
           employerStatutory: d.employerInsurance,
-          tradeUnion: d.employerUnion
-        }))
+          tradeUnion: d.employerUnion,
+        })),
       });
     } catch (err) {
       next(err);
@@ -1697,7 +1935,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       if (!periodId) {
         const latestPeriodRes = await pool.query<{ id: string }>(
           `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-          [identity.orgId]
+          [identity.orgId],
         );
         if (latestPeriodRes.rowCount && latestPeriodRes.rows[0]) {
           periodId = latestPeriodRes.rows[0].id;
@@ -1705,12 +1943,22 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       }
 
       if (!periodId) {
-        return res.json({ period: null, metrics: null, pagination: { page, pageSize, totalRows: 0, totalPages: 1 }, items: [] });
+        return res.json({
+          period: null,
+          metrics: null,
+          pagination: { page, pageSize, totalRows: 0, totalPages: 1 },
+          items: [],
+        });
       }
 
-      const periodRes = await pool.query<{ id: string; code: string; name: string; status: string }>(
+      const periodRes = await pool.query<{
+        id: string;
+        code: string;
+        name: string;
+        status: string;
+      }>(
         `SELECT id, code, name, status FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
@@ -1720,7 +1968,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         `SELECT COALESCE(sum(net_pay), 0)::text AS total_payable
          FROM payroll_slips
          WHERE organization_id = $1 AND period_id = $2`,
-        [identity.orgId, periodId]
+        [identity.orgId, periodId],
       );
       const payableLiabilityCents = toCents(liabRes.rows[0]?.total_payable || '0');
 
@@ -1729,16 +1977,20 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         `SELECT COALESCE(sum(amount), 0)::text AS total_disbursed, count(*)::int AS count
          FROM payroll_disbursements
          WHERE organization_id = $1 AND period_id = $2`,
-        [identity.orgId, periodId]
+        [identity.orgId, periodId],
       );
       const disbursedPaymentCents = toCents(disbRes.rows[0]?.total_disbursed || '0');
-      const remainingLiabilityCents = payableLiabilityCents > disbursedPaymentCents
-        ? payableLiabilityCents - disbursedPaymentCents
-        : 0n;
+      const remainingLiabilityCents =
+        payableLiabilityCents > disbursedPaymentCents
+          ? payableLiabilityCents - disbursedPaymentCents
+          : 0n;
 
-      const settlementRate = payableLiabilityCents > 0n
-        ? parseFloat(((Number(disbursedPaymentCents) / Number(payableLiabilityCents)) * 100).toFixed(1))
-        : 100;
+      const settlementRate =
+        payableLiabilityCents > 0n
+          ? parseFloat(
+              ((Number(disbursedPaymentCents) / Number(payableLiabilityCents)) * 100).toFixed(1),
+            )
+          : 100;
 
       // 3. Employee breakdown with bank details and disbursement sums
       const empQuery = `
@@ -1787,7 +2039,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             netPayable: toDecimal(netCents),
             totalPaid: toDecimal(paidCents),
             remainingBalance: toDecimal(remainCents),
-            settlementStatus
+            settlementStatus,
           });
         }
       }
@@ -1796,21 +2048,27 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const paginatedItems = processedItems.slice(offset, offset + pageSize);
 
       res.json({
-        period: { id: period.id, code: period.code, name: period.name, status: period.status, isDraft: period.status !== 'CLOSED' },
+        period: {
+          id: period.id,
+          code: period.code,
+          name: period.name,
+          status: period.status,
+          isDraft: period.status !== 'CLOSED',
+        },
         metrics: {
           payableLiability: toDecimal(payableLiabilityCents),
           disbursedPayment: toDecimal(disbursedPaymentCents),
           remainingLiability: toDecimal(remainingLiabilityCents),
           disbursementCount: disbRes.rows[0]?.count || 0,
-          settlementRate
+          settlementRate,
         },
         pagination: {
           page,
           pageSize,
           totalRows: totalFiltered,
-          totalPages: Math.ceil(totalFiltered / pageSize) || 1
+          totalPages: Math.ceil(totalFiltered / pageSize) || 1,
         },
-        items: paginatedItems
+        items: paginatedItems,
       });
     } catch (err) {
       next(err);
@@ -1830,7 +2088,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const status = req.query.status ? String(req.query.status).toUpperCase() : undefined;
       const accountId = req.query.accountId ? uuid.parse(req.query.accountId) : undefined;
 
-      const params: any[] = [identity.orgId];
+      const params: QueryParameter[] = [identity.orgId];
       let paramIdx = 2;
 
       let where = `e.organization_id = $1`;
@@ -1869,12 +2127,12 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const entriesRes = await pool.query(entriesQuery, params);
 
       // Fetch lines for these entries
-      const entryIds = entriesRes.rows.map(r => r.id);
-      const linesMap = new Map<string, any[]>();
+      const entryIds = entriesRes.rows.map((r) => r.id);
+      const linesMap = new Map<string, JournalLineSummary[]>();
 
       if (entryIds.length > 0) {
         let linesWhere = `l.entry_id = ANY($1::uuid[]) AND l.organization_id = $2`;
-        const linesParams: any[] = [entryIds, identity.orgId];
+        const linesParams: QueryParameter[] = [entryIds, identity.orgId];
         if (accountId) {
           linesWhere += ` AND l.account_id = $3`;
           linesParams.push(accountId);
@@ -1911,7 +2169,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             debitAmount: toDecimal(toCents(line.debit_amount)),
             creditAmount: toDecimal(toCents(line.credit_amount)),
             description: line.description || '',
-            lineOrder: line.line_order
+            lineOrder: line.line_order,
           });
           linesMap.set(line.entry_id, arr);
         }
@@ -1923,7 +2181,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       let draftCount = 0;
       let reversedCount = 0;
 
-      const items = entriesRes.rows.map(r => {
+      const items = entriesRes.rows.map((r) => {
         const debitCents = toCents(r.total_debit);
         const creditCents = toCents(r.total_credit);
         totalDebitCents += debitCents;
@@ -1947,7 +2205,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           reversedByName: r.reversed_by_name || '—',
           reversedAt: r.reversed_at,
           reversalEntryNumber: r.reversal_entry_number || null,
-          lines: linesMap.get(r.id) || []
+          lines: linesMap.get(r.id) || [],
         };
       });
 
@@ -1959,9 +2217,846 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           reversedEntries: reversedCount,
           totalDebit: toDecimal(totalDebitCents),
           totalCredit: toDecimal(totalCreditCents),
-          isBalanced: totalDebitCents === totalCreditCents
+          isBalanced: totalDebitCents === totalCreditCents,
         },
-        items
+        items,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // =========================================================================
+  // 12. P0 REPORT: RPT-TAX-01 (PIT WITHHOLDING & SUMMARY 05/KK-TNCN)
+  // =========================================================================
+
+  app.get(`${prefix}/tax-summary`, async (req: Authed, res, next) => {
+    try {
+      const identity = identityFor(req);
+      if (!canAccessReport(identity.role, 'HR')) fail(403, 'FORBIDDEN');
+
+      let periodId = req.query.periodId ? uuid.parse(req.query.periodId) : undefined;
+      const departmentId = req.query.departmentId ? uuid.parse(req.query.departmentId) : undefined;
+      const search = req.query.search ? String(req.query.search).trim() : '';
+      const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+      const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize || '20'), 10)));
+      const offset = (page - 1) * pageSize;
+
+      let period: ReportPeriod;
+      if (periodId) {
+        const pRes = await pool.query<ReportPeriod>(
+          `SELECT id, code, name, status, start_date::text AS start_date, end_date::text AS end_date
+           FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
+          [periodId, identity.orgId],
+        );
+        const selectedPeriod = pRes.rows[0];
+        if (!selectedPeriod) fail(404, 'PERIOD_NOT_FOUND');
+        period = selectedPeriod;
+      } else {
+        const pRes = await pool.query<ReportPeriod>(
+          `SELECT id, code, name, status, start_date::text AS start_date, end_date::text AS end_date
+           FROM payroll_periods WHERE organization_id = $1
+           ORDER BY (status = 'CLOSED') DESC, end_date DESC LIMIT 1`,
+          [identity.orgId],
+        );
+        const selectedPeriod = pRes.rows[0];
+        if (!selectedPeriod) {
+          return res.json({
+            period: null,
+            metrics: {
+              totalEmployees: 0,
+              taxableEmployees: 0,
+              totalGrossIncome: '0.00',
+              totalTaxableIncome: '0.00',
+              totalPersonalDeductions: '0.00',
+              totalDependentDeductions: '0.00',
+              totalInsuranceDeductions: '0.00',
+              totalPitWithheld: '0.00',
+              totalSlipPit: '0.00',
+              varianceAmount: '0.00',
+              isReconciled: true,
+            },
+            pagination: { page: 1, pageSize, totalRows: 0, totalPages: 0 },
+            items: [],
+          });
+        }
+        period = selectedPeriod;
+        periodId = period.id;
+      }
+
+      const params: QueryParameter[] = [
+        identity.orgId,
+        period.id,
+        period.start_date,
+        period.end_date,
+      ];
+      let paramIdx = 5;
+
+      let filterWhere = '';
+      if (departmentId) {
+        filterWhere += ` AND e.department_id = $${paramIdx++}`;
+        params.push(departmentId);
+      }
+      if (search) {
+        filterWhere += ` AND (e.employee_code ILIKE $${paramIdx} OR e.full_name ILIKE $${paramIdx})`;
+        params.push(`%${escapeLike(search)}%`);
+        paramIdx++;
+      }
+
+      const slipsRes = await pool.query(
+        `SELECT
+          s.id AS slip_id, s.employee_id, s.gross_pay, s.net_pay, s.total_deductions,
+          e.employee_code, e.full_name, d.name AS department_name,
+          COALESCE((
+            SELECT count(*)::int FROM employee_dependents ed
+            WHERE ed.employee_id = s.employee_id AND ed.organization_id = s.organization_id
+              AND ed.is_verified = true
+              AND ed.effective_from <= $4::date
+              AND (ed.effective_to IS NULL OR ed.effective_to >= $3::date)
+          ), 0) AS dependent_count
+        FROM payroll_slips s
+        JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
+        LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+        WHERE s.organization_id = $1 AND s.period_id = $2 ${filterWhere}
+        ORDER BY e.employee_code ASC`,
+        params,
+      );
+
+      const slipIds = slipsRes.rows.map((r) => r.slip_id);
+      const itemsMap = new Map<string, PayrollSlipItemRow[]>();
+      if (slipIds.length > 0) {
+        const iRes = await pool.query<PayrollSlipItemRow>(
+          `SELECT slip_id, component_name, type, amount
+           FROM payroll_slip_items
+           WHERE organization_id = $1 AND slip_id = ANY($2::uuid[])`,
+          [identity.orgId, slipIds],
+        );
+        for (const item of iRes.rows) {
+          const arr = itemsMap.get(item.slip_id) || [];
+          arr.push(item);
+          itemsMap.set(item.slip_id, arr);
+        }
+      }
+
+      let totalGrossCents = 0n;
+      let totalTaxableCents = 0n;
+      let totalPersonalCents = 0n;
+      let totalDependentCents = 0n;
+      let totalInsuranceCents = 0n;
+      let totalPitWithheldCents = 0n;
+      let totalSlipPitCents = 0n;
+      let totalVarianceCents = 0n;
+      let taxableCount = 0;
+
+      const items = slipsRes.rows.map((r) => {
+        const grossCents = toCents(r.gross_pay);
+        const slipItems = itemsMap.get(r.slip_id) || [];
+
+        let nonTaxableCents = 0n;
+        let insuranceCents = 0n;
+        let slipPitCents = 0n;
+
+        for (const it of slipItems) {
+          const amt = toCents(it.amount);
+          const nameLower = (it.component_name || '').toLowerCase();
+          if (
+            it.type === 'ALLOWANCE' &&
+            (nameLower.includes('ăn trưa') || nameLower.includes('lunch'))
+          ) {
+            nonTaxableCents += amt > 730_000_00n ? 730_000_00n : amt;
+          } else if (it.type === 'DEDUCTION') {
+            if (
+              nameLower.includes('bhxh') ||
+              nameLower.includes('bhyt') ||
+              nameLower.includes('bhtn') ||
+              nameLower.includes('bảo hiểm')
+            ) {
+              insuranceCents += amt;
+            } else if (
+              nameLower.includes('thuế') ||
+              nameLower.includes('pit') ||
+              nameLower.includes('tncn')
+            ) {
+              slipPitCents += amt;
+            }
+          }
+        }
+
+        const taxableCents = grossCents > nonTaxableCents ? grossCents - nonTaxableCents : 0n;
+        const personalCents = 11_000_000_00n;
+        const dependentCents = BigInt(r.dependent_count) * 4_400_000_00n;
+        const totalDeductionsCents = personalCents + dependentCents + insuranceCents;
+        const assessableCents =
+          taxableCents > totalDeductionsCents ? taxableCents - totalDeductionsCents : 0n;
+
+        const computedPitCents = calculatePitTax(assessableCents, DEFAULT_PIT_BRACKETS);
+        const varianceCents = computedPitCents - slipPitCents;
+
+        totalGrossCents += grossCents;
+        totalTaxableCents += taxableCents;
+        totalPersonalCents += personalCents;
+        totalDependentCents += dependentCents;
+        totalInsuranceCents += insuranceCents;
+        totalPitWithheldCents += computedPitCents;
+        totalSlipPitCents += slipPitCents;
+        totalVarianceCents += varianceCents < 0n ? -varianceCents : varianceCents;
+        if (assessableCents > 0n) taxableCount++;
+
+        return {
+          slipId: r.slip_id,
+          employeeId: r.employee_id,
+          employeeCode: r.employee_code,
+          fullName: r.full_name,
+          departmentName: r.department_name,
+          grossIncome: toDecimal(grossCents),
+          nonTaxableAllowances: toDecimal(nonTaxableCents),
+          taxableIncome: toDecimal(taxableCents),
+          dependentCount: r.dependent_count,
+          personalDeduction: toDecimal(personalCents),
+          dependentDeduction: toDecimal(dependentCents),
+          insuranceDeduction: toDecimal(insuranceCents),
+          totalDeductions: toDecimal(totalDeductionsCents),
+          assessableIncome: toDecimal(assessableCents),
+          computedPit: toDecimal(computedPitCents),
+          slipPit: toDecimal(slipPitCents),
+          variance: toDecimal(varianceCents),
+        };
+      });
+
+      const totalRows = items.length;
+      const paginatedItems = items.slice(offset, offset + pageSize);
+
+      res.json({
+        period: {
+          id: period.id,
+          code: period.code,
+          name: period.name,
+          status: period.status,
+          isDraft: period.status !== 'CLOSED',
+        },
+        metrics: {
+          totalEmployees: totalRows,
+          taxableEmployees: taxableCount,
+          totalGrossIncome: toDecimal(totalGrossCents),
+          totalTaxableIncome: toDecimal(totalTaxableCents),
+          totalPersonalDeductions: toDecimal(totalPersonalCents),
+          totalDependentDeductions: toDecimal(totalDependentCents),
+          totalInsuranceDeductions: toDecimal(totalInsuranceCents),
+          totalPitWithheld: toDecimal(totalPitWithheldCents),
+          totalSlipPit: toDecimal(totalSlipPitCents),
+          varianceAmount: toDecimal(totalVarianceCents),
+          isReconciled: totalVarianceCents === 0n,
+        },
+        pagination: {
+          page,
+          pageSize,
+          totalRows,
+          totalPages: Math.ceil(totalRows / pageSize) || 1,
+        },
+        items: paginatedItems,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // =========================================================================
+  // 13. P0 REPORT: RPT-TAX-02 (ANNUAL PIT SETTLEMENT 05/QTT-TNCN)
+  // =========================================================================
+
+  app.get(`${prefix}/tax-settlement`, async (req: Authed, res, next) => {
+    try {
+      const identity = identityFor(req);
+      if (!canAccessReport(identity.role, 'HR')) fail(403, 'FORBIDDEN');
+
+      const taxYear = req.query.year
+        ? parseInt(String(req.query.year), 10)
+        : new Date().getFullYear();
+      const departmentId = req.query.departmentId ? uuid.parse(req.query.departmentId) : undefined;
+      const search = req.query.search ? String(req.query.search).trim() : '';
+      const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+      const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize || '20'), 10)));
+      const offset = (page - 1) * pageSize;
+
+      const yearStart = `${taxYear}-01-01`;
+      const yearEnd = `${taxYear}-12-31`;
+
+      const params: QueryParameter[] = [identity.orgId, yearStart, yearEnd];
+      let paramIdx = 4;
+
+      let filterWhere = '';
+      if (departmentId) {
+        filterWhere += ` AND e.department_id = $${paramIdx++}`;
+        params.push(departmentId);
+      }
+      if (search) {
+        filterWhere += ` AND (e.employee_code ILIKE $${paramIdx} OR e.full_name ILIKE $${paramIdx})`;
+        params.push(`%${escapeLike(search)}%`);
+        paramIdx++;
+      }
+
+      const rowsRes = await pool.query(
+        `SELECT
+          e.id AS employee_id, e.employee_code, e.full_name, d.name AS department_name,
+          ec.contract_type, ec.start_date AS contract_start, ec.end_date AS contract_end,
+          COALESCE(count(DISTINCT p.id), 0)::int AS months_worked,
+          COALESCE(sum(s.gross_pay), 0.00) AS annual_gross,
+          COALESCE(sum(s.total_deductions), 0.00) AS annual_deductions,
+          COALESCE((
+            SELECT count(*)::int FROM employee_dependents ed
+            WHERE ed.employee_id = e.id AND ed.organization_id = e.organization_id
+              AND ed.is_verified = true
+              AND ed.effective_from <= $3::date
+              AND (ed.effective_to IS NULL OR ed.effective_to >= $2::date)
+          ), 0) AS dependent_count
+        FROM employees e
+        LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+        LEFT JOIN employee_contracts ec ON ec.employee_id = e.id AND ec.organization_id = e.organization_id AND ec.status = 'ACTIVE'
+        JOIN payroll_slips s ON s.employee_id = e.id AND s.organization_id = e.organization_id
+        JOIN payroll_periods p ON p.id = s.period_id AND p.organization_id = s.organization_id
+          AND p.start_date >= $2::date AND p.end_date <= $3::date
+        WHERE e.organization_id = $1 ${filterWhere}
+        GROUP BY e.id, e.employee_code, e.full_name, d.name, ec.contract_type, ec.start_date, ec.end_date
+        ORDER BY e.employee_code ASC`,
+        params,
+      );
+
+      let totalIndividuals = 0;
+      let authorizedProxyCount = 0;
+      let totalAnnualGrossCents = 0n;
+      let totalAnnualDeductionsCents = 0n;
+      let totalTaxWithheldCents = 0n;
+      let totalAnnualTaxLiabilityCents = 0n;
+      let totalRefundableCents = 0n;
+      let totalAdditionalPayableCents = 0n;
+
+      const processed = rowsRes.rows.map((r) => {
+        const annualGrossCents = toCents(r.annual_gross);
+        const months = Math.min(12, Math.max(1, r.months_worked || 12));
+        const personalCents = BigInt(months) * 11_000_000_00n;
+        const dependentCents = BigInt(months) * BigInt(r.dependent_count) * 4_400_000_00n;
+
+        const insuranceCents = toCents(r.annual_deductions);
+        const annualDeductionsCents = personalCents + dependentCents + insuranceCents;
+        const assessableCents =
+          annualGrossCents > annualDeductionsCents ? annualGrossCents - annualDeductionsCents : 0n;
+
+        const annualTaxLiabilityCents = calculatePitTax(assessableCents, ANNUAL_PIT_BRACKETS);
+        const taxWithheldCents = annualTaxLiabilityCents;
+        const balanceCents = annualTaxLiabilityCents - taxWithheldCents;
+
+        if (balanceCents > 0n) totalAdditionalPayableCents += balanceCents;
+        else if (balanceCents < 0n) totalRefundableCents += -balanceCents;
+
+        const isAuthorizedProxy =
+          r.contract_type === 'INDEFINITE' || r.contract_type === 'FIXED_TERM';
+        if (isAuthorizedProxy) authorizedProxyCount++;
+
+        let settlementStatus = 'BALANCED';
+        if (balanceCents > 0n) settlementStatus = 'ADDITIONAL_PAYABLE';
+        else if (balanceCents < 0n) settlementStatus = 'REFUNDABLE';
+
+        totalIndividuals++;
+        totalAnnualGrossCents += annualGrossCents;
+        totalAnnualDeductionsCents += annualDeductionsCents;
+        totalTaxWithheldCents += taxWithheldCents;
+        totalAnnualTaxLiabilityCents += annualTaxLiabilityCents;
+
+        return {
+          employeeId: r.employee_id,
+          employeeCode: r.employee_code,
+          fullName: r.full_name,
+          departmentName: r.department_name,
+          contractType: r.contract_type || 'INDEFINITE',
+          monthsWorked: months,
+          annualGross: toDecimal(annualGrossCents),
+          annualDeductions: toDecimal(annualDeductionsCents),
+          annualAssessable: toDecimal(assessableCents),
+          annualTaxLiability: toDecimal(annualTaxLiabilityCents),
+          taxWithheld: toDecimal(taxWithheldCents),
+          balance: toDecimal(balanceCents),
+          settlementStatus,
+          isAuthorizedProxy,
+        };
+      });
+
+      const totalRows = processed.length;
+      const paginatedItems = processed.slice(offset, offset + pageSize);
+      const netBalanceCents = totalAdditionalPayableCents - totalRefundableCents;
+
+      res.json({
+        year: taxYear,
+        metrics: {
+          totalIndividuals,
+          totalEmployees: totalIndividuals,
+          residentEmployees: totalIndividuals,
+          qualifyingEmployees: authorizedProxyCount,
+          authorizedProxyCount,
+          totalAnnualGross: toDecimal(totalAnnualGrossCents),
+          totalAnnualDeductions: toDecimal(totalAnnualDeductionsCents),
+          totalPersonalDeductions: toDecimal(BigInt(totalIndividuals) * 12n * 11_000_000_00n),
+          totalTaxWithheld: toDecimal(totalTaxWithheldCents),
+          totalAnnualTaxLiability: toDecimal(totalAnnualTaxLiabilityCents),
+          netBalance: toDecimal(netBalanceCents),
+          totalRefundable: toDecimal(totalRefundableCents),
+          totalAdditionalPayable: toDecimal(totalAdditionalPayableCents),
+        },
+        pagination: {
+          page,
+          pageSize,
+          totalRows,
+          totalPages: Math.ceil(totalRows / pageSize) || 1,
+        },
+        items: paginatedItems,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // =========================================================================
+  // 14. P0 REPORT: RPT-INS-01 (STATUTORY INSURANCE REMITTANCE)
+  // =========================================================================
+
+  app.get(`${prefix}/insurance-contributions`, async (req: Authed, res, next) => {
+    try {
+      const identity = identityFor(req);
+      if (!canAccessReport(identity.role, 'HR')) fail(403, 'FORBIDDEN');
+
+      let periodId = req.query.periodId ? uuid.parse(req.query.periodId) : undefined;
+      const departmentId = req.query.departmentId ? uuid.parse(req.query.departmentId) : undefined;
+      const search = req.query.search ? String(req.query.search).trim() : '';
+      const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+      const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize || '20'), 10)));
+      const offset = (page - 1) * pageSize;
+
+      let period: ReportPeriod;
+      if (periodId) {
+        const pRes = await pool.query<ReportPeriod>(
+          `SELECT id, code, name, status, start_date::text AS start_date, end_date::text AS end_date
+           FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
+          [periodId, identity.orgId],
+        );
+        const selectedPeriod = pRes.rows[0];
+        if (!selectedPeriod) fail(404, 'PERIOD_NOT_FOUND');
+        period = selectedPeriod;
+      } else {
+        const pRes = await pool.query<ReportPeriod>(
+          `SELECT id, code, name, status, start_date::text AS start_date, end_date::text AS end_date
+           FROM payroll_periods WHERE organization_id = $1
+           ORDER BY (status = 'CLOSED') DESC, end_date DESC LIMIT 1`,
+          [identity.orgId],
+        );
+        const selectedPeriod = pRes.rows[0];
+        if (!selectedPeriod) {
+          return res.json({
+            period: null,
+            metrics: {
+              totalInsuredEmployees: 0,
+              totalEmployees: 0,
+              totalContractSalary: '0.00',
+              totalCappedSiSalary: '0.00',
+              totalCappedUiSalary: '0.00',
+              totalSiFund: '0.00',
+              totalEmployeeInsurance: '0.00',
+              employeeTotalCents: '0.00',
+              totalEmployerInsurance: '0.00',
+              employerTotalCents: '0.00',
+              totalTradeUnion: '0.00',
+              unionTotalCents: '0.00',
+              grandTotalContribution: '0.00',
+              totalStatutoryRemittance: '0.00',
+              isReconciled: true,
+            },
+            pagination: { page: 1, pageSize, totalRows: 0, totalPages: 0 },
+            items: [],
+          });
+        }
+        period = selectedPeriod;
+        periodId = period.id;
+      }
+
+      const params: QueryParameter[] = [identity.orgId, period.id];
+      let paramIdx = 3;
+
+      let filterWhere = '';
+      if (departmentId) {
+        filterWhere += ` AND e.department_id = $${paramIdx++}`;
+        params.push(departmentId);
+      }
+      if (search) {
+        filterWhere += ` AND (e.employee_code ILIKE $${paramIdx} OR e.full_name ILIKE $${paramIdx})`;
+        params.push(`%${escapeLike(search)}%`);
+        paramIdx++;
+      }
+
+      const slipsRes = await pool.query(
+        `SELECT
+          s.id AS slip_id, s.employee_id, s.base_salary, s.prorated_base_salary, s.gross_pay,
+          e.employee_code, e.full_name, d.name AS department_name,
+          esi.si_code, esi.si_salary
+        FROM payroll_slips s
+        JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
+        LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+        LEFT JOIN employee_social_insurance esi ON esi.employee_id = e.id AND esi.organization_id = e.organization_id AND esi.status = 'ACTIVE'
+        WHERE s.organization_id = $1 AND s.period_id = $2 ${filterWhere}
+        ORDER BY e.employee_code ASC`,
+        params,
+      );
+
+      const siCapCents = 46_800_000_00n;
+      const uiCapCents = 99_200_000_00n;
+
+      let totalContractSalaryCents = 0n;
+      let totalCappedSiCents = 0n;
+      let totalCappedUiCents = 0n;
+      let totalEmpCents = 0n;
+      let totalEmprCents = 0n;
+      let totalUnionCents = 0n;
+
+      const processed = slipsRes.rows.map((r) => {
+        const rawSalaryCents = r.si_salary ? toCents(r.si_salary) : toCents(r.base_salary);
+        const cappedSiCents = rawSalaryCents > siCapCents ? siCapCents : rawSalaryCents;
+        const cappedUiCents = rawSalaryCents > uiCapCents ? uiCapCents : rawSalaryCents;
+
+        const empBhxhCents = (cappedSiCents * 800n) / 10000n;
+        const empBhytCents = (cappedSiCents * 150n) / 10000n;
+        const empBhtnCents = (cappedUiCents * 100n) / 10000n;
+        const empTotalCents = empBhxhCents + empBhytCents + empBhtnCents;
+
+        const emprBhxhCents = (cappedSiCents * 1750n) / 10000n;
+        const emprBhytCents = (cappedSiCents * 300n) / 10000n;
+        const emprBhtnCents = (cappedUiCents * 100n) / 10000n;
+        const emprTotalCents = emprBhxhCents + emprBhytCents + emprBhtnCents;
+
+        const unionCents = (cappedSiCents * 200n) / 10000n;
+        const totalRemittanceCents = empTotalCents + emprTotalCents + unionCents;
+
+        totalContractSalaryCents += rawSalaryCents;
+        totalCappedSiCents += cappedSiCents;
+        totalCappedUiCents += cappedUiCents;
+        totalEmpCents += empTotalCents;
+        totalEmprCents += emprTotalCents;
+        totalUnionCents += unionCents;
+
+        return {
+          slipId: r.slip_id,
+          employeeId: r.employee_id,
+          employeeCode: r.employee_code,
+          fullName: r.full_name,
+          departmentName: r.department_name,
+          siCode: r.si_code || '—',
+          contractSalary: toDecimal(rawSalaryCents),
+          siSalary: toDecimal(rawSalaryCents),
+          employeeSiCents: toDecimal(empBhxhCents),
+          empBhxh: toDecimal(empBhxhCents),
+          employeeHiCents: toDecimal(empBhytCents),
+          empBhyt: toDecimal(empBhytCents),
+          employeeUiCents: toDecimal(empBhtnCents),
+          empBhtn: toDecimal(empBhtnCents),
+          employeeTotalCents: toDecimal(empTotalCents),
+          employeeTotal: toDecimal(empTotalCents),
+          employerTotalCents: toDecimal(emprTotalCents),
+          employerTotal: toDecimal(emprTotalCents),
+          unionTotalCents: toDecimal(unionCents),
+          tradeUnionFee: toDecimal(unionCents),
+          totalContributionCents: toDecimal(totalRemittanceCents),
+          totalRemittance: toDecimal(totalRemittanceCents),
+        };
+      });
+
+      const totalRows = processed.length;
+      const paginatedItems = processed.slice(offset, offset + pageSize);
+      const grandTotalRemittanceCents = totalEmpCents + totalEmprCents + totalUnionCents;
+
+      res.json({
+        period: {
+          id: period.id,
+          code: period.code,
+          name: period.name,
+          status: period.status,
+          isDraft: period.status !== 'CLOSED',
+        },
+        metrics: {
+          totalInsuredEmployees: totalRows,
+          totalEmployees: totalRows,
+          totalContractSalary: toDecimal(totalContractSalaryCents),
+          totalCappedSiSalary: toDecimal(totalCappedSiCents),
+          totalCappedUiSalary: toDecimal(totalCappedUiCents),
+          totalSiFund: toDecimal(totalContractSalaryCents),
+          totalEmployeeInsurance: toDecimal(totalEmpCents),
+          employeeTotalCents: toDecimal(totalEmpCents),
+          totalEmployerInsurance: toDecimal(totalEmprCents),
+          employerTotalCents: toDecimal(totalEmprCents),
+          totalTradeUnion: toDecimal(totalUnionCents),
+          unionTotalCents: toDecimal(totalUnionCents),
+          grandTotalContribution: toDecimal(grandTotalRemittanceCents),
+          totalStatutoryRemittance: toDecimal(grandTotalRemittanceCents),
+          isReconciled: true,
+        },
+        pagination: {
+          page,
+          pageSize,
+          totalRows,
+          totalPages: Math.ceil(totalRows / pageSize) || 1,
+        },
+        items: paginatedItems,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // =========================================================================
+  // 15. P1 REPORT: RPT-INS-02 (INSURANCE PARTICIPATION FLUCTUATIONS D02-LT)
+  // =========================================================================
+
+  app.get(`${prefix}/insurance-fluctuations`, async (req: Authed, res, next) => {
+    try {
+      const identity = identityFor(req);
+      if (!canAccessReport(identity.role, 'HR')) fail(403, 'FORBIDDEN');
+
+      const departmentId = req.query.departmentId ? uuid.parse(req.query.departmentId) : undefined;
+      const search = req.query.search ? String(req.query.search).trim() : '';
+      const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+      const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize || '20'), 10)));
+      const offset = (page - 1) * pageSize;
+
+      const now = new Date();
+      const reportingYear = req.query.year
+        ? parseInt(String(req.query.year), 10)
+        : now.getFullYear();
+      const reportingMonth = req.query.month
+        ? String(req.query.month).slice(0, 7)
+        : `${reportingYear}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      const params: QueryParameter[] = [
+        identity.orgId,
+        `${reportingYear}-01-01`,
+        `${reportingYear}-12-31`,
+      ];
+      let paramIdx = 4;
+
+      let filterWhere = '';
+      if (departmentId) {
+        filterWhere += ` AND e.department_id = $${paramIdx++}`;
+        params.push(departmentId);
+      }
+      if (search) {
+        filterWhere += ` AND (e.employee_code ILIKE $${paramIdx} OR e.full_name ILIKE $${paramIdx})`;
+        params.push(`%${escapeLike(search)}%`);
+        paramIdx++;
+      }
+
+      const rowsRes = await pool.query(
+        `SELECT
+          e.id AS employee_id, e.employee_code, e.full_name, e.hire_date::text AS hire_date,
+          d.name AS department_name, pos.title AS position_title,
+          esi.si_code,
+          ec.start_date::text AS contract_start, ec.end_date::text AS contract_end, ec.status AS contract_status,
+          COALESCE(esp.base_salary, 0.00) AS new_salary,
+          CASE
+            WHEN ec.start_date >= $2::date AND ec.start_date <= $3::date THEN 'INCREASE'
+            WHEN ec.status = 'TERMINATED' OR (ec.end_date IS NOT NULL AND ec.end_date <= $3::date) THEN 'DECREASE'
+            ELSE 'ADJUSTMENT'
+          END AS fluctuation_type,
+          COALESCE(ec.start_date::text, e.hire_date::text) AS effective_date,
+          'Biến động tham gia BHXH theo quy định D02-LT' AS notes
+        FROM employees e
+        LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+        LEFT JOIN positions pos ON pos.id = e.position_id AND pos.organization_id = e.organization_id
+        LEFT JOIN employee_social_insurance esi ON esi.employee_id = e.id AND esi.organization_id = e.organization_id
+        LEFT JOIN employee_contracts ec ON ec.employee_id = e.id AND ec.organization_id = e.organization_id
+        LEFT JOIN employee_salary_profiles esp ON esp.employee_id = e.id AND esp.organization_id = e.organization_id AND esp.status = 'ACTIVE'
+        WHERE e.organization_id = $1 ${filterWhere}
+        ORDER BY effective_date DESC, e.employee_code ASC`,
+        params,
+      );
+
+      let increaseCount = 0;
+      let decreaseCount = 0;
+      let adjustmentCount = 0;
+
+      const items = rowsRes.rows.map((r) => {
+        if (r.fluctuation_type === 'INCREASE') increaseCount++;
+        else if (r.fluctuation_type === 'DECREASE') decreaseCount++;
+        else adjustmentCount++;
+
+        return {
+          employeeId: r.employee_id,
+          employeeCode: r.employee_code,
+          fullName: r.full_name,
+          departmentName: r.department_name,
+          positionTitle: r.position_title,
+          siCode: r.si_code || '—',
+          fluctuationType: r.fluctuation_type,
+          effectiveDate: r.effective_date,
+          newSalary: toDecimal(toCents(r.new_salary)),
+          notes: r.notes,
+        };
+      });
+
+      const totalRows = items.length;
+      const paginatedItems = items.slice(offset, offset + pageSize);
+
+      res.json({
+        year: reportingYear,
+        reportingMonth,
+        metrics: {
+          totalFluctuations: totalRows,
+          increaseCount,
+          decreaseCount,
+          adjustmentCount,
+        },
+        pagination: {
+          page,
+          pageSize,
+          totalRows,
+          totalPages: Math.ceil(totalRows / pageSize) || 1,
+        },
+        items: paginatedItems,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // =========================================================================
+  // 16. P1 REPORT: RPT-LAB-01 (PERIODIC LABOR UTILIZATION REPORT 01/PLI)
+  // =========================================================================
+
+  app.get(`${prefix}/labor-utilization`, async (req: Authed, res, next) => {
+    try {
+      const identity = identityFor(req);
+      if (!canAccessReport(identity.role, 'HR')) fail(403, 'FORBIDDEN');
+
+      const year = req.query.year ? parseInt(String(req.query.year), 10) : new Date().getFullYear();
+      const half = req.query.half === '1' ? 1 : 2;
+      const departmentId = req.query.departmentId ? uuid.parse(req.query.departmentId) : undefined;
+      const search = req.query.search ? String(req.query.search).trim() : '';
+      const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+      const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize || '20'), 10)));
+      const offset = (page - 1) * pageSize;
+
+      const periodStart = `${year}-01-01`;
+      const periodEnd = half === 1 ? `${year}-06-30` : `${year}-12-31`;
+
+      const params: QueryParameter[] = [identity.orgId];
+      let paramIdx = 2;
+
+      let filterWhere = '';
+      if (departmentId) {
+        filterWhere += ` AND e.department_id = $${paramIdx++}`;
+        params.push(departmentId);
+      }
+      if (search) {
+        filterWhere += ` AND (e.employee_code ILIKE $${paramIdx} OR e.full_name ILIKE $${paramIdx})`;
+        params.push(`%${escapeLike(search)}%`);
+        paramIdx++;
+      }
+
+      const empRes = await pool.query(
+        `SELECT
+          e.id AS employee_id, e.employee_code, e.full_name, e.hire_date::text AS hire_date,
+          e.employment_status, d.name AS department_name, pos.title AS position_title,
+          ec.contract_type, ec.contract_number, ec.start_date::text AS contract_start, ec.end_date::text AS contract_end
+        FROM employees e
+        LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+        LEFT JOIN positions pos ON pos.id = e.position_id AND pos.organization_id = e.organization_id
+        LEFT JOIN employee_contracts ec ON ec.employee_id = e.id AND ec.organization_id = e.organization_id AND ec.status = 'ACTIVE'
+        WHERE e.organization_id = $1 ${filterWhere}
+        ORDER BY e.employee_code ASC`,
+        params,
+      );
+
+      let beginningCount = 0;
+      let increaseCount = 0;
+      let decreaseCount = 0;
+      let endingCount = 0;
+      let indefiniteCount = 0;
+      let fixedTermCount = 0;
+      let probationCount = 0;
+      let managerCount = 0;
+      let professionalCount = 0;
+
+      const items = empRes.rows.map((r) => {
+        const hireDate = r.hire_date;
+        const isHiredBefore = hireDate < periodStart;
+        const isHiredDuring = hireDate >= periodStart && hireDate <= periodEnd;
+        const isTerminated = r.employment_status === 'TERMINATED';
+
+        if (isHiredBefore && !isTerminated) beginningCount++;
+        if (isHiredDuring) increaseCount++;
+        if (isTerminated) decreaseCount++;
+        if (!isTerminated) endingCount++;
+
+        if (r.contract_type === 'INDEFINITE') indefiniteCount++;
+        else if (r.contract_type === 'FIXED_TERM') fixedTermCount++;
+        else probationCount++;
+
+        const titleLower = (r.position_title || '').toLowerCase();
+        if (/giám đốc|trưởng|phó|manager|leader|director|head/.test(titleLower)) managerCount++;
+        else if (/kỹ sư|lập trình|developer|engineer|chuyên viên|specialist/.test(titleLower))
+          professionalCount++;
+
+        return {
+          employeeId: r.employee_id,
+          employeeCode: r.employee_code,
+          fullName: r.full_name,
+          hireDate: r.hire_date,
+          employmentStatus: r.employment_status,
+          departmentName: r.department_name,
+          positionTitle: r.position_title,
+          contractType: r.contract_type,
+          contractNumber: r.contract_number,
+          positionGroup: /giám đốc|trưởng|phó|manager|leader|director|head/.test(titleLower)
+            ? 'Nhà quản lý'
+            : /kỹ sư|lập trình|developer|engineer|chuyên viên|specialist/.test(titleLower)
+              ? 'Chuyên môn kỹ thuật'
+              : 'Nhân viên khác',
+        };
+      });
+
+      const totalRows = items.length;
+      const paginatedItems = items.slice(offset, offset + pageSize);
+
+      res.json({
+        year,
+        half,
+        reportingPeriod:
+          half === 1
+            ? `6 tháng đầu năm ${year} (Mẫu 01/PLI - NĐ 145/2020/NĐ-CP)`
+            : `Cả năm ${year} (Mẫu 01/PLI - NĐ 145/2020/NĐ-CP)`,
+        metrics: {
+          beginningHeadcount: beginningCount,
+          increaseHeadcount: increaseCount,
+          decreaseHeadcount: decreaseCount,
+          newHires: increaseCount,
+          terminations: decreaseCount,
+          endingHeadcount: endingCount,
+          contractBreakdown: {
+            indefinite: indefiniteCount,
+            fixedTerm: fixedTermCount,
+            probation: probationCount,
+          },
+          positionBreakdown: {
+            manager: managerCount,
+            professional: professionalCount,
+            other: endingCount - managerCount - professionalCount,
+          },
+          indefiniteContracts: indefiniteCount,
+          fixedTermContracts: fixedTermCount,
+          probationContracts: probationCount,
+          managerCount,
+          professionalCount,
+        },
+        pagination: {
+          page,
+          pageSize,
+          totalRows,
+          totalPages: Math.ceil(totalRows / pageSize) || 1,
+        },
+        items: paginatedItems,
       });
     } catch (err) {
       next(err);
@@ -1977,16 +3072,28 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const identity = identityFor(req);
       const schema = z.object({
         reportCode: z.enum([
-          'RPT-EMP-01', 'RPT-ORG-01', 'RPT-ATT-01', 'RPT-LEAVE-01',
-          'RPT-PAY-01', 'RPT-PAY-02', 'RPT-PAY-03',
-          'RPT-ACC-01', 'RPT-ACC-02', 'RPT-ACC-03'
+          'RPT-EMP-01',
+          'RPT-ORG-01',
+          'RPT-ATT-01',
+          'RPT-LEAVE-01',
+          'RPT-PAY-01',
+          'RPT-PAY-02',
+          'RPT-PAY-03',
+          'RPT-ACC-01',
+          'RPT-ACC-02',
+          'RPT-ACC-03',
+          'RPT-TAX-01',
+          'RPT-TAX-02',
+          'RPT-INS-01',
+          'RPT-INS-02',
+          'RPT-LAB-01',
         ]),
         format: z.enum(['CSV', 'EXCEL', 'PDF', 'JSON']).default('CSV'),
-        filters: z.record(z.string(), z.any()).default({})
+        filters: z.record(z.string(), z.string()).default({}),
       });
 
       const body = schema.parse(req.body);
-      const reportDef = DEFAULT_REPORT_CATALOG.find(r => r.code === body.reportCode);
+      const reportDef = DEFAULT_REPORT_CATALOG.find((r) => r.code === body.reportCode);
       if (!reportDef) throw fail(404, 'REPORT_NOT_FOUND');
 
       if (!canAccessReport(identity.role, reportDef.minRole)) {
@@ -2002,7 +3109,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         csvContent += `Thời điểm xuất: ${exportTime}\r\n`;
         csvContent += `Người xuất: ${identity.email} (${identity.role})\r\n\r\n`;
 
-        const params: any[] = [identity.orgId];
+        const params: QueryParameter[] = [identity.orgId];
         const scope = await buildEmployeeScopeClause(pool, identity, 2);
         params.push(...scope.params);
 
@@ -2038,19 +3145,20 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
 
         csvContent += `Mã NV,Họ và tên,Phòng ban,Chức danh,Trạng thái,Loại hợp đồng,Số hợp đồng,Ngày vào làm,Thâm niên (tháng),Số điện thoại,Email\r\n`;
         for (const r of result.rows) {
-          csvContent += [
-            escapeCsvCell(r.employee_code),
-            escapeCsvCell(r.full_name),
-            escapeCsvCell(r.department_name || 'Chưa phân bổ'),
-            escapeCsvCell(r.position_title || 'Chưa phân bổ'),
-            escapeCsvCell(r.employment_status),
-            escapeCsvCell(r.contract_type || '—'),
-            escapeCsvCell(r.contract_number || '—'),
-            escapeCsvCell(r.hire_date),
-            escapeCsvCell(r.tenure_months || 0),
-            escapeCsvCell(r.phone || ''),
-            escapeCsvCell(r.personal_email || '')
-          ].join(',') + '\r\n';
+          csvContent +=
+            [
+              escapeCsvCell(r.employee_code),
+              escapeCsvCell(r.full_name),
+              escapeCsvCell(r.department_name || 'Chưa phân bổ'),
+              escapeCsvCell(r.position_title || 'Chưa phân bổ'),
+              escapeCsvCell(r.employment_status),
+              escapeCsvCell(r.contract_type || '—'),
+              escapeCsvCell(r.contract_number || '—'),
+              escapeCsvCell(r.hire_date),
+              escapeCsvCell(r.tenure_months || 0),
+              escapeCsvCell(r.phone || ''),
+              escapeCsvCell(r.personal_email || ''),
+            ].join(',') + '\r\n';
         }
       } else if (body.reportCode === 'RPT-ORG-01') {
         csvContent += `BÁO CÁO CƠ CẤU TỔ CHỨC & PHÒNG BAN (RPT-ORG-01)\r\n`;
@@ -2074,24 +3182,26 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
 
         csvContent += `Mã phòng ban,Tên phòng ban,Phòng ban cấp trên,Trưởng bộ phận,Trạng thái,Số nhân sự đang hoạt động,Số vị trí chức danh\r\n`;
         for (const r of result.rows) {
-          csvContent += [
-            escapeCsvCell(r.code),
-            escapeCsvCell(r.name),
-            escapeCsvCell(r.parent_name || '—'),
-            escapeCsvCell(r.manager_name || 'Chưa phân công'),
-            escapeCsvCell(r.is_active ? 'Đang hoạt động' : 'Tạm dừng'),
-            escapeCsvCell(r.active_employees),
-            escapeCsvCell(r.position_count)
-          ].join(',') + '\r\n';
+          csvContent +=
+            [
+              escapeCsvCell(r.code),
+              escapeCsvCell(r.name),
+              escapeCsvCell(r.parent_name || '—'),
+              escapeCsvCell(r.manager_name || 'Chưa phân công'),
+              escapeCsvCell(r.is_active ? 'Đang hoạt động' : 'Tạm dừng'),
+              escapeCsvCell(r.active_employees),
+              escapeCsvCell(r.position_count),
+            ].join(',') + '\r\n';
         }
       } else if (body.reportCode === 'RPT-ATT-01') {
         csvContent += `BÁO CÁO TỔNG HỢP CHẤM CÔNG & CA LÀM VIỆC (RPT-ATT-01)\r\n`;
         csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
 
-        const startDate = body.filters.startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+        const startDate =
+          body.filters.startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
         const endDate = body.filters.endDate || new Date().toISOString().slice(0, 10);
 
-        const params: any[] = [identity.orgId, startDate, endDate];
+        const params: QueryParameter[] = [identity.orgId, startDate, endDate];
         const scope = await buildEmployeeScopeClause(pool, identity, 4);
         params.push(...scope.params);
 
@@ -2114,23 +3224,24 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
 
         csvContent += `Ngày làm việc,Mã NV,Họ và tên,Phòng ban,Ca làm việc,Giờ bắt đầu ca,Giờ kết thúc ca,Giờ vào thực tế,Giờ ra thực tế\r\n`;
         for (const r of result.rows) {
-          csvContent += [
-            escapeCsvCell(r.work_date),
-            escapeCsvCell(r.employee_code),
-            escapeCsvCell(r.full_name),
-            escapeCsvCell(r.department_name || 'Chưa phân bổ'),
-            escapeCsvCell(r.shift_name || 'Ca chuẩn'),
-            escapeCsvCell(r.starts_at),
-            escapeCsvCell(r.ends_at),
-            escapeCsvCell(r.checked_in_at || '—'),
-            escapeCsvCell(r.checked_out_at || '—')
-          ].join(',') + '\r\n';
+          csvContent +=
+            [
+              escapeCsvCell(r.work_date),
+              escapeCsvCell(r.employee_code),
+              escapeCsvCell(r.full_name),
+              escapeCsvCell(r.department_name || 'Chưa phân bổ'),
+              escapeCsvCell(r.shift_name || 'Ca chuẩn'),
+              escapeCsvCell(r.starts_at),
+              escapeCsvCell(r.ends_at),
+              escapeCsvCell(r.checked_in_at || '—'),
+              escapeCsvCell(r.checked_out_at || '—'),
+            ].join(',') + '\r\n';
         }
       } else if (body.reportCode === 'RPT-LEAVE-01') {
         csvContent += `BÁO CÁO NGHỈ PHÉP & SỐ DƯ PHÉP (RPT-LEAVE-01)\r\n`;
         csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
 
-        const params: any[] = [identity.orgId];
+        const params: QueryParameter[] = [identity.orgId];
         const scope = await buildEmployeeScopeClause(pool, identity, 2);
         params.push(...scope.params);
 
@@ -2160,23 +3271,24 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           const remaining = Math.max(0, allowance - charged);
           const rate = allowance > 0 ? ((charged / allowance) * 100).toFixed(1) : '0';
 
-          csvContent += [
-            escapeCsvCell(r.employee_code),
-            escapeCsvCell(r.full_name),
-            escapeCsvCell(r.department_name || 'Chưa phân bổ'),
-            escapeCsvCell(r.leave_type_name),
-            escapeCsvCell((allowance / 480).toFixed(2)),
-            escapeCsvCell((charged / 480).toFixed(2)),
-            escapeCsvCell((remaining / 480).toFixed(2)),
-            escapeCsvCell(rate)
-          ].join(',') + '\r\n';
+          csvContent +=
+            [
+              escapeCsvCell(r.employee_code),
+              escapeCsvCell(r.full_name),
+              escapeCsvCell(r.department_name || 'Chưa phân bổ'),
+              escapeCsvCell(r.leave_type_name),
+              escapeCsvCell((allowance / 480).toFixed(2)),
+              escapeCsvCell((charged / 480).toFixed(2)),
+              escapeCsvCell((remaining / 480).toFixed(2)),
+              escapeCsvCell(rate),
+            ].join(',') + '\r\n';
         }
       } else if (body.reportCode === 'RPT-PAY-01') {
         let periodId = body.filters.periodId ? uuid.parse(body.filters.periodId) : undefined;
         if (!periodId) {
           const latest = await pool.query<{ id: string }>(
             `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-            [identity.orgId]
+            [identity.orgId],
           );
           if (latest.rowCount && latest.rows[0]) periodId = latest.rows[0].id;
         }
@@ -2191,7 +3303,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           }>(
             `SELECT code, name, start_date::text, end_date::text, status
              FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-            [periodId, identity.orgId]
+            [periodId, identity.orgId],
           );
           const p = periodRes.rows[0];
           csvContent += `BÁO CÁO BẢNG LƯƠNG TỔNG HỢP & CHI TIẾT THEO KỲ (RPT-PAY-01)\r\n`;
@@ -2199,7 +3311,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           csvContent += `Thời điểm xuất: ${exportTime}\r\n`;
           csvContent += `Người xuất: ${identity.email}\r\n\r\n`;
 
-          const params: any[] = [identity.orgId, periodId];
+          const params: QueryParameter[] = [identity.orgId, periodId];
           const scope = await buildEmployeeScopeClause(pool, identity, 3);
           params.push(...scope.params);
 
@@ -2235,26 +3347,27 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             LEFT JOIN positions pos ON pos.id = e.position_id AND pos.organization_id = e.organization_id
             WHERE ${whereClause}
             ORDER BY e.employee_code ASC`,
-            params
+            params,
           );
           rowCount = slips.rows.length;
 
           csvContent += `Mã NV,Họ và tên,Phòng ban,Chức danh,Lương cơ bản (VND),Lương tính công (VND),Phụ cấp (VND),Thưởng (VND),Tổng thu nhập Gross (VND),Tổng khấu trừ (VND),Thực lĩnh Net (VND),Trạng thái phiếu\r\n`;
           for (const s of slips.rows) {
-            csvContent += [
-              escapeCsvCell(s.employee_code),
-              escapeCsvCell(s.full_name),
-              escapeCsvCell(s.department_name || 'Chưa phân bổ'),
-              escapeCsvCell(s.position_title || 'Chưa phân bổ'),
-              escapeCsvCell(toDecimal(toCents(s.base_salary))),
-              escapeCsvCell(toDecimal(toCents(s.prorated_base_salary))),
-              escapeCsvCell(toDecimal(toCents(s.total_allowances))),
-              escapeCsvCell(toDecimal(toCents(s.total_bonuses))),
-              escapeCsvCell(toDecimal(toCents(s.gross_pay))),
-              escapeCsvCell(toDecimal(toCents(s.total_deductions))),
-              escapeCsvCell(toDecimal(toCents(s.net_pay))),
-              escapeCsvCell(s.status)
-            ].join(',') + '\r\n';
+            csvContent +=
+              [
+                escapeCsvCell(s.employee_code),
+                escapeCsvCell(s.full_name),
+                escapeCsvCell(s.department_name || 'Chưa phân bổ'),
+                escapeCsvCell(s.position_title || 'Chưa phân bổ'),
+                escapeCsvCell(toDecimal(toCents(s.base_salary))),
+                escapeCsvCell(toDecimal(toCents(s.prorated_base_salary))),
+                escapeCsvCell(toDecimal(toCents(s.total_allowances))),
+                escapeCsvCell(toDecimal(toCents(s.total_bonuses))),
+                escapeCsvCell(toDecimal(toCents(s.gross_pay))),
+                escapeCsvCell(toDecimal(toCents(s.total_deductions))),
+                escapeCsvCell(toDecimal(toCents(s.net_pay))),
+                escapeCsvCell(s.status),
+              ].join(',') + '\r\n';
           }
         }
       } else if (body.reportCode === 'RPT-PAY-02') {
@@ -2262,7 +3375,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         if (!periodId) {
           const latest = await pool.query<{ id: string }>(
             `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-            [identity.orgId]
+            [identity.orgId],
           );
           if (latest.rowCount && latest.rows[0]) periodId = latest.rows[0].id;
         }
@@ -2270,13 +3383,13 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         if (periodId) {
           const periodRes = await pool.query<{ code: string; name: string }>(
             `SELECT code, name FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-            [periodId, identity.orgId]
+            [periodId, identity.orgId],
           );
           csvContent += `BÁO CÁO CƠ CẤU PHỤ CẤP, THƯỞNG & KHẤU TRỪ (RPT-PAY-02)\r\n`;
           csvContent += `Kỳ lương: ${periodRes.rows[0]?.name || '—'}\r\n`;
           csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
 
-          const params: any[] = [identity.orgId, periodId];
+          const params: QueryParameter[] = [identity.orgId, periodId];
           const scope = await buildEmployeeScopeClause(pool, identity, 3);
           params.push(...scope.params);
 
@@ -2296,36 +3409,50 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             WHERE s.organization_id = $1 AND s.period_id = $2 AND ${scope.clause}
             GROUP BY it.component_name, it.type
             ORDER BY it.type ASC, sum(it.amount) DESC`,
-            params
+            params,
           );
           rowCount = itemsRes.rows.length;
 
           csvContent += `Tên khoản mục,Phân loại,Tính chịu thuế,Số người nhận,Tổng số tiền (VND)\r\n`;
           for (const it of itemsRes.rows) {
             const nameLower = it.component_name.toLowerCase();
-            const isNonTaxable = /ăn trưa|xăng xe|đồng phục|trang phục|công tác phí|điện thoại/i.test(nameLower);
-            const taxableText = it.type === 'ALLOWANCE' ? (isNonTaxable ? 'Miễn thuế' : 'Chịu thuế') : (it.type === 'BONUS' ? 'Chịu thuế' : 'Khấu trừ');
+            const isNonTaxable =
+              /ăn trưa|xăng xe|đồng phục|trang phục|công tác phí|điện thoại/i.test(nameLower);
+            const taxableText =
+              it.type === 'ALLOWANCE'
+                ? isNonTaxable
+                  ? 'Miễn thuế'
+                  : 'Chịu thuế'
+                : it.type === 'BONUS'
+                  ? 'Chịu thuế'
+                  : 'Khấu trừ';
 
-            csvContent += [
-              escapeCsvCell(it.component_name),
-              escapeCsvCell(it.type),
-              escapeCsvCell(taxableText),
-              escapeCsvCell(it.recipient_count),
-              escapeCsvCell(toDecimal(toCents(it.total_amount)))
-            ].join(',') + '\r\n';
+            csvContent +=
+              [
+                escapeCsvCell(it.component_name),
+                escapeCsvCell(it.type),
+                escapeCsvCell(taxableText),
+                escapeCsvCell(it.recipient_count),
+                escapeCsvCell(toDecimal(toCents(it.total_amount))),
+              ].join(',') + '\r\n';
           }
         }
       } else if (body.reportCode === 'RPT-PAY-03') {
-        let currentPeriodId = body.filters.currentPeriodId ? uuid.parse(body.filters.currentPeriodId) : undefined;
-        let previousPeriodId = body.filters.previousPeriodId ? uuid.parse(body.filters.previousPeriodId) : undefined;
+        let currentPeriodId = body.filters.currentPeriodId
+          ? uuid.parse(body.filters.currentPeriodId)
+          : undefined;
+        let previousPeriodId = body.filters.previousPeriodId
+          ? uuid.parse(body.filters.previousPeriodId)
+          : undefined;
 
         if (!currentPeriodId) {
           const latestTwo = await pool.query<{ id: string }>(
             `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 2`,
-            [identity.orgId]
+            [identity.orgId],
           );
           if (latestTwo.rowCount && latestTwo.rows[0]) currentPeriodId = latestTwo.rows[0].id;
-          if (latestTwo.rowCount && latestTwo.rows.length > 1 && !previousPeriodId) previousPeriodId = latestTwo.rows[1].id;
+          if (latestTwo.rowCount && latestTwo.rows.length > 1 && !previousPeriodId)
+            previousPeriodId = latestTwo.rows[1].id;
         }
 
         csvContent += `BÁO CÁO BIẾN ĐỘNG QUỸ LƯƠNG GIỮA CÁC KỲ (RPT-PAY-03)\r\n`;
@@ -2346,7 +3473,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
              LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
              WHERE s.organization_id = $1 AND s.period_id = $2 AND ${scope.clause}
              ORDER BY e.employee_code ASC`,
-            [identity.orgId, currentPeriodId, ...scope.params]
+            [identity.orgId, currentPeriodId, ...scope.params],
           );
 
           const prevMap = new Map<string, bigint>();
@@ -2355,7 +3482,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
               `SELECT s.employee_id, s.net_pay::text AS net_pay
                FROM payroll_slips s
                WHERE s.organization_id = $1 AND s.period_id = $2`,
-              [identity.orgId, previousPeriodId]
+              [identity.orgId, previousPeriodId],
             );
             for (const r of prevRes.rows) {
               prevMap.set(r.employee_id, toCents(r.net_pay));
@@ -2376,16 +3503,17 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             }
             const isAnomaly = Math.abs(variancePct) >= 20;
 
-            csvContent += [
-              escapeCsvCell(curr.employee_code),
-              escapeCsvCell(curr.full_name),
-              escapeCsvCell(curr.department_name || 'Chưa phân bổ'),
-              escapeCsvCell(toDecimal(prevNet)),
-              escapeCsvCell(toDecimal(currNet)),
-              escapeCsvCell(toDecimal(diff)),
-              escapeCsvCell(`${variancePct.toFixed(2)}%`),
-              escapeCsvCell(isAnomaly ? 'BIẾN ĐỘNG MẠNH (>=20%)' : 'Bình thường')
-            ].join(',') + '\r\n';
+            csvContent +=
+              [
+                escapeCsvCell(curr.employee_code),
+                escapeCsvCell(curr.full_name),
+                escapeCsvCell(curr.department_name || 'Chưa phân bổ'),
+                escapeCsvCell(toDecimal(prevNet)),
+                escapeCsvCell(toDecimal(currNet)),
+                escapeCsvCell(toDecimal(diff)),
+                escapeCsvCell(`${variancePct.toFixed(2)}%`),
+                escapeCsvCell(isAnomaly ? 'BIẾN ĐỘNG MẠNH (>=20%)' : 'Bình thường'),
+              ].join(',') + '\r\n';
           }
         }
       } else if (body.reportCode === 'RPT-ACC-01') {
@@ -2393,7 +3521,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         if (!periodId) {
           const latest = await pool.query<{ id: string }>(
             `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-            [identity.orgId]
+            [identity.orgId],
           );
           if (latest.rowCount && latest.rows[0]) periodId = latest.rows[0].id;
         }
@@ -2401,13 +3529,13 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         if (periodId) {
           const periodRes = await pool.query<{ code: string; name: string }>(
             `SELECT code, name FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-            [periodId, identity.orgId]
+            [periodId, identity.orgId],
           );
           csvContent += `BÁO CÁO PHÂN BỔ CHI PHÍ LƯƠNG THEO PHÒNG BAN & TÀI KHOẢN KẾ TOÁN (VAS) (RPT-ACC-01)\r\n`;
           csvContent += `Kỳ lương: ${periodRes.rows[0]?.name || '—'}\r\n`;
           csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
 
-          const params: any[] = [identity.orgId, periodId];
+          const params: QueryParameter[] = [identity.orgId, periodId];
           const scope = await buildEmployeeScopeClause(pool, identity, 3);
           params.push(...scope.params);
 
@@ -2427,7 +3555,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             WHERE s.organization_id = $1 AND s.period_id = $2 AND ${scope.clause}
             GROUP BY d.code, d.name
             ORDER BY d.name ASC NULLS LAST`,
-            params
+            params,
           );
           rowCount = deptRes.rows.length;
 
@@ -2439,20 +3567,24 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             const ctcCents = grossCents + statutoryCents + unionCents;
 
             const deptCode = (d.department_code || '').toUpperCase();
-            const vasAccount = (deptCode.includes('SALE') || deptCode.includes('MKT') || deptCode.includes('KD')) ? '6421' : '6422';
+            const vasAccount =
+              deptCode.includes('SALE') || deptCode.includes('MKT') || deptCode.includes('KD')
+                ? '6421'
+                : '6422';
             const vasName = vasAccount === '6421' ? 'Chi phí bán hàng' : 'Chi phí quản lý DN';
 
-            csvContent += [
-              escapeCsvCell(d.department_code || 'UNASSIGNED'),
-              escapeCsvCell(d.department_name || 'Chưa phân bổ'),
-              escapeCsvCell(vasAccount),
-              escapeCsvCell(vasName),
-              escapeCsvCell(d.headcount),
-              escapeCsvCell(toDecimal(grossCents)),
-              escapeCsvCell(toDecimal(statutoryCents)),
-              escapeCsvCell(toDecimal(unionCents)),
-              escapeCsvCell(toDecimal(ctcCents))
-            ].join(',') + '\r\n';
+            csvContent +=
+              [
+                escapeCsvCell(d.department_code || 'UNASSIGNED'),
+                escapeCsvCell(d.department_name || 'Chưa phân bổ'),
+                escapeCsvCell(vasAccount),
+                escapeCsvCell(vasName),
+                escapeCsvCell(d.headcount),
+                escapeCsvCell(toDecimal(grossCents)),
+                escapeCsvCell(toDecimal(statutoryCents)),
+                escapeCsvCell(toDecimal(unionCents)),
+                escapeCsvCell(toDecimal(ctcCents)),
+              ].join(',') + '\r\n';
           }
         }
       } else if (body.reportCode === 'RPT-ACC-02') {
@@ -2460,7 +3592,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         if (!periodId) {
           const latest = await pool.query<{ id: string }>(
             `SELECT id FROM payroll_periods WHERE organization_id = $1 ORDER BY start_date DESC LIMIT 1`,
-            [identity.orgId]
+            [identity.orgId],
           );
           if (latest.rowCount && latest.rows[0]) periodId = latest.rows[0].id;
         }
@@ -2468,13 +3600,13 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         if (periodId) {
           const periodRes = await pool.query<{ code: string; name: string }>(
             `SELECT code, name FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-            [periodId, identity.orgId]
+            [periodId, identity.orgId],
           );
           csvContent += `BÁO CÁO CÔNG NỢ LƯƠNG & ĐỐI CHIẾU THANH TOÁN (RPT-ACC-02)\r\n`;
           csvContent += `Kỳ lương: ${periodRes.rows[0]?.name || '—'}\r\n`;
           csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
 
-          const params: any[] = [identity.orgId, periodId];
+          const params: QueryParameter[] = [identity.orgId, periodId];
           const scope = await buildEmployeeScopeClause(pool, identity, 3);
           params.push(...scope.params);
 
@@ -2491,7 +3623,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
              LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
              WHERE s.organization_id = $1 AND s.period_id = $2 AND ${scope.clause}
              ORDER BY e.employee_code ASC`,
-            params
+            params,
           );
 
           const disbRes = await pool.query<{ employee_id: string; disbursed_amount: string }>(
@@ -2499,7 +3631,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
              FROM payroll_disbursements
              WHERE organization_id = $1 AND period_id = $2 AND status = 'COMPLETED'
              GROUP BY employee_id`,
-            [identity.orgId, periodId]
+            [identity.orgId, periodId],
           );
           const disbMap = new Map<string, bigint>();
           for (const d of disbRes.rows) disbMap.set(d.employee_id, toCents(d.disbursed_amount));
@@ -2514,15 +3646,16 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             if (disbursed >= payable && payable > 0n) status = 'Đã thanh toán đủ';
             else if (disbursed > 0n) status = 'Thanh toán một phần';
 
-            csvContent += [
-              escapeCsvCell(s.employee_code),
-              escapeCsvCell(s.full_name),
-              escapeCsvCell(s.department_name || 'Chưa phân bổ'),
-              escapeCsvCell(toDecimal(payable)),
-              escapeCsvCell(toDecimal(disbursed)),
-              escapeCsvCell(toDecimal(remaining)),
-              escapeCsvCell(status)
-            ].join(',') + '\r\n';
+            csvContent +=
+              [
+                escapeCsvCell(s.employee_code),
+                escapeCsvCell(s.full_name),
+                escapeCsvCell(s.department_name || 'Chưa phân bổ'),
+                escapeCsvCell(toDecimal(payable)),
+                escapeCsvCell(toDecimal(disbursed)),
+                escapeCsvCell(toDecimal(remaining)),
+                escapeCsvCell(status),
+              ].join(',') + '\r\n';
           }
         }
       } else if (body.reportCode === 'RPT-ACC-03') {
@@ -2532,7 +3665,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         csvContent += `BÁO CÁO SỔ NHẬT KÝ BÚT TOÁN KẾ TOÁN LƯƠNG (RPT-ACC-03)\r\n`;
         csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
 
-        const params: any[] = [identity.orgId];
+        const params: QueryParameter[] = [identity.orgId];
         let whereClause = `je.organization_id = $1`;
         if (periodId) {
           params.push(periodId);
@@ -2554,10 +3687,10 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
            FROM payroll_journal_entries je
            WHERE ${whereClause}
            ORDER BY entry_date DESC, entry_number DESC`,
-          params
+          params,
         );
 
-        const entryIds = entriesRes.rows.map(r => r.id);
+        const entryIds = entriesRes.rows.map((r) => r.id);
         if (entryIds.length > 0) {
           const linesRes = await pool.query<{
             entry_id: string;
@@ -2576,10 +3709,10 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             LEFT JOIN departments d ON d.id = jl.department_id AND d.organization_id = jl.organization_id
             WHERE jl.entry_id = ANY($1)
             ORDER BY jl.line_order ASC`,
-            [entryIds]
+            [entryIds],
           );
 
-          const entryMap = new Map(entriesRes.rows.map(e => [e.id, e]));
+          const entryMap = new Map(entriesRes.rows.map((e) => [e.id, e]));
           rowCount = linesRes.rows.length;
 
           csvContent += `Số chứng từ,Ngày hạch toán,Diễn giải nghiệp vụ,Tài khoản,Tên tài khoản,Nợ/Có,Số tiền (VND),Phòng ban,Trạng thái chứng từ\r\n`;
@@ -2590,18 +3723,430 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
             const direction = deb > 0n ? 'NỢ' : 'CÓ';
             const amount = deb > 0n ? deb : cred;
 
-            csvContent += [
-              escapeCsvCell(entry?.entry_number || '—'),
-              escapeCsvCell(entry?.entry_date || '—'),
-              escapeCsvCell(entry?.description || '—'),
-              escapeCsvCell(l.account_code),
-              escapeCsvCell(l.account_name),
-              escapeCsvCell(direction),
-              escapeCsvCell(toDecimal(amount)),
-              escapeCsvCell(l.department_name || 'Chung'),
-              escapeCsvCell(entry?.status || '—')
-            ].join(',') + '\r\n';
+            csvContent +=
+              [
+                escapeCsvCell(entry?.entry_number || '—'),
+                escapeCsvCell(entry?.entry_date || '—'),
+                escapeCsvCell(entry?.description || '—'),
+                escapeCsvCell(l.account_code),
+                escapeCsvCell(l.account_name),
+                escapeCsvCell(direction),
+                escapeCsvCell(toDecimal(amount)),
+                escapeCsvCell(l.department_name || 'Chung'),
+                escapeCsvCell(entry?.status || '—'),
+              ].join(',') + '\r\n';
           }
+        }
+      } else if (body.reportCode === 'RPT-TAX-01') {
+        csvContent += `BÁO CÁO THUẾ THU NHẬP CÁ NHÂN ĐỊNH KỲ (RPT-TAX-01)\r\n`;
+        csvContent += `Thời điểm xuất: ${exportTime}\r\n`;
+        csvContent += `Người xuất: ${identity.email} (${identity.role})\r\n\r\n`;
+
+        const periodId = body.filters.periodId ? uuid.parse(body.filters.periodId) : undefined;
+        let period: ReportPeriod | undefined;
+        if (periodId) {
+          const pRes = await pool.query(
+            `SELECT id, code, name, status, start_date::text AS start_date, end_date::text AS end_date
+             FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
+            [periodId, identity.orgId],
+          );
+          if (pRes.rows.length > 0) period = pRes.rows[0];
+        }
+        if (!period) {
+          const pRes = await pool.query(
+            `SELECT id, code, name, status, start_date::text AS start_date, end_date::text AS end_date
+             FROM payroll_periods WHERE organization_id = $1
+             ORDER BY (status = 'CLOSED') DESC, end_date DESC LIMIT 1`,
+            [identity.orgId],
+          );
+          if (pRes.rows.length > 0) period = pRes.rows[0];
+        }
+
+        if (period) {
+          csvContent += `Kỳ thuế: ${period.name} (${period.code}) - Trạng thái: ${period.status}\r\n\r\n`;
+          const params: QueryParameter[] = [
+            identity.orgId,
+            period.id,
+            period.start_date,
+            period.end_date,
+          ];
+          let where = 's.organization_id = $1 AND s.period_id = $2';
+          if (body.filters.departmentId) {
+            params.push(body.filters.departmentId);
+            where += ` AND e.department_id = $${params.length}`;
+          }
+
+          const q = `
+            SELECT
+              s.id AS slip_id, s.employee_id, s.gross_pay, s.net_pay, s.total_deductions,
+              e.employee_code, e.full_name, d.name AS department_name,
+              COALESCE((
+                SELECT count(*)::int FROM employee_dependents ed
+                WHERE ed.employee_id = s.employee_id AND ed.organization_id = s.organization_id
+                  AND ed.is_verified = true
+                  AND ed.effective_from <= $4::date
+                  AND (ed.effective_to IS NULL OR ed.effective_to >= $3::date)
+              ), 0) AS dependent_count
+            FROM payroll_slips s
+            JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
+            LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+            WHERE ${where}
+            ORDER BY e.employee_code ASC
+          `;
+          const slipsRes = await pool.query(q, params);
+          rowCount = slipsRes.rows.length;
+
+          const slipIds = slipsRes.rows.map((r) => r.slip_id);
+          const itemsMap = new Map<string, PayrollSlipItemRow[]>();
+          if (slipIds.length > 0) {
+            const iRes = await pool.query<PayrollSlipItemRow>(
+              `SELECT slip_id, component_name, type, amount
+               FROM payroll_slip_items
+               WHERE organization_id = $1 AND slip_id = ANY($2::uuid[])`,
+              [identity.orgId, slipIds],
+            );
+            for (const item of iRes.rows) {
+              const arr = itemsMap.get(item.slip_id) || [];
+              arr.push(item);
+              itemsMap.set(item.slip_id, arr);
+            }
+          }
+
+          csvContent += `Mã NV,Họ và tên,Phòng ban,Tổng thu nhập chịu thuế (VND),Giảm trừ bản thân (VND),Số người phụ thuộc,Giảm trừ người phụ thuộc (VND),Giảm trừ BH bắt buộc (VND),Thu nhập tính thuế (VND),Thuế TNCN khấu trừ (VND)\r\n`;
+          for (const r of slipsRes.rows) {
+            const grossCents = toCents(r.gross_pay);
+            const slipItems = itemsMap.get(r.slip_id) || [];
+            let nonTaxableCents = 0n;
+            let insuranceCents = 0n;
+
+            for (const it of slipItems) {
+              const amt = toCents(it.amount);
+              const nameLower = (it.component_name || '').toLowerCase();
+              if (
+                it.type === 'ALLOWANCE' &&
+                (nameLower.includes('ăn trưa') || nameLower.includes('lunch'))
+              ) {
+                nonTaxableCents += amt > 730_000_00n ? 730_000_00n : amt;
+              } else if (
+                it.type === 'DEDUCTION' &&
+                (nameLower.includes('bhxh') ||
+                  nameLower.includes('bhyt') ||
+                  nameLower.includes('bhtn') ||
+                  nameLower.includes('bảo hiểm'))
+              ) {
+                insuranceCents += amt;
+              }
+            }
+
+            const taxableCents = grossCents > nonTaxableCents ? grossCents - nonTaxableCents : 0n;
+            const personalCents = 11_000_000_00n;
+            const dependentCents = BigInt(r.dependent_count) * 4_400_000_00n;
+            const totalDeductionsCents = personalCents + dependentCents + insuranceCents;
+            const assessableCents =
+              taxableCents > totalDeductionsCents ? taxableCents - totalDeductionsCents : 0n;
+            const computedPitCents = calculatePitTax(assessableCents, DEFAULT_PIT_BRACKETS);
+
+            csvContent +=
+              [
+                escapeCsvCell(r.employee_code),
+                escapeCsvCell(r.full_name),
+                escapeCsvCell(r.department_name || 'Chung'),
+                escapeCsvCell(toDecimal(taxableCents)),
+                escapeCsvCell(toDecimal(personalCents)),
+                escapeCsvCell(r.dependent_count),
+                escapeCsvCell(toDecimal(dependentCents)),
+                escapeCsvCell(toDecimal(insuranceCents)),
+                escapeCsvCell(toDecimal(assessableCents)),
+                escapeCsvCell(toDecimal(computedPitCents)),
+              ].join(',') + '\r\n';
+          }
+        }
+      } else if (body.reportCode === 'RPT-TAX-02') {
+        const taxYear = body.filters.year
+          ? parseInt(String(body.filters.year), 10)
+          : new Date().getFullYear();
+        csvContent += `BÁO CÁO QUYẾT TOÁN THUẾ THU NHẬP CÁ NHÂN NĂM (RPT-TAX-02)\r\n`;
+        csvContent += `Năm quyết toán: ${taxYear}\r\n`;
+        csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
+
+        const params: QueryParameter[] = [identity.orgId, `${taxYear}-01-01`, `${taxYear}-12-31`];
+        let where = 'e.organization_id = $1';
+        if (body.filters.departmentId) {
+          params.push(body.filters.departmentId);
+          where += ` AND e.department_id = $${params.length}`;
+        }
+
+        const rowsRes = await pool.query(
+          `SELECT
+            e.id AS employee_id, e.employee_code, e.full_name, d.name AS department_name,
+            ec.contract_type,
+            COALESCE(count(DISTINCT p.id), 0)::int AS months_worked,
+            COALESCE(sum(s.gross_pay), 0.00) AS annual_gross,
+            COALESCE(sum(s.total_deductions), 0.00) AS annual_deductions,
+            COALESCE((
+              SELECT count(*)::int FROM employee_dependents ed
+              WHERE ed.employee_id = e.id AND ed.organization_id = e.organization_id
+                AND ed.is_verified = true
+                AND ed.effective_from <= $3::date
+                AND (ed.effective_to IS NULL OR ed.effective_to >= $2::date)
+            ), 0) AS dependent_count
+          FROM employees e
+          LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+          LEFT JOIN employee_contracts ec ON ec.employee_id = e.id AND ec.organization_id = e.organization_id AND ec.status = 'ACTIVE'
+          JOIN payroll_slips s ON s.employee_id = e.id AND s.organization_id = e.organization_id
+          JOIN payroll_periods p ON p.id = s.period_id AND p.organization_id = s.organization_id
+            AND p.start_date >= $2::date AND p.end_date <= $3::date
+          WHERE ${where}
+          GROUP BY e.id, e.employee_code, e.full_name, d.name, ec.contract_type
+          ORDER BY e.employee_code ASC`,
+          params,
+        );
+        rowCount = rowsRes.rows.length;
+
+        csvContent += `Mã NV,Họ và tên,Phòng ban,Loại HĐLĐ,Số tháng làm việc,Tổng thu nhập chịu thuế cả năm (VND),Tổng giảm trừ cả năm (VND),Thu nhập tính thuế cả năm (VND),Số thuế phải nộp (VND),Số thuế đã khấu trừ (VND),Chênh lệch thừa/thiếu (VND),Ủy quyền quyết toán\r\n`;
+        for (const r of rowsRes.rows) {
+          const annualGrossCents = toCents(r.annual_gross);
+          const months = Math.min(12, Math.max(1, r.months_worked || 12));
+          const personalCents = BigInt(months) * 11_000_000_00n;
+          const dependentCents = BigInt(months) * BigInt(r.dependent_count) * 4_400_000_00n;
+          const insuranceCents = toCents(r.annual_deductions);
+          const annualDeductionsCents = personalCents + dependentCents + insuranceCents;
+          const assessableCents =
+            annualGrossCents > annualDeductionsCents
+              ? annualGrossCents - annualDeductionsCents
+              : 0n;
+
+          const annualTaxLiabilityCents = calculatePitTax(assessableCents, ANNUAL_PIT_BRACKETS);
+          const taxWithheldCents = annualTaxLiabilityCents;
+          const balanceCents = annualTaxLiabilityCents - taxWithheldCents;
+          const isAuthorizedProxy =
+            r.contract_type === 'INDEFINITE' || r.contract_type === 'FIXED_TERM';
+
+          csvContent +=
+            [
+              escapeCsvCell(r.employee_code),
+              escapeCsvCell(r.full_name),
+              escapeCsvCell(r.department_name || 'Chung'),
+              escapeCsvCell(r.contract_type || '—'),
+              escapeCsvCell(months),
+              escapeCsvCell(toDecimal(annualGrossCents)),
+              escapeCsvCell(toDecimal(annualDeductionsCents)),
+              escapeCsvCell(toDecimal(assessableCents)),
+              escapeCsvCell(toDecimal(annualTaxLiabilityCents)),
+              escapeCsvCell(toDecimal(taxWithheldCents)),
+              escapeCsvCell(toDecimal(balanceCents)),
+              escapeCsvCell(isAuthorizedProxy ? 'Có' : 'Không'),
+            ].join(',') + '\r\n';
+        }
+      } else if (body.reportCode === 'RPT-INS-01') {
+        csvContent += `BÁO CÁO TRÍCH NỘP BHXH, BHYT, BHTN & KINH PHÍ CÔNG ĐOÀN (RPT-INS-01)\r\n`;
+        csvContent += `Tỷ lệ trích nộp: Người lao động 10.5% | Doanh nghiệp 21.5% | Kinh phí CĐ 2.0% | Tổng cộng 34.0%\r\n`;
+        csvContent += `Thời điểm xuất: ${exportTime}\r\n`;
+        csvContent += `Người xuất: ${identity.email} (${identity.role})\r\n\r\n`;
+
+        const periodId = body.filters.periodId ? uuid.parse(body.filters.periodId) : undefined;
+        let period: ReportPeriod | undefined;
+        if (periodId) {
+          const pRes = await pool.query(
+            `SELECT id, code, name, status FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
+            [periodId, identity.orgId],
+          );
+          if (pRes.rows.length > 0) period = pRes.rows[0];
+        }
+        if (!period) {
+          const pRes = await pool.query(
+            `SELECT id, code, name, status FROM payroll_periods WHERE organization_id = $1
+             ORDER BY (status = 'CLOSED') DESC, end_date DESC LIMIT 1`,
+            [identity.orgId],
+          );
+          if (pRes.rows.length > 0) period = pRes.rows[0];
+        }
+
+        if (period) {
+          csvContent += `Kỳ lương: ${period.name} (${period.code})\r\n\r\n`;
+          const params: QueryParameter[] = [identity.orgId, period.id];
+          let where = 's.organization_id = $1 AND s.period_id = $2';
+          if (body.filters.departmentId) {
+            params.push(body.filters.departmentId);
+            where += ` AND e.department_id = $${params.length}`;
+          }
+
+          const q = `
+            SELECT
+              s.id AS slip_id, s.employee_id, s.base_salary, s.gross_pay,
+              e.employee_code, e.full_name, d.name AS department_name,
+              esi.si_code, esi.si_salary
+            FROM payroll_slips s
+            JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
+            LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+            LEFT JOIN employee_social_insurance esi ON esi.employee_id = e.id AND esi.organization_id = e.organization_id AND esi.status = 'ACTIVE'
+            WHERE ${where}
+            ORDER BY e.employee_code ASC
+          `;
+          const slipsRes = await pool.query(q, params);
+          rowCount = slipsRes.rows.length;
+
+          const siCapCents = 46_800_000_00n;
+          const uiCapCents = 99_200_000_00n;
+
+          csvContent += `Mã NV,Họ và tên,Phòng ban,Mã số BHXH,Lương đóng BHXH (VND),Lương tính BHXH/BHYT sau trần (VND),Lương tính BHTN sau trần (VND),BHXH NLĐ 8% (VND),BHYT NLĐ 1.5% (VND),BHTN NLĐ 1% (VND),Tổng trừ NLĐ 10.5% (VND),BHXH DN 17.5% (VND),BHYT DN 3% (VND),BHTN DN 1% (VND),Tổng DN đóng 21.5% (VND),Kinh phí CĐ 2% (VND),Tổng trích nộp 34% (VND)\r\n`;
+          for (const r of slipsRes.rows) {
+            const rawSalaryCents = r.si_salary ? toCents(r.si_salary) : toCents(r.base_salary);
+            const cappedSiCents = rawSalaryCents > siCapCents ? siCapCents : rawSalaryCents;
+            const cappedUiCents = rawSalaryCents > uiCapCents ? uiCapCents : rawSalaryCents;
+
+            const empBhxhCents = (cappedSiCents * 800n) / 10000n;
+            const empBhytCents = (cappedSiCents * 150n) / 10000n;
+            const empBhtnCents = (cappedUiCents * 100n) / 10000n;
+            const empTotalCents = empBhxhCents + empBhytCents + empBhtnCents;
+
+            const emprBhxhCents = (cappedSiCents * 1750n) / 10000n;
+            const emprBhytCents = (cappedSiCents * 300n) / 10000n;
+            const emprBhtnCents = (cappedUiCents * 100n) / 10000n;
+            const emprTotalCents = emprBhxhCents + emprBhytCents + emprBhtnCents;
+
+            const unionCents = (cappedSiCents * 200n) / 10000n;
+            const totalRemittanceCents = empTotalCents + emprTotalCents + unionCents;
+
+            csvContent +=
+              [
+                escapeCsvCell(r.employee_code),
+                escapeCsvCell(r.full_name),
+                escapeCsvCell(r.department_name || 'Chung'),
+                escapeCsvCell(r.si_code || '—'),
+                escapeCsvCell(toDecimal(rawSalaryCents)),
+                escapeCsvCell(toDecimal(cappedSiCents)),
+                escapeCsvCell(toDecimal(cappedUiCents)),
+                escapeCsvCell(toDecimal(empBhxhCents)),
+                escapeCsvCell(toDecimal(empBhytCents)),
+                escapeCsvCell(toDecimal(empBhtnCents)),
+                escapeCsvCell(toDecimal(empTotalCents)),
+                escapeCsvCell(toDecimal(emprBhxhCents)),
+                escapeCsvCell(toDecimal(emprBhytCents)),
+                escapeCsvCell(toDecimal(emprBhtnCents)),
+                escapeCsvCell(toDecimal(emprTotalCents)),
+                escapeCsvCell(toDecimal(unionCents)),
+                escapeCsvCell(toDecimal(totalRemittanceCents)),
+              ].join(',') + '\r\n';
+          }
+        }
+      } else if (body.reportCode === 'RPT-INS-02') {
+        const reportingYear = body.filters.year
+          ? parseInt(String(body.filters.year), 10)
+          : new Date().getFullYear();
+        csvContent += `BÁO CÁO TÌNH HÌNH BIẾN ĐỘNG LAO ĐỘNG THAM GIA BẢO HIỂM (RPT-INS-02 - MẪU D02-LT)\r\n`;
+        csvContent += `Năm: ${reportingYear}\r\n`;
+        csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
+
+        const params: QueryParameter[] = [
+          identity.orgId,
+          `${reportingYear}-01-01`,
+          `${reportingYear}-12-31`,
+        ];
+        let where = 'e.organization_id = $1';
+        if (body.filters.departmentId) {
+          params.push(body.filters.departmentId);
+          where += ` AND e.department_id = $${params.length}`;
+        }
+
+        const rowsRes = await pool.query(
+          `SELECT
+            e.id AS employee_id, e.employee_code, e.full_name, e.hire_date::text AS hire_date,
+            d.name AS department_name, pos.title AS position_title,
+            esi.si_code,
+            ec.start_date::text AS contract_start, ec.end_date::text AS contract_end, ec.status AS contract_status,
+            COALESCE(esp.base_salary, 0.00) AS new_salary,
+            CASE
+              WHEN ec.start_date >= $2::date AND ec.start_date <= $3::date THEN 'Tăng mới'
+              WHEN ec.status = 'TERMINATED' OR (ec.end_date IS NOT NULL AND ec.end_date <= $3::date) THEN 'Giảm lao động'
+              ELSE 'Điều chỉnh mức đóng'
+            END AS fluctuation_type,
+            COALESCE(ec.start_date::text, e.hire_date::text) AS effective_date
+          FROM employees e
+          LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+          LEFT JOIN positions pos ON pos.id = e.position_id AND pos.organization_id = e.organization_id
+          LEFT JOIN employee_social_insurance esi ON esi.employee_id = e.id AND esi.organization_id = e.organization_id
+          LEFT JOIN employee_contracts ec ON ec.employee_id = e.id AND ec.organization_id = e.organization_id
+          LEFT JOIN employee_salary_profiles esp ON esp.employee_id = e.id AND esp.organization_id = e.organization_id AND esp.status = 'ACTIVE'
+          WHERE ${where}
+          ORDER BY effective_date DESC, e.employee_code ASC`,
+          params,
+        );
+        rowCount = rowsRes.rows.length;
+
+        csvContent += `Mã NV,Họ và tên,Phòng ban,Chức danh,Mã số BHXH,Loại biến động,Ngày hiệu lực,Mức lương đóng mới (VND),Ghi chú\r\n`;
+        for (const r of rowsRes.rows) {
+          csvContent +=
+            [
+              escapeCsvCell(r.employee_code),
+              escapeCsvCell(r.full_name),
+              escapeCsvCell(r.department_name || 'Chung'),
+              escapeCsvCell(r.position_title || '—'),
+              escapeCsvCell(r.si_code || '—'),
+              escapeCsvCell(r.fluctuation_type),
+              escapeCsvCell(r.effective_date),
+              escapeCsvCell(toDecimal(toCents(r.new_salary))),
+              escapeCsvCell('Kê khai D02-LT'),
+            ].join(',') + '\r\n';
+        }
+      } else if (body.reportCode === 'RPT-LAB-01') {
+        const year = body.filters.year
+          ? parseInt(String(body.filters.year), 10)
+          : new Date().getFullYear();
+        const half = body.filters.half === '1' ? 1 : 2;
+        csvContent += `BÁO CÁO TÌNH HÌNH SỬ DỤNG LAO ĐỘNG ĐỊNH KỲ (RPT-LAB-01 - MẪU 01/PLI NĐ 145/2020/NĐ-CP)\r\n`;
+        csvContent += `Kỳ báo cáo: ${half === 1 ? `6 tháng đầu năm ${year}` : `Cả năm ${year}`}\r\n`;
+        csvContent += `Thời điểm xuất: ${exportTime}\r\n\r\n`;
+
+        const params: QueryParameter[] = [identity.orgId];
+        let where = 'e.organization_id = $1';
+        if (body.filters.departmentId) {
+          params.push(body.filters.departmentId);
+          where += ` AND e.department_id = $${params.length}`;
+        }
+
+        const empRes = await pool.query(
+          `SELECT
+            e.id AS employee_id, e.employee_code, e.full_name, e.hire_date::text AS hire_date,
+            e.employment_status, d.name AS department_name, pos.title AS position_title,
+            ec.contract_type, ec.contract_number
+          FROM employees e
+          LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
+          LEFT JOIN positions pos ON pos.id = e.position_id AND pos.organization_id = e.organization_id
+          LEFT JOIN employee_contracts ec ON ec.employee_id = e.id AND ec.organization_id = e.organization_id AND ec.status = 'ACTIVE'
+          WHERE ${where}
+          ORDER BY e.employee_code ASC`,
+          params,
+        );
+        rowCount = empRes.rows.length;
+
+        csvContent += `Mã NV,Họ và tên,Phòng ban,Chức vụ,Loại HĐLĐ,Số hợp đồng,Ngày tuyển dụng,Trạng thái làm việc,Nhóm vị trí\r\n`;
+        for (const r of empRes.rows) {
+          const titleLower = (r.position_title || '').toLowerCase();
+          const positionGroup = /giám đốc|trưởng|phó|manager|leader|director|head/.test(titleLower)
+            ? 'Nhà quản lý'
+            : /kỹ sư|lập trình|developer|engineer|chuyên viên|specialist/.test(titleLower)
+              ? 'Chuyên môn kỹ thuật'
+              : 'Nhân viên khác';
+          const contractLabel =
+            r.contract_type === 'INDEFINITE'
+              ? 'Hợp đồng KXDTH'
+              : r.contract_type === 'FIXED_TERM'
+                ? 'Hợp đồng CXDTH'
+                : 'Học việc/Thử việc';
+
+          csvContent +=
+            [
+              escapeCsvCell(r.employee_code),
+              escapeCsvCell(r.full_name),
+              escapeCsvCell(r.department_name || 'Chung'),
+              escapeCsvCell(r.position_title || '—'),
+              escapeCsvCell(contractLabel),
+              escapeCsvCell(r.contract_number || '—'),
+              escapeCsvCell(r.hire_date),
+              escapeCsvCell(r.employment_status === 'ACTIVE' ? 'Đang làm việc' : 'Đã nghỉ việc'),
+              escapeCsvCell(positionGroup),
+            ].join(',') + '\r\n';
         }
       }
 
@@ -2619,18 +4164,21 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           JSON.stringify(body.filters),
           identity.userId,
           req.ip || null,
-          req.get('user-agent') || null
-        ]
+          req.get('user-agent') || null,
+        ],
       );
 
       await audit(pool, 'REPORT_EXPORTED', identity.userId, identity.orgId, undefined, {
         reportCode: body.reportCode,
         format: body.format,
-        rowCount
+        rowCount,
       });
 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="${body.reportCode}_${Date.now()}.csv"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${body.reportCode}_${Date.now()}.csv"`,
+      );
       res.status(200).send(csvContent);
     } catch (err) {
       next(err);
@@ -2649,24 +4197,24 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         id: string;
         report_code: string;
         template_name: string;
-        filters: any;
+        filters: Record<string, unknown>;
         created_at: string;
       }>(
         `SELECT id, report_code, template_name, filters, created_at::text AS created_at
          FROM report_saved_templates
          WHERE organization_id = $1 AND user_id = $2
          ORDER BY template_name ASC`,
-        [identity.orgId, identity.userId]
+        [identity.orgId, identity.userId],
       );
 
       res.json({
-        templates: rows.rows.map(r => ({
+        templates: rows.rows.map((r) => ({
           id: r.id,
           reportCode: r.report_code,
           templateName: r.template_name,
           filters: r.filters,
-          createdAt: r.created_at
-        }))
+          createdAt: r.created_at,
+        })),
       });
     } catch (err) {
       next(err);
@@ -2680,7 +4228,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const schema = z.object({
         reportCode: z.string().min(1),
         templateName: z.string().trim().min(1).max(100),
-        filters: z.record(z.string(), z.any()).default({})
+        filters: z.record(z.string(), z.string()).default({}),
       });
       const body = schema.parse(req.body);
 
@@ -2692,7 +4240,14 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
          SET report_code = EXCLUDED.report_code,
              filters = EXCLUDED.filters,
              updated_at = now()`,
-        [id, identity.orgId, body.reportCode, identity.userId, body.templateName, JSON.stringify(body.filters)]
+        [
+          id,
+          identity.orgId,
+          body.reportCode,
+          identity.userId,
+          body.templateName,
+          JSON.stringify(body.filters),
+        ],
       );
 
       res.status(201).json({ id, message: 'Template saved successfully' });
@@ -2710,7 +4265,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
       const del = await pool.query(
         `DELETE FROM report_saved_templates
          WHERE id = $1 AND organization_id = $2 AND user_id = $3`,
-        [templateId, identity.orgId, identity.userId]
+        [templateId, identity.orgId, identity.userId],
       );
 
       if (!del.rowCount) fail(404, 'TEMPLATE_NOT_FOUND');
@@ -2731,7 +4286,7 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         report_code: string;
         format: string;
         row_count: number;
-        filters: any;
+        filters: Record<string, unknown>;
         exported_by: string;
         user_name: string;
         user_email: string;
@@ -2746,11 +4301,11 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
         WHERE a.organization_id = $1
         ORDER BY a.exported_at DESC
         LIMIT 100`,
-        [identity.orgId]
+        [identity.orgId],
       );
 
       res.json({
-        auditLogs: rows.rows.map(r => ({
+        auditLogs: rows.rows.map((r) => ({
           id: r.id,
           reportCode: r.report_code,
           format: r.format,
@@ -2759,8 +4314,8 @@ export function registerReportingRoutes(app: Express, deps: OrgStructureDeps) {
           exportedBy: r.exported_by,
           userName: r.user_name,
           userEmail: r.user_email,
-          exportedAt: r.exported_at
-        }))
+          exportedAt: r.exported_at,
+        })),
       });
     } catch (err) {
       next(err);

@@ -317,6 +317,30 @@ BEGIN
   -- 4. RPT-002: Verify 'ACCOUNTING' category in report_catalog
   INSERT INTO report_catalog(id, organization_id, code, category, name, description, min_role)
   VALUES ('00000000-0000-0000-0000-000000000186', '00000000-0000-0000-0000-000000000001', 'RPT-ACC-01', 'ACCOUNTING', 'Phân bổ chi phí', 'Mô tả', 'HR');
+
+  -- 5. RPT-003: Verify 'LABOR_UTILIZATION' report_type in compliance_reports
+  INSERT INTO compliance_reports(id, organization_id, report_type, report_code, title, period_start, period_end, created_by)
+  VALUES ('00000000-0000-0000-0000-000000000187', '00000000-0000-0000-0000-000000000001', 'LABOR_UTILIZATION', 'RPT-LAB-2026-H1', 'Báo cáo lao động H1/2026', CURRENT_DATE - 30, CURRENT_DATE, '00000000-0000-0000-0000-000000000002');
+
+  -- 6. RPT-002: Dynamic Custom Report Builder schema checks
+  INSERT INTO custom_reports(id, organization_id, name, primary_entity, definition, visualization_type, visibility, created_by)
+  VALUES ('00000000-0000-0000-0000-000000000190', '00000000-0000-0000-0000-000000000001', 'Headcount Matrix', 'employees', '{"primaryEntity":"employees","relatedEntities":["departments"],"columns":[],"rows":[{"fieldId":"dept_name"}],"pivotColumns":[],"values":[{"id":"v1","fieldId":"emp_id","aggregation":"COUNT"}],"groupBy":[],"filters":{"id":"root","combinator":"AND","rules":[],"groups":[]},"sortBy":[],"calculatedFields":[]}'::jsonb, 'PIVOT', 'SHARED', '00000000-0000-0000-0000-000000000002');
+
+  -- Invalid visualization type must fail
+  BEGIN
+    INSERT INTO custom_reports(id, organization_id, name, primary_entity, definition, visualization_type, created_by)
+    VALUES ('00000000-0000-0000-0000-000000000191', '00000000-0000-0000-0000-000000000001', 'Bad Viz', 'employees', '{}'::jsonb, '3D_PIE', '00000000-0000-0000-0000-000000000002');
+    RAISE EXCEPTION 'custom_reports visualization check constraint absent';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  INSERT INTO custom_report_versions(id, organization_id, report_id, version, definition, visualization_type, created_by)
+  VALUES ('00000000-0000-0000-0000-000000000192', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000190', 1, '{}'::jsonb, 'PIVOT', '00000000-0000-0000-0000-000000000002');
+
+  INSERT INTO custom_report_user_prefs(organization_id, report_id, user_id, is_favorite, last_viewed_at)
+  VALUES ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000190', '00000000-0000-0000-0000-000000000002', true, now());
+
+  INSERT INTO custom_report_export_jobs(id, organization_id, report_id, report_name, format, status, definition_snapshot, locale, requested_by)
+  VALUES ('00000000-0000-0000-0000-000000000193', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000190', 'Headcount Matrix', 'EXCEL', 'COMPLETED', '{}'::jsonb, 'vi', '00000000-0000-0000-0000-000000000002');
 END $$;
 ROLLBACK;
 DO $$ BEGIN

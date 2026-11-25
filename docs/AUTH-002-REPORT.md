@@ -18,20 +18,20 @@ Current V5.3 continuation: Manager only, zero subagents. Main skill: approved ap
 
 ## Verification actually executed
 
-| Check | Result |
-|---|---|
-| Before extension: AUTH-001 tests | PASS28 backend and9 UI, reused as baseline |
-| Final backend npm run typecheck / lint / build | PASS |
-| Final backend npm run test:coverage | PASS44 tests (28 original incl primitives +16 RBAC); statements91.53%, branches83.77%, lines97.31% |
-| Frontend npm run typecheck / lint / test:coverage / build | PASS16 tests (9 existing +7 RBAC UI); statements/lines92.82%, branches74.24% |
-| Disposable PostgreSQL18 upgrade / migration / constraint verification | PASS;003 preserves seeded AUTH-001 identity/hash/role/status; FK/check and rollback assertions pass |
-| Local development migration003 | PASS; explicitly guarded localhost127.0.0.1:56423/managerhr;2 existing users and2 memberships unchanged |
-| Isolated real Chrome UI smoke | PASS real Admin login, scoped users/detail and audit; desktop1440/mobile390; correct Vietnamese and no document overflow; no role/status changes or email send |
-| Existing Python unittest discover -s tests | PASS21 |
-| Existing check_token_lean.py / check_skill_policy.py / check_model_policy.py | PASS |
-| Existing local changed-path policy validation | Reported in final Manager output; not a PR approval |
-| Semgrep / Sonar / authoritative PR CI | NOT RUN / NOT VERIFIED; Semgrep unavailable locally; no trusted CI result or PR BASE_SHA |
-| Production deployment / migration | NOT RUN |
+| Check                                                                        | Result                                                                                                                                                         |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Before extension: AUTH-001 tests                                             | PASS28 backend and9 UI, reused as baseline                                                                                                                     |
+| Final backend npm run typecheck / lint / build                               | PASS                                                                                                                                                           |
+| Final backend npm run test:coverage                                          | PASS44 tests (28 original incl primitives +16 RBAC); statements91.53%, branches83.77%, lines97.31%                                                             |
+| Frontend npm run typecheck / lint / test:coverage / build                    | PASS16 tests (9 existing +7 RBAC UI); statements/lines92.82%, branches74.24%                                                                                   |
+| Disposable PostgreSQL18 upgrade / migration / constraint verification        | PASS;003 preserves seeded AUTH-001 identity/hash/role/status; FK/check and rollback assertions pass                                                            |
+| Local development migration003                                               | PASS; explicitly guarded localhost127.0.0.1:56423/managerhr;2 existing users and2 memberships unchanged                                                        |
+| Isolated real Chrome UI smoke                                                | PASS real Admin login, scoped users/detail and audit; desktop1440/mobile390; correct Vietnamese and no document overflow; no role/status changes or email send |
+| Existing Python unittest discover -s tests                                   | PASS21                                                                                                                                                         |
+| Existing check_token_lean.py / check_skill_policy.py / check_model_policy.py | PASS                                                                                                                                                           |
+| Existing local changed-path policy validation                                | Reported in final Manager output; not a PR approval                                                                                                            |
+| Semgrep / Sonar / authoritative PR CI                                        | NOT RUN / NOT VERIFIED; Semgrep unavailable locally; no trusted CI result or PR BASE_SHA                                                                       |
+| Production deployment / migration                                            | NOT RUN                                                                                                                                                        |
 
 One initial AUTH-001 race test failed because it searched pg_stat_activity for the old login SQL. Updated its synchronization condition to the new locked user query; the same behavioral assertion now passes. Repeated only the affected backend suite after this fix, audit correction and upgrade-fixture changes. A CLI validation attempt from repository root failed because package.json is workspace-local; the correctly scoped backend commands passed. No full CI/CD pipeline or duplicate SAST scan was run.
 

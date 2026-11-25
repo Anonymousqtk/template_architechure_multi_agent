@@ -30,6 +30,7 @@ Start: `docs/ARCHITECTURE.md` → `docs/MODEL-STRATEGY.md` → `docs/OPERATIONS.
 6. Open a PR; enforce `required-gate` once your actual code, test scripts and Github Ruleset are configured.
 
 ## Model-specific additions
+
 - `policy/model-routing.json`: routing tiers, escalation triggers, preferred effort
 - `policy/token-budget.json`: clearly labeled SOFT guardrails
 - `scripts/apply_model_profile.py`: dry-run or explicit apply, no API calls
@@ -38,10 +39,11 @@ Start: `docs/ARCHITECTURE.md` → `docs/MODEL-STRATEGY.md` → `docs/OPERATIONS.
 - `tests/test_model_policy.py`: consistency tests
 
 ## Limitations
+
 The V3 application scaffolding is still a template: the ManagerHR repo was empty at prior verification. No application builds, database migrations or deployment tested. A JSON policy cannot impose real runtime token quotas or automatically change a live model. A profile script can only check IDs you confirmed yourself, not entitlements. For hard limits you need an instrumented orchestrator (often API-based and separately billed).
 
-
 ## V5: official-source, skill-aware routing
+
 - 8 project-local skills in `.codex/skills/` (created for ManagerHR using official references; **not** downloaded official or certified Skills).
 - Registry: `policy/skill-sources.json`; routing: `policy/skill-routing.json`.
 - Offline validation: `python3 scripts/check_skill_policy.py` and `python3 -m unittest discover -s tests`.
@@ -51,18 +53,28 @@ The V3 application scaffolding is still a template: the ManagerHR repo was empty
 - **IMPORTANT:** Framework-agnostic starter until actual ManagerHR source is available. Confirm framework versions before using vendor-specific checklists.
 
 ## V5.1: Automatic monitoring of official Skill updates
+
 - Weekly read-only metadata monitor: `.github/workflows/skill-updates.yml`
 - Allowlist and approved baselines: `policy/upstream-watch.json`
 - Local CLI: `python scripts/check_skill_updates.py --output skill-update-report.json`
 - Manual review process: `docs/SKILL-UPDATES.md`
 - No automatic Skill install, merge, execution or model calls; creates/updates a single GitHub Issue.
 
-
 ## V5.2 — Invitation-only Authentication (AUTH-001)
+
 - Design: `docs/AUTH-INVITE-DESIGN.md`
 - Exact API routes: `contracts/api.md`
 - Proposed PostgreSQL migration: `database/migrations/001_auth_invitation_schema.sql` (NOT APPLIED)
 - Agent plan and acceptance cases: `docs/AGENT-TASK-AUTH-001.md`, `docs/AUTH-TEST-MATRIX.md`
 - Pasteable Codex Manager prompt: `prompts/MANAGER-AUTH-INVITE.md`
 - `.agent-task.json` records the high-risk task contract.
-**IMPORTANT:** This is an implementation-ready blueprint and V5.1 governance overlay, not a running Authentication app. Repository `Anonymousqtk/ManagerHR` was empty at validation; GitHub access is read-only. Developer must run Codex locally after putting files in a working repository.
+  **IMPORTANT:** This is an implementation-ready blueprint and V5.1 governance overlay, not a running Authentication app. Repository `Anonymousqtk/ManagerHR` was empty at validation; GitHub access is read-only. Developer must run Codex locally after putting files in a working repository.
+
+# Formatting
+
+Run `npm install` at the root and `npm ci` in both `frontend` and `backend`.
+Use `npm run format` to format supported files and `npm run check` to validate
+formatting, lint, and types. Run relevant workspace tests and builds as well.
+The Git hook formats staged files and runs lint; `npm run lint:fix` applies only
+layout fixes. Generated files, lockfiles, environment files, minified files,
+and historical migrations are excluded from Prettier.

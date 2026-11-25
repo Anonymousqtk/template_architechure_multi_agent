@@ -4,18 +4,18 @@ Status: DEVELOPMENT COMPLETE — final hosted CI and human merge approval are se
 
 ## Baseline classification
 
-| Area | ORG-001 baseline | ORG-002 treatment |
-| --- | --- | --- |
-| Tenant organization, departments, positions | VERIFIED by prior ORG integration suite | Reuse tables and routes |
-| API self-parent/cycle checks, dependency deletion guards | VERIFIED | Preserve; add database enforcement |
-| Direct reporting and role distinction | VERIFIED | Reuse manager assignment; extend read scope to descendants |
-| Chart response integration, empty/retry/collapse | VERIFIED by 10 UI tests before ORG-002 | Preserve response and component |
-| Manager department/position/chart scope | MISSING; reads were tenant-wide | Shared recursive scope with list/detail checks |
-| Indirect Manager user scope | MISSING; only direct reports were visible | Recursive reporting plus assigned department members |
-| Organization parent relationship | DEFECTIVE; allowed linking separate tenant records | Reject non-null tenant parents; branches use existing departments |
-| Database tenant consistency for department/position references | DEFECTIVE; UUID-only foreign keys accepted cross-tenant links | Composite foreign keys in migration 006 |
-| Database indirect cycles | MISSING | Validate legacy data and add cycle triggers |
-| Inactive handling and position moves | EXISTS_UNVERIFIED | Explicit guards and new integration cases |
+| Area                                                           | ORG-001 baseline                                              | ORG-002 treatment                                                 |
+| -------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Tenant organization, departments, positions                    | VERIFIED by prior ORG integration suite                       | Reuse tables and routes                                           |
+| API self-parent/cycle checks, dependency deletion guards       | VERIFIED                                                      | Preserve; add database enforcement                                |
+| Direct reporting and role distinction                          | VERIFIED                                                      | Reuse manager assignment; extend read scope to descendants        |
+| Chart response integration, empty/retry/collapse               | VERIFIED by 10 UI tests before ORG-002                        | Preserve response and component                                   |
+| Manager department/position/chart scope                        | MISSING; reads were tenant-wide                               | Shared recursive scope with list/detail checks                    |
+| Indirect Manager user scope                                    | MISSING; only direct reports were visible                     | Recursive reporting plus assigned department members              |
+| Organization parent relationship                               | DEFECTIVE; allowed linking separate tenant records            | Reject non-null tenant parents; branches use existing departments |
+| Database tenant consistency for department/position references | DEFECTIVE; UUID-only foreign keys accepted cross-tenant links | Composite foreign keys in migration 006                           |
+| Database indirect cycles                                       | MISSING                                                       | Validate legacy data and add cycle triggers                       |
+| Inactive handling and position moves                           | EXISTS_UNVERIFIED                                             | Explicit guards and new integration cases                         |
 
 ## Implementation
 
@@ -61,21 +61,21 @@ duplicate ORG-001 coverage: recursive grants/revocation after moves, out-of-scop
 objects, title/role separation, disabled units/leaders, HR/Employee chart redaction,
 database cross-tenant references and cycles, concurrent updates, legacy upgrade.
 
-| Command/check actually run | Result |
-| --- | --- |
+| Command/check actually run                                                 | Result                                                                                                                                        |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npm --prefix backend test` with `ORG_BROWSER_PATH` configured (final run) | PASS: 102 tests in 6 files, including authenticated Edge integration and MFA regression; migrations 001–006 and PostgreSQL constraints passed |
-| Legacy-data upgrade test | PASS: cross-tenant and cyclic data rejected; rollback preserves rows; repaired fixture upgrades successfully |
-| `npm --prefix backend run typecheck`, `run lint`, `run build` | PASS |
-| `npm --prefix frontend run test -- --reporter=dot` | PASS: 80 tests; after the final mobile fix, 19 affected UI tests also passed |
-| `npm --prefix frontend run typecheck`, `run lint` | PASS |
-| `npm --prefix backend audit --omit=dev --audit-level=high` | PASS: 0 reported vulnerabilities in production dependencies |
-| `python3 -m unittest discover -s tests` | PASS: 21 policy tests |
-| `python3 scripts/check_skill_policy.py` | PASS: offline metadata validation |
-| Existing policy validator against changed/untracked working-tree paths | PASS: local scope validation; not a PR check |
-| `python3 scripts/policy_check.py` | NOT VERIFIED in PR context: BASE_SHA unavailable |
-| `git diff --check` | PASS |
-| Semgrep 1.144.0, `p/owasp-top-ten`, backend + frontend, metrics off | PASS after MFA tag-length repair: exit 0, no findings |
-| Hosted CI/Sonar, independent release approval | NOT VERIFIED: local checks do not imply hosted CI or human merge approval |
+| Legacy-data upgrade test                                                   | PASS: cross-tenant and cyclic data rejected; rollback preserves rows; repaired fixture upgrades successfully                                  |
+| `npm --prefix backend run typecheck`, `run lint`, `run build`              | PASS                                                                                                                                          |
+| `npm --prefix frontend run test -- --reporter=dot`                         | PASS: 80 tests; after the final mobile fix, 19 affected UI tests also passed                                                                  |
+| `npm --prefix frontend run typecheck`, `run lint`                          | PASS                                                                                                                                          |
+| `npm --prefix backend audit --omit=dev --audit-level=high`                 | PASS: 0 reported vulnerabilities in production dependencies                                                                                   |
+| `python3 -m unittest discover -s tests`                                    | PASS: 21 policy tests                                                                                                                         |
+| `python3 scripts/check_skill_policy.py`                                    | PASS: offline metadata validation                                                                                                             |
+| Existing policy validator against changed/untracked working-tree paths     | PASS: local scope validation; not a PR check                                                                                                  |
+| `python3 scripts/policy_check.py`                                          | NOT VERIFIED in PR context: BASE_SHA unavailable                                                                                              |
+| `git diff --check`                                                         | PASS                                                                                                                                          |
+| Semgrep 1.144.0, `p/owasp-top-ten`, backend + frontend, metrics off        | PASS after MFA tag-length repair: exit 0, no findings                                                                                         |
+| Hosted CI/Sonar, independent release approval                              | NOT VERIFIED: local checks do not imply hosted CI or human merge approval                                                                     |
 
 An intermediate test run had 93 passing tests and one upgrade test hitting Vitest's
 default 5-second timeout. Only that database-creation/migration test received a

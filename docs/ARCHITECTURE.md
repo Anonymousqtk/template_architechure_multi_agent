@@ -23,13 +23,13 @@ flowchart TD
 
 ## Clear division of authority
 
-| Layer | What it can guarantee | What it cannot guarantee |
-|---|---|---|
-| AGENTS.md / TOML | Requests consistent agent behavior | OS-level permission enforcement |
-| Task manifest + policy_check.py | Declared PR scopes and risk flags match changed paths | Which AI process made the actual edits |
-| CI | Actual commands and tests ran (if configured) | Absence of all vulnerabilities |
-| Branch Rulesets / CODEOWNERS | Require reviewers and a passing check | Prevent repository admins from changing settings, depending on controls |
-| Human reviewer | Decide high-risk exceptions and deployments | Replace automated test evidence |
+| Layer                           | What it can guarantee                                 | What it cannot guarantee                                                |
+| ------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- |
+| AGENTS.md / TOML                | Requests consistent agent behavior                    | OS-level permission enforcement                                         |
+| Task manifest + policy_check.py | Declared PR scopes and risk flags match changed paths | Which AI process made the actual edits                                  |
+| CI                              | Actual commands and tests ran (if configured)         | Absence of all vulnerabilities                                          |
+| Branch Rulesets / CODEOWNERS    | Require reviewers and a passing check                 | Prevent repository admins from changing settings, depending on controls |
+| Human reviewer                  | Decide high-risk exceptions and deployments           | Replace automated test evidence                                         |
 
 ## State transitions
 
@@ -44,7 +44,6 @@ No transition to MERGEABLE on a failed/absent required-gate. High-risk tasks als
 3. Return from agent: paths, actionable findings, exact command/result, blockers. No full file echoes.
 4. Reuse scanner and coverage artifacts. Never automatically ask AI to repeat deterministic CI checks.
 5. Limit two concurrent subagents; no automatic retry loops.
-
 
 ## V4 model-routing overlay
 

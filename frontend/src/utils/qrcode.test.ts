@@ -14,7 +14,8 @@ describe('QR Code Generator', () => {
   });
 
   it('creates valid matrix for long URL with parameters', () => {
-    const url = 'https://managerhr.local/employee-card?org=12345678-1234-1234-1234-123456789abc&code=EMP-ENG-999';
+    const url =
+      'https://managerhr.local/employee-card?org=12345678-1234-1234-1234-123456789abc&code=EMP-ENG-999';
     const matrix = createQrMatrix(url, 'M');
     expect(matrix.length).toBeGreaterThan(25);
     const path = generateQrSvgPath(matrix);
@@ -22,7 +23,8 @@ describe('QR Code Generator', () => {
   });
 
   it('decodes the local employee-card URL from the generated QR modules', () => {
-    const url = 'http://localhost:3000/employee-card#org=12345678-1234-1234-1234-123456789abc&code=EMP-ENG-999';
+    const url =
+      'http://localhost:3000/employee-card#org=12345678-1234-1234-1234-123456789abc&code=EMP-ENG-999';
     const matrix = createQrMatrix(url, 'M');
     const quietZone = 4;
     const totalModules = matrix.length + quietZone * 2;
@@ -49,17 +51,20 @@ describe('QR Code Generator', () => {
     { version: 8, length: 125, word: 0x085bc },
     { version: 9, length: 155, word: 0x09a99 },
     { version: 10, length: 183, word: 0x0a4d3 },
-  ])('places the version $version information in both reserved areas', ({ version, length, word }) => {
-    const matrix = createQrMatrix('A'.repeat(length), 'M');
-    expect(matrix).toHaveLength(version * 4 + 17);
-    for (let i = 0; i < 18; i++) {
-      const bit = ((word >>> i) & 1) === 1;
-      const x = matrix.length - 11 + (i % 3);
-      const y = Math.floor(i / 3);
-      expect(matrix[y][x]).toBe(bit);
-      expect(matrix[x][y]).toBe(bit);
-    }
-  });
+  ])(
+    'places the version $version information in both reserved areas',
+    ({ version, length, word }) => {
+      const matrix = createQrMatrix('A'.repeat(length), 'M');
+      expect(matrix).toHaveLength(version * 4 + 17);
+      for (let i = 0; i < 18; i++) {
+        const bit = ((word >>> i) & 1) === 1;
+        const x = matrix.length - 11 + (i % 3);
+        const y = Math.floor(i / 3);
+        expect(matrix[y][x]).toBe(bit);
+        expect(matrix[x][y]).toBe(bit);
+      }
+    },
+  );
 
   it('throws error when data exceeds supported length', () => {
     const huge = 'A'.repeat(500);

@@ -5,8 +5,8 @@ import { setLocale } from '../../i18n';
 import { registerSensitiveActionConfirmation } from '../../services/api';
 import { SensitiveActionConfirmation } from './SensitiveActionConfirmation';
 
-vi.mock('../../services/api', async original => ({
-  ...await original<typeof import('../../services/api')>(),
+vi.mock('../../services/api', async (original) => ({
+  ...(await original<typeof import('../../services/api')>()),
   registerSensitiveActionConfirmation: vi.fn(() => () => {}),
 }));
 
@@ -17,14 +17,26 @@ afterEach(() => {
 });
 
 it('updates verification labels while preserving cancel behavior', async () => {
-  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value() { this.setAttribute('open', ''); } });
-  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value() { this.removeAttribute('open'); } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+    configurable: true,
+    value() {
+      this.setAttribute('open', '');
+    },
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+    configurable: true,
+    value() {
+      this.removeAttribute('open');
+    },
+  });
   setLocale('vi');
   render(<SensitiveActionConfirmation useCode />);
   const callback = vi.mocked(registerSensitiveActionConfirmation).mock.calls.at(-1)?.[0];
   expect(callback).toBeDefined();
   let result!: Promise<boolean>;
-  act(() => { result = callback!(); });
+  act(() => {
+    result = callback!();
+  });
   expect(screen.getByRole('heading', { name: 'Xác minh để tiếp tục' })).toBeVisible();
   act(() => setLocale('en'));
   expect(screen.getByRole('heading', { name: 'Verify to continue' })).toBeVisible();

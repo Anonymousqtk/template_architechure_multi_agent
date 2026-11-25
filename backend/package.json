@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "node test-runner.mjs",
-    "test:coverage": "node test-runner.mjs"
+    "test:coverage": "node test-runner.mjs",
+    "lint:fix": "eslint src --fix --fix-type layout"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",

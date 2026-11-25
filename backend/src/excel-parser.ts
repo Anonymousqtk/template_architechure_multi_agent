@@ -28,9 +28,17 @@ const employeeTemplateHeaders = [
 const employeeTemplateGuide = [
   ['HƯỚNG DẪN NHẬP DANH SÁCH NHÂN VIÊN'],
   ['Nhập dữ liệu trong sheet Danh sách nhân viên từ dòng 2. Giữ nguyên tên và thứ tự các cột.'],
-  ['Các cột có dấu * là bắt buộc. Ngày nhập theo YYYY-MM-DD; mã và số điện thoại được lưu dạng văn bản để giữ số 0 đầu.'],
+  [
+    'Các cột có dấu * là bắt buộc. Ngày nhập theo YYYY-MM-DD; mã và số điện thoại được lưu dạng văn bản để giữ số 0 đầu.',
+  ],
   ['Cột', 'Bắt buộc', 'Định dạng', 'Ví dụ', 'Ghi chú'],
-  ['Mã nhân viên', 'Có', 'Chữ, số, dấu gạch dưới/chấm/gạch ngang', 'NV001', 'Không trùng trong tổ chức'],
+  [
+    'Mã nhân viên',
+    'Có',
+    'Chữ, số, dấu gạch dưới/chấm/gạch ngang',
+    'NV001',
+    'Không trùng trong tổ chức',
+  ],
   ['Họ và tên', 'Có', 'Văn bản', 'Nguyễn Văn A', ''],
   ['Ngày vào làm', 'Có', 'YYYY-MM-DD', '2026-01-15', 'Không được ở tương lai'],
   ['Ngày sinh', 'Không', 'YYYY-MM-DD', '1995-06-20', 'Để trống nếu chưa có'],
@@ -42,17 +50,22 @@ const employeeTemplateGuide = [
 ];
 
 const xmlEscape = (value: string) =>
-  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 
 function crc32(buffer: Buffer): number {
-  let crc = 0xFFFFFFFF;
+  let crc = 0xffffffff;
   for (const byte of buffer) {
     crc ^= byte;
     for (let bit = 0; bit < 8; bit++) {
-      crc = crc & 1 ? 0xEDB88320 ^ (crc >>> 1) : crc >>> 1;
+      crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
     }
   }
-  return (crc ^ 0xFFFFFFFF) >>> 0;
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 function createZip(files: Array<[string, string]>): Buffer {
@@ -66,7 +79,7 @@ function createZip(files: Array<[string, string]>): Buffer {
     const compressed = zlib.deflateRawSync(data);
     const checksum = crc32(data);
     const localHeader = Buffer.alloc(30);
-    localHeader.writeUInt32LE(0x04034B50, 0);
+    localHeader.writeUInt32LE(0x04034b50, 0);
     localHeader.writeUInt16LE(20, 4);
     localHeader.writeUInt16LE(8, 8);
     localHeader.writeUInt16LE(0x0021, 12);
@@ -77,7 +90,7 @@ function createZip(files: Array<[string, string]>): Buffer {
     localRecords.push(localHeader, name, compressed);
 
     const centralHeader = Buffer.alloc(46);
-    centralHeader.writeUInt32LE(0x02014B50, 0);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
     centralHeader.writeUInt16LE(20, 4);
     centralHeader.writeUInt16LE(20, 6);
     centralHeader.writeUInt16LE(8, 10);
@@ -93,7 +106,7 @@ function createZip(files: Array<[string, string]>): Buffer {
 
   const centralDirectory = Buffer.concat(centralRecords);
   const endRecord = Buffer.alloc(22);
-  endRecord.writeUInt32LE(0x06054B50, 0);
+  endRecord.writeUInt32LE(0x06054b50, 0);
   endRecord.writeUInt16LE(files.length, 8);
   endRecord.writeUInt16LE(files.length, 10);
   endRecord.writeUInt32LE(centralDirectory.length, 12);
@@ -101,37 +114,54 @@ function createZip(files: Array<[string, string]>): Buffer {
   return Buffer.concat([...localRecords, centralDirectory, endRecord]);
 }
 
-function worksheetXml(rows: string[][], indexes: Map<string, number>, importSheet: boolean): string {
-  const sheetRows = rows.map((row, rowIndex) => {
-    const cells = row.map((value, columnIndex) => {
-      let column = columnIndex + 1;
-      let columnName = '';
-      while (column > 0) {
-        const remainder = (column - 1) % 26;
-        columnName = String.fromCharCode(65 + remainder) + columnName;
-        column = Math.floor((column - 1) / 26);
-      }
-      return `<c r="${columnName}${rowIndex + 1}" t="s"><v>${indexes.get(value)}</v></c>`;
-    }).join('');
-    return `<row r="${rowIndex + 1}">${cells}</row>`;
-  }).join('');
+function worksheetXml(
+  rows: string[][],
+  indexes: Map<string, number>,
+  importSheet: boolean,
+): string {
+  const sheetRows = rows
+    .map((row, rowIndex) => {
+      const cells = row
+        .map((value, columnIndex) => {
+          let column = columnIndex + 1;
+          let columnName = '';
+          while (column > 0) {
+            const remainder = (column - 1) % 26;
+            columnName = String.fromCharCode(65 + remainder) + columnName;
+            column = Math.floor((column - 1) / 26);
+          }
+          return `<c r="${columnName}${rowIndex + 1}" t="s"><v>${indexes.get(value)}</v></c>`;
+        })
+        .join('');
+      return `<row r="${rowIndex + 1}">${cells}</row>`;
+    })
+    .join('');
   const views = importSheet
     ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>'
     : '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
-  const columns = importSheet ? '<cols><col min="1" max="9" width="24" customWidth="1" style="1"/></cols>' : '';
+  const columns = importSheet
+    ? '<cols><col min="1" max="9" width="24" customWidth="1" style="1"/></cols>'
+    : '';
   const filter = importSheet ? '<autoFilter ref="A1:I1"/>' : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${views}<sheetFormatPr defaultRowHeight="15"/>${columns}<sheetData>${sheetRows}</sheetData>${filter}</worksheet>`;
 }
 
 export function generateEmployeeTemplate(employeeRows: string[][] = []): Buffer {
   const sheets = [
-    { name: 'Danh sách nhân viên', rows: [employeeTemplateHeaders, ...employeeRows], importSheet: true },
+    {
+      name: 'Danh sách nhân viên',
+      rows: [employeeTemplateHeaders, ...employeeRows],
+      importSheet: true,
+    },
     { name: 'Hướng dẫn', rows: employeeTemplateGuide, importSheet: false },
   ];
-  const strings = [...new Set(sheets.flatMap(sheet => sheet.rows.flat()))];
+  const strings = [...new Set(sheets.flatMap((sheet) => sheet.rows.flat()))];
   const indexes = new Map(strings.map((value, index) => [value, index]));
-  const cellCount = sheets.reduce((count, sheet) => count + sheet.rows.reduce((total, row) => total + row.length, 0), 0);
-  const sharedStrings = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${cellCount}" uniqueCount="${strings.length}">${strings.map(value => `<si><t>${xmlEscape(value)}</t></si>`).join('')}</sst>`;
+  const cellCount = sheets.reduce(
+    (count, sheet) => count + sheet.rows.reduce((total, row) => total + row.length, 0),
+    0,
+  );
+  const sharedStrings = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${cellCount}" uniqueCount="${strings.length}">${strings.map((value) => `<si><t>${xmlEscape(value)}</t></si>`).join('')}</sst>`;
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>${sheets.map((sheet, index) => `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join('')}</sheets></workbook>`;
   const workbookRelationships = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="0"/><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
@@ -145,7 +175,10 @@ export function generateEmployeeTemplate(employeeRows: string[][] = []): Buffer 
     ['xl/_rels/workbook.xml.rels', workbookRelationships],
     ['xl/styles.xml', styles],
     ['xl/sharedStrings.xml', sharedStrings],
-    ...sheets.map((sheet, index): [string, string] => [`xl/worksheets/sheet${index + 1}.xml`, worksheetXml(sheet.rows, indexes, sheet.importSheet)]),
+    ...sheets.map((sheet, index): [string, string] => [
+      `xl/worksheets/sheet${index + 1}.xml`,
+      worksheetXml(sheet.rows, indexes, sheet.importSheet),
+    ]),
   ]);
 }
 
@@ -161,7 +194,12 @@ export function parseCSV(text: string): string[][] {
   const commaCount = (firstLine.match(/,/g) || []).length;
   const semicolonCount = (firstLine.match(/;/g) || []).length;
   const tabCount = (firstLine.match(/\t/g) || []).length;
-  const delimiter = tabCount > commaCount && tabCount > semicolonCount ? '\t' : semicolonCount > commaCount ? ';' : ',';
+  const delimiter =
+    tabCount > commaCount && tabCount > semicolonCount
+      ? '\t'
+      : semicolonCount > commaCount
+        ? ';'
+        : ',';
 
   for (let i = 0; i < clean.length; i++) {
     const char = clean[i];
@@ -183,7 +221,7 @@ export function parseCSV(text: string): string[][] {
       }
       currentRow.push(currentField.trim());
       currentField = '';
-      if (currentRow.some(c => c.length > 0)) {
+      if (currentRow.some((c) => c.length > 0)) {
         rows.push(currentRow);
       }
       currentRow = [];
@@ -194,7 +232,7 @@ export function parseCSV(text: string): string[][] {
 
   if (currentField.length > 0 || currentRow.length > 0) {
     currentRow.push(currentField.trim());
-    if (currentRow.some(c => c.length > 0)) {
+    if (currentRow.some((c) => c.length > 0)) {
       rows.push(currentRow);
     }
   }
@@ -267,7 +305,13 @@ export function parseXLSX(buffer: Buffer): string[][] {
       for (const tm of textMatches) {
         text += tm[1];
       }
-      sharedStrings.push(text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'));
+      sharedStrings.push(
+        text
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"'),
+      );
     }
   }
 
@@ -278,7 +322,9 @@ export function parseXLSX(buffer: Buffer): string[][] {
   for (const rMatch of rowMatches) {
     const rowContent = rMatch[2];
     const cells: string[] = [];
-    const cellMatches = rowContent.matchAll(/<c[^>]*r="([A-Z]+)\d+"(?:[^>]*t="([^"]*)")?[^>]*>(?:<v>([^<]*)<\/v>)?<\/c>/gs);
+    const cellMatches = rowContent.matchAll(
+      /<c[^>]*r="([A-Z]+)\d+"(?:[^>]*t="([^"]*)")?[^>]*>(?:<v>([^<]*)<\/v>)?<\/c>/gs,
+    );
 
     for (const cMatch of cellMatches) {
       const colLetter = cMatch[1];
@@ -304,7 +350,7 @@ export function parseXLSX(buffer: Buffer): string[][] {
       cells[colIndex] = val.trim();
     }
 
-    if (cells.some(c => c.length > 0)) {
+    if (cells.some((c) => c.length > 0)) {
       grid.push(cells);
     }
   }
@@ -326,7 +372,7 @@ function normalizeHeader(h: string): string {
 export function parseEmployeeImportFile(buffer: Buffer, declaredMime: string): RawImportRow[] {
   let grid: string[][] = [];
 
-  const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4B;
+  const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b;
   if (isZip || declaredMime.includes('spreadsheetml')) {
     grid = parseXLSX(buffer);
   }
@@ -345,9 +391,19 @@ export function parseEmployeeImportFile(buffer: Buffer, declaredMime: string): R
 
   rawHeaders.forEach((h, index) => {
     const norm = normalizeHeader(h);
-    if (norm.includes('ma_nv') || norm.includes('ma_nhan_vien') || norm.includes('employee_code') || norm === 'code') {
+    if (
+      norm.includes('ma_nv') ||
+      norm.includes('ma_nhan_vien') ||
+      norm.includes('employee_code') ||
+      norm === 'code'
+    ) {
       headerMap[index] = 'employeeCode';
-    } else if (norm.includes('ho_va_ten') || norm.includes('ho_ten') || norm.includes('full_name') || norm === 'name') {
+    } else if (
+      norm.includes('ho_va_ten') ||
+      norm.includes('ho_ten') ||
+      norm.includes('full_name') ||
+      norm === 'name'
+    ) {
       headerMap[index] = 'fullName';
     } else if (norm.includes('ngay_vao_lam') || norm.includes('hire_date')) {
       headerMap[index] = 'hireDate';
@@ -383,7 +439,7 @@ export function parseEmployeeImportFile(buffer: Buffer, declaredMime: string): R
 
   for (let r = 1; r < grid.length; r++) {
     const row = grid[r];
-    if (!row || !row.some(cell => cell.length > 0)) continue;
+    if (!row || !row.some((cell) => cell.length > 0)) continue;
 
     const item: RawImportRow = {
       rowNumber: r + 1,
@@ -402,7 +458,14 @@ export function parseEmployeeImportFile(buffer: Buffer, declaredMime: string): R
       const field = headerMap[idx];
       if (field) {
         const cleanVal = val.trim();
-        if (field === 'birthDate' || field === 'phone' || field === 'personalEmail' || field === 'address' || field === 'departmentCode' || field === 'positionCode') {
+        if (
+          field === 'birthDate' ||
+          field === 'phone' ||
+          field === 'personalEmail' ||
+          field === 'address' ||
+          field === 'departmentCode' ||
+          field === 'positionCode'
+        ) {
           item[field] = cleanVal ? cleanVal : null;
         } else if (field === 'employeeCode' || field === 'fullName' || field === 'hireDate') {
           item[field] = cleanVal;

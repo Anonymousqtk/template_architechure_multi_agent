@@ -67,20 +67,8 @@
     "trivial_max_files": 3,
     "default_max_delegations": 0,
     "max_delegations_complex": 1,
-    "never_delegate_for": [
-      "format",
-      "lint",
-      "simple_css",
-      "documentation_only"
-    ],
-    "tool_first": [
-      "lint",
-      "typecheck",
-      "unit_test",
-      "semgrep",
-      "sonar",
-      "dependency_audit"
-    ]
+    "never_delegate_for": ["format", "lint", "simple_css", "documentation_only"],
+    "tool_first": ["lint", "typecheck", "unit_test", "semgrep", "sonar", "dependency_audit"]
   },
   "reporting": {
     "require_task_summary": true,

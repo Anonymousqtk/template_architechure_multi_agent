@@ -5,17 +5,23 @@ import { setLocale } from '../../../i18n';
 import { request } from '../../../services/api';
 import { PasskeySettings } from './PasskeySettings';
 
-vi.mock('../../../services/api', async original => ({
-  ...await original<typeof import('../../../services/api')>(),
+vi.mock('../../../services/api', async (original) => ({
+  ...(await original<typeof import('../../../services/api')>()),
   request: vi.fn(),
 }));
 vi.mock('@simplewebauthn/browser', () => ({ browserSupportsWebAuthn: () => true }));
 
-afterEach(() => { cleanup(); setLocale('vi'); vi.resetAllMocks(); });
+afterEach(() => {
+  cleanup();
+  setLocale('vi');
+  vi.resetAllMocks();
+});
 
 it('updates passkey controls and device dates when language changes', async () => {
   setLocale('vi');
-  vi.mocked(request).mockResolvedValue({ items: [{ id: 'one', createdAt: '2026-01-01T12:00:00Z', lastUsedAt: null }] });
+  vi.mocked(request).mockResolvedValue({
+    items: [{ id: 'one', createdAt: '2026-01-01T12:00:00Z', lastUsedAt: null }],
+  });
   render(<PasskeySettings />);
   expect(await screen.findByText('Chưa dùng để đăng nhập')).toBeVisible();
   act(() => setLocale('en'));

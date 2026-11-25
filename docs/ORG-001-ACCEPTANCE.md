@@ -1,5 +1,7 @@
 # BÁO CÁO NGHIỆM THU — TASK ORG-001
+
 ## Organization Structure, Departments, Positions & Hierarchy
+
 ### ManagerHR Platform · Agent Governance V5.3 (Token-Lean Strict)
 
 ---
@@ -12,19 +14,20 @@ Module **ORG-001** mở rộng kiến trúc ManagerHR từ nền tảng Authenti
 
 ## II. TRẠNG THÁI CÁC HẠNG MỤC CHỨC NĂNG (ORG-001.1 — ORG-001.5)
 
-| Mã hạng mục | Tên chức năng | Trạng thái | Bằng chứng kiểm thử & triển khai |
-| :--- | :--- | :---: | :--- |
-| **ORG-001.1** | **Organization Management** | **VERIFIED** | Quản lý thông tin tổ chức (`code`, `name`, `description`, `parentOrganizationId`). Chỉ `ADMIN` có quyền cập nhật cấu hình. Cách ly 100% tenant. Test `ORG-01` PASS. |
-| **ORG-001.2** | **Department Management** | **VERIFIED** | CRUD phòng ban theo phân cấp cây, tìm kiếm, phân trang. Mã duy nhất theo tenant (`(organization_id, code)`). Thuật toán `detectDepartmentCycle()` ngăn vòng lặp đệ quy. Chặn xóa cứng khi có con, nhân viên hoặc chức danh liên kết. Tests `ORG-02`, `ORG-03`, `ORG-04`, `ORG-05`, `ORG-06` PASS. |
-| **ORG-001.3** | **Position Management** | **VERIFIED** | CRUD chức danh, liên kết phòng ban tùy chọn. Mã duy nhất theo tenant (`(organization_id, code)`). Tách biệt hoàn toàn giữa chức danh nghề nghiệp và RBAC Role. Chặn xóa khi có nhân viên giữ chức danh. Test `ORG-07` PASS. |
-| **ORG-001.4** | **Reporting Structure** | **VERIFIED** | Thiết lập quan hệ quản lý trực tiếp và phân cấp báo cáo. Thuật toán `detectReportingCycle()` ngăn chặn vòng lặp báo cáo ở mọi độ sâu. Xác thực người quản lý thuộc cùng tenant. Test `ORG-09` PASS. |
-| **ORG-001.5** | **Organization Chart** | **VERIFIED** | API `/api/organizations/:orgId/org-chart` tạo cấu trúc cây phân cấp tự động, tổng hợp nhân sự và chức danh. Giao diện frontend tương tác (`OrgChartView`) hỗ trợ đóng/mở nhánh cây, tối ưu desktop/mobile. Test `ORG-10` & Frontend Unit Tests PASS. |
+| Mã hạng mục   | Tên chức năng               |  Trạng thái  | Bằng chứng kiểm thử & triển khai                                                                                                                                                                                                                                                                  |
+| :------------ | :-------------------------- | :----------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **ORG-001.1** | **Organization Management** | **VERIFIED** | Quản lý thông tin tổ chức (`code`, `name`, `description`, `parentOrganizationId`). Chỉ `ADMIN` có quyền cập nhật cấu hình. Cách ly 100% tenant. Test `ORG-01` PASS.                                                                                                                               |
+| **ORG-001.2** | **Department Management**   | **VERIFIED** | CRUD phòng ban theo phân cấp cây, tìm kiếm, phân trang. Mã duy nhất theo tenant (`(organization_id, code)`). Thuật toán `detectDepartmentCycle()` ngăn vòng lặp đệ quy. Chặn xóa cứng khi có con, nhân viên hoặc chức danh liên kết. Tests `ORG-02`, `ORG-03`, `ORG-04`, `ORG-05`, `ORG-06` PASS. |
+| **ORG-001.3** | **Position Management**     | **VERIFIED** | CRUD chức danh, liên kết phòng ban tùy chọn. Mã duy nhất theo tenant (`(organization_id, code)`). Tách biệt hoàn toàn giữa chức danh nghề nghiệp và RBAC Role. Chặn xóa khi có nhân viên giữ chức danh. Test `ORG-07` PASS.                                                                       |
+| **ORG-001.4** | **Reporting Structure**     | **VERIFIED** | Thiết lập quan hệ quản lý trực tiếp và phân cấp báo cáo. Thuật toán `detectReportingCycle()` ngăn chặn vòng lặp báo cáo ở mọi độ sâu. Xác thực người quản lý thuộc cùng tenant. Test `ORG-09` PASS.                                                                                               |
+| **ORG-001.5** | **Organization Chart**      | **VERIFIED** | API `/api/organizations/:orgId/org-chart` tạo cấu trúc cây phân cấp tự động, tổng hợp nhân sự và chức danh. Giao diện frontend tương tác (`OrgChartView`) hỗ trợ đóng/mở nhánh cây, tối ưu desktop/mobile. Test `ORG-10` & Frontend Unit Tests PASS.                                              |
 
 ---
 
 ## III. THAY ĐỔI SCHEMA & MIGRATIONS DATABASE
 
 Tạo migration mới: `database/migrations/005_org_structure.sql`:
+
 1. **Bảng `organizations`**:
    - Thêm cột `code VARCHAR(30)`, `parent_organization_id UUID REFERENCES organizations(id)`, `description TEXT`.
    - Tạo chỉ mục duy nhất không phân biệt hoa thường: `idx_organizations_code_unique ON organizations(lower(btrim(code)))`.
@@ -47,6 +50,7 @@ Tạo migration mới: `database/migrations/005_org_structure.sql`:
    - Indexes: `idx_memberships_department`, `idx_memberships_position`.
 
 **Kiểm tra tính an toàn Migration:**
+
 - Đã chạy qua `database/test-migrations.mjs` trên cụm PostgreSQL độc lập:
   - `PASS migration 001_auth_invitation_schema.sql`
   - `PASS migration 002_auth_controls.sql`
@@ -60,17 +64,17 @@ Tạo migration mới: `database/migrations/005_org_structure.sql`:
 
 ## IV. MA TRẬN PHÂN QUYỀN TRUY CẬP (ACCESS CONTROL MATRIX)
 
-| Hành động | Endpoint | ADMIN | HR | MANAGER | EMPLOYEE |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| Xem thông tin tổ chức | `GET /api/organizations/:orgId` | ✅ Cho phép | ✅ Cho phép | ✅ Cho phép | ✅ Cho phép |
-| Cập nhật cấu hình tổ chức | `PATCH /api/organizations/:orgId` | ✅ Cho phép | ❌ 403 | ❌ 403 | ❌ 403 |
-| Xem danh sách phòng ban | `GET .../departments` | ✅ Toàn bộ | ✅ Toàn bộ | ✅ Toàn bộ | ✅ Toàn bộ |
-| Thêm/Sửa/Xóa phòng ban | `POST/PATCH/DELETE .../departments` | ✅ Cho phép | ✅ Cho phép | ❌ 403 | ❌ 403 |
-| Xem danh sách chức danh | `GET .../positions` | ✅ Toàn bộ | ✅ Toàn bộ | ✅ Toàn bộ | ✅ Toàn bộ |
-| Thêm/Sửa/Xóa chức danh | `POST/PATCH/DELETE .../positions` | ✅ Cho phép | ✅ Cho phép | ❌ 403 | ❌ 403 |
-| Gán phòng ban & chức danh | `POST .../users/:userId/assignment` | ✅ Toàn bộ | ✅ Cho Employee | ❌ 403 | ❌ 403 |
-| Phân công người quản lý | `POST .../users/:userId/manager` | ✅ Cho phép | ❌ 403 | ❌ 403 | ❌ 403 |
-| Xem sơ đồ tổ chức | `GET .../org-chart` | ✅ Toàn cây | ✅ Toàn cây | ✅ Toàn cây | ✅ Toàn cây |
+| Hành động                 | Endpoint                            |    ADMIN    |       HR        |   MANAGER   |  EMPLOYEE   |
+| :------------------------ | :---------------------------------- | :---------: | :-------------: | :---------: | :---------: |
+| Xem thông tin tổ chức     | `GET /api/organizations/:orgId`     | ✅ Cho phép |   ✅ Cho phép   | ✅ Cho phép | ✅ Cho phép |
+| Cập nhật cấu hình tổ chức | `PATCH /api/organizations/:orgId`   | ✅ Cho phép |     ❌ 403      |   ❌ 403    |   ❌ 403    |
+| Xem danh sách phòng ban   | `GET .../departments`               | ✅ Toàn bộ  |   ✅ Toàn bộ    | ✅ Toàn bộ  | ✅ Toàn bộ  |
+| Thêm/Sửa/Xóa phòng ban    | `POST/PATCH/DELETE .../departments` | ✅ Cho phép |   ✅ Cho phép   |   ❌ 403    |   ❌ 403    |
+| Xem danh sách chức danh   | `GET .../positions`                 | ✅ Toàn bộ  |   ✅ Toàn bộ    | ✅ Toàn bộ  | ✅ Toàn bộ  |
+| Thêm/Sửa/Xóa chức danh    | `POST/PATCH/DELETE .../positions`   | ✅ Cho phép |   ✅ Cho phép   |   ❌ 403    |   ❌ 403    |
+| Gán phòng ban & chức danh | `POST .../users/:userId/assignment` | ✅ Toàn bộ  | ✅ Cho Employee |   ❌ 403    |   ❌ 403    |
+| Phân công người quản lý   | `POST .../users/:userId/manager`    | ✅ Cho phép |     ❌ 403      |   ❌ 403    |   ❌ 403    |
+| Xem sơ đồ tổ chức         | `GET .../org-chart`                 | ✅ Toàn cây |   ✅ Toàn cây   | ✅ Toàn cây | ✅ Toàn cây |
 
 ---
 
@@ -97,6 +101,7 @@ Tạo migration mới: `database/migrations/005_org_structure.sql`:
 ## VI. KẾT QUẢ KIỂM THỬ TỰ ĐỘNG
 
 ### 1. Backend Integration Tests (Vitest + PostgreSQL 18 Cluster)
+
 - **Tổng số test:** 73/73 tests **PASS** (100%).
 - **Thời gian chạy:** 58.61s.
 - **Độ bao phủ code (Coverage):** Lines: 93.11%, Statements: 87.85%, Functions: 97.14%.
@@ -105,6 +110,7 @@ Tạo migration mới: `database/migrations/005_org_structure.sql`:
   - `test/security.test.ts`: 4/4 PASS (Argon2id hashing & crypto vectors).
 
 ### 2. Frontend Unit & Integration Tests (Vitest + React Testing Library)
+
 - **Tổng số test:** 72/72 tests **PASS** (100%).
 - **Thời gian chạy:** 9.26s.
   - `src/OrganizationView.test.tsx`: 5/5 PASS.

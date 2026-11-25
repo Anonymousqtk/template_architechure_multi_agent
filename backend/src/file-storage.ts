@@ -12,7 +12,7 @@ export const ALLOWED_MIME_TYPES = [
   'text/csv',
 ] as const;
 
-export type AllowedMimeType = typeof ALLOWED_MIME_TYPES[number];
+export type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number];
 
 const UPLOADS_ROOT = path.resolve(process.cwd(), 'data', 'uploads');
 
@@ -22,19 +22,19 @@ if (!fsSync.existsSync(UPLOADS_ROOT)) {
 }
 
 export function detectMimeFromBytes(buffer: Buffer, declaredMime?: string): string | null {
-  if (buffer.length >= 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
     return 'image/jpeg';
   }
   if (
     buffer.length >= 8 &&
     buffer[0] === 0x89 &&
     buffer[1] === 0x50 &&
-    buffer[2] === 0x4E &&
+    buffer[2] === 0x4e &&
     buffer[3] === 0x47 &&
-    buffer[4] === 0x0D &&
-    buffer[5] === 0x0A &&
-    buffer[6] === 0x1A &&
-    buffer[7] === 0x0A
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
   ) {
     return 'image/png';
   }
@@ -51,7 +51,7 @@ export function detectMimeFromBytes(buffer: Buffer, declaredMime?: string): stri
   if (
     buffer.length >= 4 &&
     buffer[0] === 0x50 &&
-    buffer[1] === 0x4B &&
+    buffer[1] === 0x4b &&
     buffer[2] === 0x03 &&
     buffer[3] === 0x04
   ) {
@@ -95,8 +95,14 @@ export async function saveFile(
   fileName: string,
   buffer: Buffer,
   allowedMimes: readonly string[] = ALLOWED_MIME_TYPES,
-  maxSizeBytes = 10 * 1024 * 1024
-): Promise<{ fileId: string; filePath: string; fileName: string; fileSize: number; mimeType: string }> {
+  maxSizeBytes = 10 * 1024 * 1024,
+): Promise<{
+  fileId: string;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+}> {
   if (buffer.length === 0) {
     fail(400, 'EMPTY_FILE');
   }
@@ -104,7 +110,10 @@ export async function saveFile(
     fail(400, 'FILE_TOO_LARGE');
   }
 
-  const detectedMime = detectMimeFromBytes(buffer, allowedMimes.includes('text/csv') ? 'text/csv' : undefined);
+  const detectedMime = detectMimeFromBytes(
+    buffer,
+    allowedMimes.includes('text/csv') ? 'text/csv' : undefined,
+  );
   if (!detectedMime || !allowedMimes.includes(detectedMime)) {
     fail(400, 'INVALID_FILE_TYPE');
   }
@@ -135,7 +144,10 @@ export async function saveFile(
   };
 }
 
-export async function readFile(orgId: string, relativePath: string): Promise<{ buffer: Buffer; absolutePath: string }> {
+export async function readFile(
+  orgId: string,
+  relativePath: string,
+): Promise<{ buffer: Buffer; absolutePath: string }> {
   const safeOrgId = orgId.replace(/[^a-zA-Z0-9-]/g, '');
   const tenantDir = path.resolve(UPLOADS_ROOT, safeOrgId);
   const absolutePath = path.resolve(tenantDir, relativePath);

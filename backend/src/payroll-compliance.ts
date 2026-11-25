@@ -45,8 +45,12 @@ const ruleCreateSchema = z.object({
   ruleCode: z.string().trim().min(1).max(50),
   name: z.string().trim().min(1).max(255),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  effectiveTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  parameters: z.record(z.string(), z.any()),
+  effectiveTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+  parameters: z.record(z.string(), z.unknown()),
   legalReference: z.string().trim().min(1).max(255),
   isVerified: z.boolean().default(true),
   notes: z.string().nullable().optional(),
@@ -58,9 +62,17 @@ const dependentCreateSchema = z.object({
   relationship: z.enum(['CHILD', 'SPOUSE', 'PARENT', 'OTHER']),
   taxId: z.string().trim().max(50).nullable().optional(),
   idNumber: z.string().trim().max(50).nullable().optional(),
-  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  birthDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  effectiveTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  effectiveTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   isVerified: z.boolean().default(false),
   notes: z.string().nullable().optional(),
 });
@@ -74,8 +86,8 @@ export const DEFAULT_STATUTORY_RULES = [
     effectiveFrom: '2020-07-01',
     effectiveTo: null,
     parameters: {
-      personal: 11000000.00,
-      dependent: 4400000.00,
+      personal: 11000000.0,
+      dependent: 4400000.0,
     },
     legalReference: 'Nghị quyết 954/2020/UBTVQH14',
     isVerified: true,
@@ -89,13 +101,13 @@ export const DEFAULT_STATUTORY_RULES = [
     effectiveTo: null,
     parameters: {
       brackets: [
-        { upTo: 5000000.00, rate: 0.05, quickDeduction: 0.00 },
-        { upTo: 10000000.00, rate: 0.10, quickDeduction: 250000.00 },
-        { upTo: 18000000.00, rate: 0.15, quickDeduction: 750000.00 },
-        { upTo: 32000000.00, rate: 0.20, quickDeduction: 1650000.00 },
-        { upTo: 52000000.00, rate: 0.25, quickDeduction: 3250000.00 },
-        { upTo: 80000000.00, rate: 0.30, quickDeduction: 5850000.00 },
-        { upTo: null, rate: 0.35, quickDeduction: 9850000.00 },
+        { upTo: 5000000.0, rate: 0.05, quickDeduction: 0.0 },
+        { upTo: 10000000.0, rate: 0.1, quickDeduction: 250000.0 },
+        { upTo: 18000000.0, rate: 0.15, quickDeduction: 750000.0 },
+        { upTo: 32000000.0, rate: 0.2, quickDeduction: 1650000.0 },
+        { upTo: 52000000.0, rate: 0.25, quickDeduction: 3250000.0 },
+        { upTo: 80000000.0, rate: 0.3, quickDeduction: 5850000.0 },
+        { upTo: null, rate: 0.35, quickDeduction: 9850000.0 },
       ],
     },
     legalReference: 'Điều 22 Luật Thuế TNCN số 04/2007/QH12 & Thông tư 111/2013/TT-BTC',
@@ -132,9 +144,9 @@ export const DEFAULT_STATUTORY_RULES = [
     effectiveFrom: '2024-07-01',
     effectiveTo: null,
     parameters: {
-      baseSalary: 2340000.00,
+      baseSalary: 2340000.0,
       capMultiplier: 20,
-      capAmount: 46800000.00,
+      capAmount: 46800000.0,
     },
     legalReference: 'Nghị định 73/2024/NĐ-CP',
     isVerified: true,
@@ -148,13 +160,13 @@ export const DEFAULT_STATUTORY_RULES = [
     effectiveTo: null,
     parameters: {
       zones: {
-        zone1: 4960000.00,
-        zone2: 4410000.00,
-        zone3: 3860000.00,
-        zone4: 3450000.00,
+        zone1: 4960000.0,
+        zone2: 4410000.0,
+        zone3: 3860000.0,
+        zone4: 3450000.0,
       },
       capMultiplier: 20,
-      zone1Cap: 99200000.00,
+      zone1Cap: 99200000.0,
     },
     legalReference: 'Nghị định 74/2024/NĐ-CP',
     isVerified: true,
@@ -182,6 +194,44 @@ export interface SiRatesConfig {
   };
 }
 
+type QueryParameter = string | number | boolean | null;
+
+interface DetectedAnomaly {
+  id: string;
+  organization_id: string;
+  period_id: string;
+  employee_id: string;
+  anomaly_code: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  description: string;
+  expected_value: string;
+  actual_value: string;
+}
+
+const pitBracketConfigSchema = z.object({
+  brackets: z.array(
+    z.object({
+      upTo: z.number().nullable(),
+      rate: z.number(),
+      quickDeduction: z.number(),
+    }),
+  ),
+});
+
+const siRatesConfigSchema = z.object({
+  employee: z.object({
+    bhxh: z.number(),
+    bhyt: z.number(),
+    bhtn: z.number(),
+  }),
+  employer: z.object({
+    bhxh: z.number(),
+    bhyt: z.number(),
+    bhtn: z.number(),
+    tradeUnion: z.number(),
+  }),
+});
+
 // Progressive tax calculation helper using verified brackets
 export function calculatePitTax(assessableCents: bigint, brackets: PitBracket[]): bigint {
   if (assessableCents <= 0n) return 0n;
@@ -196,7 +246,7 @@ export function calculatePitTax(assessableCents: bigint, brackets: PitBracket[])
 }
 
 export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructureDeps) {
-  const { pool, transaction, audit, requireIdentity } = deps;
+  const { pool, transaction, requireIdentity } = deps;
   const prefix = '/api/organizations/:organizationId/payroll/compliance';
 
   function identityFor(req: Authed): Identity {
@@ -222,7 +272,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const identity = identityFor(req);
       assertComplianceAccess(identity.role);
 
-      const result = await transaction(async db => {
+      const result = await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         let seededCount = 0;
@@ -230,7 +280,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
           const existing = await db.query(
             `SELECT id FROM compliance_statutory_rules
              WHERE organization_id = $1 AND rule_code = $2 AND effective_from = $3::date`,
-            [identity.orgId, rule.ruleCode, rule.effectiveFrom]
+            [identity.orgId, rule.ruleCode, rule.effectiveFrom],
           );
           if (existing.rowCount === 0) {
             const ruleId = randomUUID();
@@ -240,10 +290,18 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
                  parameters, legal_reference, is_verified, notes
                ) VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, $9, $10, $11)`,
               [
-                ruleId, identity.orgId, rule.ruleType, rule.ruleCode, rule.name,
-                rule.effectiveFrom, rule.effectiveTo, JSON.stringify(rule.parameters),
-                rule.legalReference, rule.isVerified, rule.notes,
-              ]
+                ruleId,
+                identity.orgId,
+                rule.ruleType,
+                rule.ruleCode,
+                rule.name,
+                rule.effectiveFrom,
+                rule.effectiveTo,
+                JSON.stringify(rule.parameters),
+                rule.legalReference,
+                rule.isVerified,
+                rule.notes,
+              ],
             );
             seededCount++;
           }
@@ -253,7 +311,13 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         await db.query(
           `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
            VALUES ($1, $2, 'SEED_DEFAULT_RULES', 'STATUTORY_RULE', $3, $4, $5)`,
-          [randomUUID(), identity.orgId, identity.orgId, identity.userId, JSON.stringify({ seededCount })]
+          [
+            randomUUID(),
+            identity.orgId,
+            identity.orgId,
+            identity.userId,
+            JSON.stringify({ seededCount }),
+          ],
         );
 
         return { seededCount };
@@ -281,7 +345,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         FROM compliance_statutory_rules
         WHERE organization_id = $1
       `;
-      const params: any[] = [identity.orgId];
+      const params: QueryParameter[] = [identity.orgId];
 
       if (ruleType) {
         params.push(ruleType);
@@ -307,7 +371,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       assertComplianceAccess(identity.role);
       const data = ruleCreateSchema.parse(req.body);
 
-      const rule = await transaction(async db => {
+      const rule = await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         const id = randomUUID();
@@ -317,16 +381,30 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
              parameters, legal_reference, is_verified, notes
            ) VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, $9, $10, $11)`,
           [
-            id, identity.orgId, data.ruleType, data.ruleCode, data.name,
-            data.effectiveFrom, data.effectiveTo || null, JSON.stringify(data.parameters),
-            data.legalReference, data.isVerified, data.notes || null,
-          ]
+            id,
+            identity.orgId,
+            data.ruleType,
+            data.ruleCode,
+            data.name,
+            data.effectiveFrom,
+            data.effectiveTo || null,
+            JSON.stringify(data.parameters),
+            data.legalReference,
+            data.isVerified,
+            data.notes || null,
+          ],
         );
 
         await db.query(
           `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
            VALUES ($1, $2, 'CREATE_RULE', 'STATUTORY_RULE', $3, $4, $5)`,
-          [randomUUID(), identity.orgId, id, identity.userId, JSON.stringify({ ruleCode: data.ruleCode })]
+          [
+            randomUUID(),
+            identity.orgId,
+            id,
+            identity.userId,
+            JSON.stringify({ ruleCode: data.ruleCode }),
+          ],
         );
 
         return { id, ...data };
@@ -358,13 +436,13 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         JOIN employees e ON e.id = d.employee_id AND e.organization_id = d.organization_id
         WHERE d.organization_id = $1
       `;
-      const params: any[] = [identity.orgId];
+      const params: QueryParameter[] = [identity.orgId];
 
       // Employee can only access their own dependents
       if (identity.role === 'EMPLOYEE') {
         const empRes = await pool.query(
           `SELECT id FROM employees WHERE organization_id = $1 AND user_id = $2`,
-          [identity.orgId, identity.userId]
+          [identity.orgId, identity.userId],
         );
         if (!empRes.rowCount) return res.json({ dependents: [] });
         params.push(empRes.rows[0].id);
@@ -388,12 +466,12 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const identity = identityFor(req);
       const data = dependentCreateSchema.parse(req.body);
 
-      const dependent = await transaction(async db => {
+      const dependent = await transaction(async (db) => {
         // If employee, can only add dependent for self
         if (identity.role === 'EMPLOYEE') {
           const empRes = await db.query(
             `SELECT id FROM employees WHERE organization_id = $1 AND user_id = $2`,
-            [identity.orgId, identity.userId]
+            [identity.orgId, identity.userId],
           );
           if (!empRes.rowCount || empRes.rows[0].id !== data.employeeId) {
             fail(403, 'FORBIDDEN');
@@ -410,10 +488,19 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
              birth_date, effective_from, effective_to, is_verified, notes
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12)`,
           [
-            id, identity.orgId, data.employeeId, data.fullName, data.relationship,
-            data.taxId || null, data.idNumber || null, data.birthDate || null,
-            data.effectiveFrom, data.effectiveTo || null, data.isVerified, data.notes || null,
-          ]
+            id,
+            identity.orgId,
+            data.employeeId,
+            data.fullName,
+            data.relationship,
+            data.taxId || null,
+            data.idNumber || null,
+            data.birthDate || null,
+            data.effectiveFrom,
+            data.effectiveTo || null,
+            data.isVerified,
+            data.notes || null,
+          ],
         );
 
         return { id, ...data };
@@ -433,20 +520,26 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const dependentId = z.string().uuid().parse(req.params.id);
       const isVerified = z.boolean().parse(req.body.isVerified ?? true);
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         const upd = await db.query(
           `UPDATE employee_dependents SET is_verified = $1, updated_at = now()
            WHERE id = $2 AND organization_id = $3 RETURNING id`,
-          [isVerified, dependentId, identity.orgId]
+          [isVerified, dependentId, identity.orgId],
         );
         if (!upd.rowCount) fail(404, 'NOT_FOUND');
 
         await db.query(
           `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
            VALUES ($1, $2, 'VERIFY_DEPENDENT', 'DEPENDENT', $3, $4, $5)`,
-          [randomUUID(), identity.orgId, dependentId, identity.userId, JSON.stringify({ isVerified })]
+          [
+            randomUUID(),
+            identity.orgId,
+            dependentId,
+            identity.userId,
+            JSON.stringify({ isVerified }),
+          ],
         );
       });
 
@@ -470,37 +563,46 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const periodRes = await pool.query(
         `SELECT id, code, name, start_date::text AS start_date, end_date::text AS end_date, status
          FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
 
       // Fetch active statutory PIT rules for this period
-      const rulesRes = await pool.query<{ rule_type: string; parameters: any }>(
+      const rulesRes = await pool.query<{ rule_type: string; parameters: unknown }>(
         `SELECT rule_type, parameters FROM compliance_statutory_rules
          WHERE organization_id = $1 AND rule_type IN ('PIT_DEDUCTIONS', 'PIT_BRACKETS', 'SI_RATES')
            AND effective_from <= $2::date AND (effective_to IS NULL OR effective_to >= $2::date)
          ORDER BY effective_from DESC`,
-        [identity.orgId, period.start_date]
+        [identity.orgId, period.start_date],
       );
 
-      let personalDeduction = 11000000.00;
-      let dependentDeductionUnit = 4400000.00;
-      let brackets: PitBracket[] = (DEFAULT_STATUTORY_RULES.find(r => r.ruleType === 'PIT_BRACKETS')!.parameters as any).brackets;
+      let personalDeduction = 11000000.0;
+      let dependentDeductionUnit = 4400000.0;
+      let brackets: PitBracket[] = pitBracketConfigSchema.parse(
+        DEFAULT_STATUTORY_RULES.find((r) => r.ruleType === 'PIT_BRACKETS')!.parameters,
+      ).brackets;
 
       for (const r of rulesRes.rows) {
+        const parameters = z.record(z.string(), z.unknown()).parse(r.parameters);
         if (r.rule_type === 'PIT_DEDUCTIONS') {
-          personalDeduction = Number(r.parameters.personal) || personalDeduction;
-          dependentDeductionUnit = Number(r.parameters.dependent) || dependentDeductionUnit;
-        } else if (r.rule_type === 'PIT_BRACKETS' && Array.isArray(r.parameters.brackets)) {
-          brackets = r.parameters.brackets as PitBracket[];
+          personalDeduction = Number(parameters.personal) || personalDeduction;
+          dependentDeductionUnit = Number(parameters.dependent) || dependentDeductionUnit;
+        } else if (r.rule_type === 'PIT_BRACKETS') {
+          brackets = pitBracketConfigSchema.parse(parameters).brackets;
         }
       }
 
       // Fetch slips and slip items for this period
       const slipsRes = await pool.query<{
-        id: string; employee_id: string; employee_code: string; full_name: string; department_name: string;
-        gross_pay: string; net_pay: string; total_deductions: string;
+        id: string;
+        employee_id: string;
+        employee_code: string;
+        full_name: string;
+        department_name: string;
+        gross_pay: string;
+        net_pay: string;
+        total_deductions: string;
       }>(
         `SELECT s.id, s.employee_id, e.employee_code, e.full_name, COALESCE(d.name, 'Chưa gán') AS department_name,
                 s.gross_pay::text, s.net_pay::text, s.total_deductions::text
@@ -509,7 +611,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          LEFT JOIN departments d ON d.id = e.department_id AND d.organization_id = e.organization_id
          WHERE s.period_id = $1 AND s.organization_id = $2
          ORDER BY e.employee_code`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       // Fetch verified dependents active during the period
@@ -519,23 +621,29 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          WHERE organization_id = $1 AND is_verified = true
            AND effective_from <= $3::date AND (effective_to IS NULL OR effective_to >= $2::date)
          GROUP BY employee_id`,
-        [identity.orgId, period.start_date, period.end_date]
+        [identity.orgId, period.start_date, period.end_date],
       );
       const dependentCountMap = new Map<string, number>();
       for (const d of depsRes.rows) dependentCountMap.set(d.employee_id, d.cnt);
 
       // Fetch slip items to identify non-taxable allowances, statutory insurance, and taxes withheld
       const itemsRes = await pool.query<{
-        slip_id: string; component_name: string; type: string; amount: string;
+        slip_id: string;
+        component_name: string;
+        type: string;
+        amount: string;
       }>(
         `SELECT i.slip_id, i.component_name, i.type, i.amount::text
          FROM payroll_slip_items i
          JOIN payroll_slips s ON s.id = i.slip_id AND s.organization_id = i.organization_id
          WHERE s.period_id = $1 AND s.organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
-      const slipItemsMap = new Map<string, Array<{ component_name: string; type: string; amount: string }>>();
+      const slipItemsMap = new Map<
+        string,
+        Array<{ component_name: string; type: string; amount: string }>
+      >();
       for (const item of itemsRes.rows) {
         const arr = slipItemsMap.get(item.slip_id) || [];
         arr.push(item);
@@ -572,7 +680,10 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
             insuranceCents += itemCents;
           } else if (/thuế|tax|tncn/i.test(nameLower) && it.type === 'DEDUCTION') {
             withheldTaxCents += itemCents;
-          } else if (/ăn trưa|xăng xe|đồng phục|trang phục|công tác phí|điện thoại/i.test(nameLower) && it.type === 'ALLOWANCE') {
+          } else if (
+            /ăn trưa|xăng xe|đồng phục|trang phục|công tác phí|điện thoại/i.test(nameLower) &&
+            it.type === 'ALLOWANCE'
+          ) {
             nonTaxableCents += itemCents;
           }
         }
@@ -581,8 +692,10 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         const depDeductionCents = BigInt(depCount) * dependentUnitCents;
 
         const taxableCents = grossCents > nonTaxableCents ? grossCents - nonTaxableCents : 0n;
-        const totalDeductionForTaxCents = personalDeductionCents + depDeductionCents + insuranceCents;
-        const assessableCents = taxableCents > totalDeductionForTaxCents ? taxableCents - totalDeductionForTaxCents : 0n;
+        const totalDeductionForTaxCents =
+          personalDeductionCents + depDeductionCents + insuranceCents;
+        const assessableCents =
+          taxableCents > totalDeductionForTaxCents ? taxableCents - totalDeductionForTaxCents : 0n;
 
         const calculatedTaxCents = calculatePitTax(assessableCents, brackets);
         const varianceCents = calculatedTaxCents - withheldTaxCents;
@@ -649,38 +762,47 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const periodRes = await pool.query(
         `SELECT id, code, name, start_date::text AS start_date, end_date::text AS end_date, status
          FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
 
       // Fetch active statutory SI rules
-      const rulesRes = await pool.query<{ rule_type: string; parameters: any }>(
+      const rulesRes = await pool.query<{ rule_type: string; parameters: unknown }>(
         `SELECT rule_type, parameters FROM compliance_statutory_rules
          WHERE organization_id = $1 AND rule_type IN ('SI_RATES', 'BASE_SALARY_STATUTORY', 'REGIONAL_MIN_WAGE')
            AND effective_from <= $2::date AND (effective_to IS NULL OR effective_to >= $2::date)
          ORDER BY effective_from DESC`,
-        [identity.orgId, period.start_date]
+        [identity.orgId, period.start_date],
       );
 
-      let siRates: SiRatesConfig = (DEFAULT_STATUTORY_RULES.find(r => r.ruleCode === 'SI_RATES_VN_CURRENT')!.parameters as any);
-      let baseSalaryCap = 46800000.00; // 20x 2.34M
-      let uiCap = 99200000.00; // 20x 4.96M (Zone 1)
+      let siRates: SiRatesConfig = siRatesConfigSchema.parse(
+        DEFAULT_STATUTORY_RULES.find((r) => r.ruleCode === 'SI_RATES_VN_CURRENT')!.parameters,
+      );
+      let baseSalaryCap = 46800000.0; // 20x 2.34M
+      let uiCap = 99200000.0; // 20x 4.96M (Zone 1)
 
       for (const r of rulesRes.rows) {
-        if (r.rule_type === 'SI_RATES') siRates = r.parameters as SiRatesConfig;
-        if (r.rule_type === 'BASE_SALARY_STATUTORY' && r.parameters.capAmount) {
-          baseSalaryCap = Number(r.parameters.capAmount);
+        const parameters = z.record(z.string(), z.unknown()).parse(r.parameters);
+        if (r.rule_type === 'SI_RATES') siRates = siRatesConfigSchema.parse(parameters);
+        if (r.rule_type === 'BASE_SALARY_STATUTORY' && parameters.capAmount) {
+          baseSalaryCap = Number(parameters.capAmount);
         }
-        if (r.rule_type === 'REGIONAL_MIN_WAGE' && r.parameters.zone1Cap) {
-          uiCap = Number(r.parameters.zone1Cap);
+        if (r.rule_type === 'REGIONAL_MIN_WAGE' && parameters.zone1Cap) {
+          uiCap = Number(parameters.zone1Cap);
         }
       }
 
       // Fetch employee social insurance profiles active during period
       const profilesRes = await pool.query<{
-        employee_id: string; employee_code: string; full_name: string; department_name: string;
-        si_code: string; hi_code: string | null; si_salary: string; status: string;
+        employee_id: string;
+        employee_code: string;
+        full_name: string;
+        department_name: string;
+        si_code: string;
+        hi_code: string | null;
+        si_salary: string;
+        status: string;
       }>(
         `SELECT e.id AS employee_id, e.employee_code, e.full_name, COALESCE(d.name, 'Chưa gán') AS department_name,
                 si.si_code, si.hi_code, si.si_salary::text, si.status
@@ -690,7 +812,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          WHERE e.organization_id = $1 AND si.status = 'ACTIVE'
            AND si.enrollment_date <= $3::date AND (si.termination_date IS NULL OR si.termination_date >= $2::date)
          ORDER BY e.employee_code`,
-        [identity.orgId, period.start_date, period.end_date]
+        [identity.orgId, period.start_date, period.end_date],
       );
 
       const baseSalaryCapCents = toCents(baseSalaryCap);
@@ -705,7 +827,8 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
 
       for (const p of profilesRes.rows) {
         const rawSalaryCents = toCents(p.si_salary);
-        const cappedSiCents = rawSalaryCents > baseSalaryCapCents ? baseSalaryCapCents : rawSalaryCents;
+        const cappedSiCents =
+          rawSalaryCents > baseSalaryCapCents ? baseSalaryCapCents : rawSalaryCents;
         const cappedUiCents = rawSalaryCents > uiCapCents ? uiCapCents : rawSalaryCents;
 
         // Employee portions: BHXH 8%, BHYT 1.5%, BHTN 1%
@@ -788,7 +911,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          FROM employee_social_insurance si
          JOIN employees e ON e.id = si.employee_id AND e.organization_id = si.organization_id
          WHERE si.organization_id = $1 AND date_trunc('month', si.enrollment_date) = $2::date`,
-        [identity.orgId, startDate]
+        [identity.orgId, startDate],
       );
 
       // Terminations in this month
@@ -798,7 +921,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          FROM employee_social_insurance si
          JOIN employees e ON e.id = si.employee_id AND e.organization_id = si.organization_id
          WHERE si.organization_id = $1 AND date_trunc('month', si.termination_date) = $2::date`,
-        [identity.orgId, startDate]
+        [identity.orgId, startDate],
       );
 
       res.json({
@@ -828,7 +951,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const periodRes = await pool.query(
         `SELECT id, code, name, start_date::text AS start_date, end_date::text AS end_date, status
          FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       if (!periodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
       const period = periodRes.rows[0];
@@ -854,7 +977,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
                 COALESCE(sum(total_deductions), 0)::text AS deductions
          FROM payroll_slips
          WHERE period_id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       const agg = slipsAgg.rows[0];
 
@@ -864,7 +987,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          FROM employee_social_insurance si
          JOIN payroll_slips s ON s.employee_id = si.employee_id AND s.organization_id = si.organization_id
          WHERE s.period_id = $1 AND s.organization_id = $2 AND si.status = 'ACTIVE'`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       const siFundCents = toCents(siFundRes.rows[0]?.total_si_fund);
       const employerSiCents = toCents((Number(siFundCents) / 100) * 0.215); // BHXH 17.5% + BHYT 3% + BHTN 1%
@@ -879,7 +1002,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         `SELECT COALESCE(sum(amount), 0)::text AS disbursed
          FROM payroll_disbursements
          WHERE period_id = $1 AND organization_id = $2`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
       const disbursedCents = toCents(disbRes.rows[0]?.disbursed);
 
@@ -898,7 +1021,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          WHERE s.period_id = $1 AND s.organization_id = $2
          GROUP BY d.name
          ORDER BY sum(s.gross_pay) DESC`,
-        [periodId, identity.orgId]
+        [periodId, identity.orgId],
       );
 
       // Previous period comparison
@@ -910,7 +1033,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          GROUP BY p.id, p.start_date
          ORDER BY p.start_date DESC
          LIMIT 1`,
-        [identity.orgId, period.start_date]
+        [identity.orgId, period.start_date],
       );
       let momDeltaCents = 0n;
       let momPct = 0;
@@ -936,7 +1059,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
           totalCostToCompany: fromCents(totalCostCents),
           financialMetrics: {
             accruedExpense: fromCents(totalCostCents), // Chi phí ghi nhận (Nợ 6422/6421)
-            payableLiability: fromCents(netCents),     // Số tiền phải trả người lao động (Có 3341)
+            payableLiability: fromCents(netCents), // Số tiền phải trả người lao động (Có 3341)
             disbursedPayment: fromCents(disbursedCents), // Số tiền thực tế đã chi trả (Có 1121)
             remainingUnpaid: fromCents(netCents > disbursedCents ? netCents - disbursedCents : 0n),
           },
@@ -945,11 +1068,14 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
             deltaAmount: fromCents(momDeltaCents),
             percentChange: momPct,
           },
-          departmentDistribution: deptBreakdown.rows.map(d => ({
+          departmentDistribution: deptBreakdown.rows.map((d) => ({
             departmentName: d.department_name,
             employeeCount: d.employee_count,
             grossAmount: d.dept_gross,
-            percentOfTotal: grossCents > 0n ? Math.round((Number(toCents(d.dept_gross)) / Number(grossCents)) * 10000) / 100 : 0,
+            percentOfTotal:
+              grossCents > 0n
+                ? Math.round((Number(toCents(d.dept_gross)) / Number(grossCents)) * 10000) / 100
+                : 0,
           })),
         },
       });
@@ -968,36 +1094,38 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       assertComplianceAccess(identity.role);
       const periodId = z.string().uuid().parse(req.params.periodId);
 
-      const anomalies = await transaction(async db => {
+      const anomalies = await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         // Check period
         const periodRes = await db.query<{ id: string; start_date: string; end_date: string }>(
           `SELECT id, start_date::text AS start_date, end_date::text AS end_date
            FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         if (!periodRes.rowCount) fail(404, 'PERIOD_NOT_FOUND');
-        const period = periodRes.rows[0];
-
         // Clear existing unresolved anomalies for this period
         await db.query(
           `DELETE FROM compliance_anomalies
            WHERE period_id = $1 AND organization_id = $2 AND resolution_status = 'OPEN'`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
 
-        const detected: any[] = [];
+        const detected: DetectedAnomaly[] = [];
 
         // 1. Check: SALARY_BELOW_REGIONAL_MIN (Zone 1 standard 4,960,000)
         const minWageRes = await db.query<{
-          id: string; employee_id: string; employee_code: string; full_name: string; base_salary: string;
+          id: string;
+          employee_id: string;
+          employee_code: string;
+          full_name: string;
+          base_salary: string;
         }>(
           `SELECT s.id, s.employee_id, e.employee_code, e.full_name, s.base_salary::text AS base_salary
            FROM payroll_slips s
            JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
            WHERE s.period_id = $1 AND s.organization_id = $2 AND s.base_salary < 4960000.00`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         for (const row of minWageRes.rows) {
           detected.push({
@@ -1015,14 +1143,16 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
 
         // 2. Check: MISSING_SI_PROFILE for employees with active slips
         const missingSiRes = await db.query<{
-          employee_id: string; employee_code: string; full_name: string;
+          employee_id: string;
+          employee_code: string;
+          full_name: string;
         }>(
           `SELECT s.employee_id, e.employee_code, e.full_name
            FROM payroll_slips s
            JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
            LEFT JOIN employee_social_insurance si ON si.employee_id = e.id AND si.organization_id = e.organization_id AND si.status = 'ACTIVE'
            WHERE s.period_id = $1 AND s.organization_id = $2 AND si.id IS NULL`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         for (const row of missingSiRes.rows) {
           detected.push({
@@ -1040,14 +1170,17 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
 
         // 3. Check: MISSING_DEPENDENT_TAX_ID
         const unverifiedDeps = await db.query<{
-          employee_id: string; employee_code: string; full_name: string; dep_name: string;
+          employee_id: string;
+          employee_code: string;
+          full_name: string;
+          dep_name: string;
         }>(
           `SELECT d.employee_id, e.employee_code, e.full_name, d.full_name AS dep_name
            FROM employee_dependents d
            JOIN employees e ON e.id = d.employee_id AND e.organization_id = d.organization_id
            JOIN payroll_slips s ON s.employee_id = d.employee_id AND s.organization_id = d.organization_id
            WHERE s.period_id = $1 AND d.organization_id = $2 AND (d.tax_id IS NULL OR d.is_verified = false)`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         for (const row of unverifiedDeps.rows) {
           detected.push({
@@ -1065,7 +1198,11 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
 
         // 4. Check: ANOMALOUS_FLUCTUATION (gross variance > 30% MoM)
         const flucRes = await db.query<{
-          employee_id: string; employee_code: string; full_name: string; curr_gross: string; prev_gross: string;
+          employee_id: string;
+          employee_code: string;
+          full_name: string;
+          curr_gross: string;
+          prev_gross: string;
         }>(
           `SELECT curr.employee_id, e.employee_code, e.full_name, curr.gross_pay::text AS curr_gross, prev.gross_pay::text AS prev_gross
            FROM payroll_slips curr
@@ -1076,7 +1213,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
            WHERE curr.period_id = $1 AND curr.organization_id = $2
              AND prev.gross_pay > 0
              AND ABS(curr.gross_pay - prev.gross_pay) / prev.gross_pay > 0.30`,
-          [periodId, identity.orgId]
+          [periodId, identity.orgId],
         );
         for (const row of flucRes.rows) {
           detected.push({
@@ -1100,16 +1237,29 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
                description, expected_value, actual_value, resolution_status
              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'OPEN')`,
             [
-              an.id, an.organization_id, an.period_id, an.employee_id, an.anomaly_code,
-              an.severity, an.description, an.expected_value, an.actual_value,
-            ]
+              an.id,
+              an.organization_id,
+              an.period_id,
+              an.employee_id,
+              an.anomaly_code,
+              an.severity,
+              an.description,
+              an.expected_value,
+              an.actual_value,
+            ],
           );
         }
 
         await db.query(
           `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
            VALUES ($1, $2, 'RUN_COMPLIANCE_CHECK', 'PAYROLL_PERIOD', $3, $4, $5)`,
-          [randomUUID(), identity.orgId, periodId, identity.userId, JSON.stringify({ detectedCount: detected.length })]
+          [
+            randomUUID(),
+            identity.orgId,
+            periodId,
+            identity.userId,
+            JSON.stringify({ detectedCount: detected.length }),
+          ],
         );
 
         return detected;
@@ -1140,7 +1290,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         LEFT JOIN employees e ON e.id = a.employee_id AND e.organization_id = a.organization_id
         WHERE a.organization_id = $1
       `;
-      const params: any[] = [identity.orgId];
+      const params: QueryParameter[] = [identity.orgId];
 
       if (periodId) {
         params.push(periodId);
@@ -1165,24 +1315,37 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const identity = identityFor(req);
       assertComplianceAccess(identity.role);
       const anomalyId = z.string().uuid().parse(req.params.id);
-      const status = z.enum(['ACKNOWLEDGED', 'RESOLVED', 'WAIVED']).parse(req.body.status ?? 'RESOLVED');
-      const notes = z.string().trim().min(1).max(500).parse(req.body.notes ?? 'Đã giải trình và xác nhận');
+      const status = z
+        .enum(['ACKNOWLEDGED', 'RESOLVED', 'WAIVED'])
+        .parse(req.body.status ?? 'RESOLVED');
+      const notes = z
+        .string()
+        .trim()
+        .min(1)
+        .max(500)
+        .parse(req.body.notes ?? 'Đã giải trình và xác nhận');
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         const upd = await db.query(
           `UPDATE compliance_anomalies
            SET resolution_status = $1, resolution_notes = $2, resolved_by = $3, resolved_at = now()
            WHERE id = $4 AND organization_id = $5 RETURNING id`,
-          [status, notes, identity.userId, anomalyId, identity.orgId]
+          [status, notes, identity.userId, anomalyId, identity.orgId],
         );
         if (!upd.rowCount) fail(404, 'NOT_FOUND');
 
         await db.query(
           `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
            VALUES ($1, $2, 'RESOLVE_ANOMALY', 'ANOMALY', $3, $4, $5)`,
-          [randomUUID(), identity.orgId, anomalyId, identity.userId, JSON.stringify({ status, notes })]
+          [
+            randomUUID(),
+            identity.orgId,
+            anomalyId,
+            identity.userId,
+            JSON.stringify({ status, notes }),
+          ],
         );
       });
 
@@ -1205,7 +1368,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const periodId = req.body.periodId ? z.string().uuid().parse(req.body.periodId) : null;
       const title = z.string().trim().min(1).max(255).parse(req.body.title);
 
-      const report = await transaction(async db => {
+      const report = await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         let startDate = req.body.periodStart;
@@ -1214,7 +1377,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         if (periodId) {
           const p = await db.query(
             `SELECT start_date::text, end_date::text FROM payroll_periods WHERE id = $1 AND organization_id = $2`,
-            [periodId, identity.orgId]
+            [periodId, identity.orgId],
           );
           if (!p.rowCount) fail(404, 'PERIOD_NOT_FOUND');
           startDate = p.rows[0].start_date;
@@ -1230,7 +1393,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         const anomRes = await db.query<{ count: string }>(
           `SELECT count(*)::text AS count FROM compliance_anomalies
            WHERE organization_id = $1 AND period_id = $2 AND resolution_status = 'OPEN'`,
-          [identity.orgId, periodId]
+          [identity.orgId, periodId],
         );
         const anomalyCount = parseInt(anomRes.rows[0]?.count || '0', 10);
 
@@ -1241,16 +1404,30 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
              period_start, period_end, status, summary_data, anomaly_count, created_by
            ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::date, 'DRAFT', $9, $10, $11)`,
           [
-            id, identity.orgId, reportType, reportCode, title, periodId,
-            startDate, endDate, JSON.stringify(req.body.summaryData || {}),
-            anomalyCount, identity.userId,
-          ]
+            id,
+            identity.orgId,
+            reportType,
+            reportCode,
+            title,
+            periodId,
+            startDate,
+            endDate,
+            JSON.stringify(req.body.summaryData || {}),
+            anomalyCount,
+            identity.userId,
+          ],
         );
 
         await db.query(
           `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
            VALUES ($1, $2, 'GENERATE_REPORT', 'COMPLIANCE_REPORT', $3, $4, $5)`,
-          [randomUUID(), identity.orgId, id, identity.userId, JSON.stringify({ reportCode, reportType })]
+          [
+            randomUUID(),
+            identity.orgId,
+            id,
+            identity.userId,
+            JSON.stringify({ reportCode, reportType }),
+          ],
         );
 
         return { id, reportCode, reportType, title, status: 'DRAFT', anomalyCount };
@@ -1278,7 +1455,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          JOIN users u ON u.id = r.created_by
          WHERE r.organization_id = $1
          ORDER BY r.created_at DESC`,
-        [identity.orgId]
+        [identity.orgId],
       );
       res.json({ reports: reports.rows });
     } catch (err) {
@@ -1293,12 +1470,12 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       assertComplianceAccess(identity.role);
       const reportId = z.string().uuid().parse(req.params.id);
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN', 'HR']);
 
         const curr = await db.query<{ status: string }>(
           `SELECT status FROM compliance_reports WHERE id = $1 AND organization_id = $2`,
-          [reportId, identity.orgId]
+          [reportId, identity.orgId],
         );
         if (!curr.rowCount) fail(404, 'REPORT_NOT_FOUND');
         if (curr.rows[0].status === 'LOCKED') fail(409, 'REPORT_ALREADY_LOCKED');
@@ -1307,13 +1484,13 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
           `UPDATE compliance_reports
            SET status = 'APPROVED', approved_by = $1, approved_at = now(), updated_at = now()
            WHERE id = $2 AND organization_id = $3`,
-          [identity.userId, reportId, identity.orgId]
+          [identity.userId, reportId, identity.orgId],
         );
 
         await db.query(
           `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
            VALUES ($1, $2, 'APPROVE_REPORT', 'COMPLIANCE_REPORT', $3, $4, '{}')`,
-          [randomUUID(), identity.orgId, reportId, identity.userId]
+          [randomUUID(), identity.orgId, reportId, identity.userId],
         );
       });
 
@@ -1329,12 +1506,12 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const identity = identityFor(req);
       const reportId = z.string().uuid().parse(req.params.id);
 
-      await transaction(async db => {
+      await transaction(async (db) => {
         await authorizeMutation(db, identity, [identity.userId], ['ADMIN']);
 
         const curr = await db.query<{ status: string }>(
           `SELECT status FROM compliance_reports WHERE id = $1 AND organization_id = $2`,
-          [reportId, identity.orgId]
+          [reportId, identity.orgId],
         );
         if (!curr.rowCount) fail(404, 'REPORT_NOT_FOUND');
         if (curr.rows[0].status !== 'APPROVED') fail(400, 'REPORT_MUST_BE_APPROVED_BEFORE_LOCK');
@@ -1343,13 +1520,13 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
           `UPDATE compliance_reports
            SET status = 'LOCKED', updated_at = now()
            WHERE id = $1 AND organization_id = $2`,
-          [reportId, identity.orgId]
+          [reportId, identity.orgId],
         );
 
         await db.query(
           `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
            VALUES ($1, $2, 'LOCK_REPORT', 'COMPLIANCE_REPORT', $3, $4, '{}')`,
-          [randomUUID(), identity.orgId, reportId, identity.userId]
+          [randomUUID(), identity.orgId, reportId, identity.userId],
         );
       });
 
@@ -1367,15 +1544,21 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       const reportId = z.string().uuid().parse(req.params.id);
 
       const reportRes = await pool.query<{
-        id: string; report_type: string; report_code: string; title: string;
-        period_id: string | null; period_start: string; period_end: string;
-        status: string; summary_data: any;
+        id: string;
+        report_type: string;
+        report_code: string;
+        title: string;
+        period_id: string | null;
+        period_start: string;
+        period_end: string;
+        status: string;
+        summary_data: Record<string, unknown>;
       }>(
         `SELECT id, report_type, report_code, title, period_id,
                 period_start::text, period_end::text, status, summary_data
          FROM compliance_reports
          WHERE id = $1 AND organization_id = $2`,
-        [reportId, identity.orgId]
+        [reportId, identity.orgId],
       );
       if (!reportRes.rowCount) fail(404, 'REPORT_NOT_FOUND');
       const rep = reportRes.rows[0];
@@ -1396,12 +1579,18 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
         `UPDATE compliance_reports
          SET export_count = export_count + 1, last_exported_at = now()
          WHERE id = $1 AND organization_id = $2`,
-        [reportId, identity.orgId]
+        [reportId, identity.orgId],
       );
       await pool.query(
         `INSERT INTO compliance_audit_logs (id, organization_id, action, target_type, target_id, performed_by, details)
          VALUES ($1, $2, 'EXPORT_OFFICIAL_REPORT', 'COMPLIANCE_REPORT', $3, $4, $5)`,
-        [randomUUID(), identity.orgId, reportId, identity.userId, JSON.stringify({ code: rep.report_code })]
+        [
+          randomUUID(),
+          identity.orgId,
+          reportId,
+          identity.userId,
+          JSON.stringify({ code: rep.report_code }),
+        ],
       );
 
       // Generate CSV content with UTF-8 BOM
@@ -1413,47 +1602,54 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
       csv += `Thời điểm xuất: ${new Date().toISOString()}\r\n\r\n`;
 
       if (rep.report_type.startsWith('PIT')) {
-        csv += 'Mã NV,Họ và tên,Thu nhập chịu thuế,Giảm trừ bản thân,Số người phụ thuộc,Giảm trừ NPT,Bảo hiểm bắt buộc,Thu nhập tính thuế,Thuế TNCN phải nộp\r\n';
+        csv +=
+          'Mã NV,Họ và tên,Thu nhập chịu thuế,Giảm trừ bản thân,Số người phụ thuộc,Giảm trừ NPT,Bảo hiểm bắt buộc,Thu nhập tính thuế,Thuế TNCN phải nộp\r\n';
         if (rep.period_id) {
           const slips = await pool.query<{
-            employee_code: string; full_name: string; gross_pay: string;
+            employee_code: string;
+            full_name: string;
+            gross_pay: string;
           }>(
             `SELECT e.employee_code, e.full_name, s.gross_pay::text
              FROM payroll_slips s
              JOIN employees e ON e.id = s.employee_id AND e.organization_id = s.organization_id
              WHERE s.period_id = $1 AND s.organization_id = $2
              ORDER BY e.employee_code`,
-            [rep.period_id, identity.orgId]
+            [rep.period_id, identity.orgId],
           );
           for (const s of slips.rows) {
             const gross = toCents(s.gross_pay);
             const personal = 1100000000n;
             const assessable = gross > personal ? gross - personal : 0n;
-            const tax = assessable * 5n / 100n;
+            const tax = (assessable * 5n) / 100n;
             csv += `"${s.employee_code}","${s.full_name}",${fromCents(gross)},11000000.00,0,0.00,0.00,${fromCents(assessable)},${fromCents(tax)}\r\n`;
           }
         }
       } else if (rep.report_type.startsWith('SI')) {
-        csv += 'Mã NV,Họ và tên,Mã BHXH,Mức lương đóng BHXH,BHXH NLĐ (8%),BHYT NLĐ (1.5%),BHTN NLĐ (1%),BHXH DN (17.5%),BHYT DN (3%),BHTN DN (1%),KPCĐ (2%),Tổng trích nộp\r\n';
+        csv +=
+          'Mã NV,Họ và tên,Mã BHXH,Mức lương đóng BHXH,BHXH NLĐ (8%),BHYT NLĐ (1.5%),BHTN NLĐ (1%),BHXH DN (17.5%),BHYT DN (3%),BHTN DN (1%),KPCĐ (2%),Tổng trích nộp\r\n';
         if (rep.period_id) {
           const siList = await pool.query<{
-            employee_code: string; full_name: string; si_code: string; si_salary: string;
+            employee_code: string;
+            full_name: string;
+            si_code: string;
+            si_salary: string;
           }>(
             `SELECT e.employee_code, e.full_name, si.si_code, si.si_salary::text
              FROM employees e
              JOIN employee_social_insurance si ON si.employee_id = e.id AND si.organization_id = e.organization_id
              WHERE e.organization_id = $1 AND si.status = 'ACTIVE'`,
-            [identity.orgId]
+            [identity.orgId],
           );
           for (const row of siList.rows) {
             const sal = toCents(row.si_salary);
-            const emp8 = sal * 8n / 100n;
-            const emp15 = sal * 15n / 1000n;
-            const emp1 = sal * 1n / 100n;
-            const dn175 = sal * 175n / 1000n;
-            const dn3 = sal * 3n / 100n;
-            const dn1 = sal * 1n / 100n;
-            const union2 = sal * 2n / 100n;
+            const emp8 = (sal * 8n) / 100n;
+            const emp15 = (sal * 15n) / 1000n;
+            const emp1 = (sal * 1n) / 100n;
+            const dn175 = (sal * 175n) / 1000n;
+            const dn3 = (sal * 3n) / 100n;
+            const dn1 = (sal * 1n) / 100n;
+            const union2 = (sal * 2n) / 100n;
             const tot = emp8 + emp15 + emp1 + dn175 + dn3 + dn1 + union2;
             csv += `"${row.employee_code}","${row.full_name}","${row.si_code}",${fromCents(sal)},${fromCents(emp8)},${fromCents(emp15)},${fromCents(emp1)},${fromCents(dn175)},${fromCents(dn3)},${fromCents(dn1)},${fromCents(union2)},${fromCents(tot)}\r\n`;
           }
@@ -1488,7 +1684,7 @@ export function registerPayrollComplianceRoutes(app: Express, deps: OrgStructure
          WHERE l.organization_id = $1
          ORDER BY l.created_at DESC
          LIMIT 100`,
-        [identity.orgId]
+        [identity.orgId],
       );
       res.json({ logs: logs.rows });
     } catch (err) {

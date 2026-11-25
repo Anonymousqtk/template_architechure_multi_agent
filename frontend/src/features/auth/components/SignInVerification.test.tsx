@@ -4,11 +4,16 @@ import '@testing-library/jest-dom/vitest';
 import { setLocale } from '../../../i18n';
 import { SignInVerification } from './SignInVerification';
 
-afterEach(() => { cleanup(); setLocale('vi'); });
+afterEach(() => {
+  cleanup();
+  setLocale('vi');
+});
 
 it('switches verification and recovery instructions without changing the account', () => {
   setLocale('vi');
-  render(<SignInVerification email="member@example.test" onVerified={vi.fn()} onCancel={vi.fn()} />);
+  render(
+    <SignInVerification email="member@example.test" onVerified={vi.fn()} onCancel={vi.fn()} />,
+  );
   expect(screen.getByRole('heading', { name: 'Xác minh đăng nhập' })).toBeVisible();
   act(() => setLocale('en'));
   expect(screen.getByRole('heading', { name: 'Verify sign-in' })).toBeVisible();

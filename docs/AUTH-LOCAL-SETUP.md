@@ -18,7 +18,6 @@ Without SMTP the application explicitly reports DEV_ONLY delivery. No real invit
 
 Local tests do not replace CI, independent human review, or staging SMTP verification. Require trusted HTTPS, secret management, backups, monitored SMTP and abuse controls before rollout. No production migration, deployment, or Admin provisioning is authorized by this implementation task.
 
-
 ## AUTH-003 local MFA
 
 The local preview now requires Admin/HR to finish MFA before opening management pages. Visit http://localhost:3000/security, enter your current password, add the displayed manual TOTP key to an Authenticator app, enter its6-digit code, then save the10 one-time recovery codes. The agent did not enroll a factor for your real local account. The local encryption key is already generated in ignored backend/.env and was not displayed; preserve this file securely.

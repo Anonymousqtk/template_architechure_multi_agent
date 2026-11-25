@@ -25,21 +25,21 @@ Manager only, zero subagents for AUTH-003. Approved security-review skill. Inher
 
 ## Actual evidence
 
-| Check | Result |
-|---|---|
-| Baseline | Reused valid AUTH-002 evidence:44backend16UI tests before affected source changes |
-| Final backend npm run typecheck / lint / build | PASS |
-| Final backend npm run test:coverage | PASS62 tests,2 files; statements92.44%, branches83.50%, functions98.18%, lines97.73% |
-| Final frontend npm run typecheck / lint / test:coverage / build | PASS23 tests,3 files; statements/lines93.72%, branches76.00% |
-| Migration004 disposable PostgreSQL18 | PASS with all migrations, existing-data upgrade and constraint/rollback checks |
-| Local development upgrade | PASS on explicitly guarded known localhost database;2 users preserved; no real user MFA enrollment performed |
-| Chrome smoke | PASS real Admin password login restricted to MFA setup, management API403 MFA_REQUIRED, all management permissions false, desktop1440/mobile390 no overflow or Vietnamese corruption; screenshot inspected |
-| Final local startup | PASS /security HTTP200; running latest build |
-| Local changed-path/risk policy and git diff --check | PASS; not a PR/human approval |
-| Dependency audit | REUSED prior unchanged-lockfile production-only audits reporting0 vulnerabilities; no new dependency/install/audit performed |
-| Governance checks | REUSED unchanged policy validators/governance unit evidence from AUTH-002; no governance code changed by AUTH-003 |
-| Semgrep / SonarQube / trusted PR CI | NOT VERIFIED: Semgrep not available locally; no trusted pipeline/Sonar result |
-| Production / active scan | NOT RUN |
+| Check                                                           | Result                                                                                                                                                                                                     |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline                                                        | Reused valid AUTH-002 evidence:44backend16UI tests before affected source changes                                                                                                                          |
+| Final backend npm run typecheck / lint / build                  | PASS                                                                                                                                                                                                       |
+| Final backend npm run test:coverage                             | PASS62 tests,2 files; statements92.44%, branches83.50%, functions98.18%, lines97.73%                                                                                                                       |
+| Final frontend npm run typecheck / lint / test:coverage / build | PASS23 tests,3 files; statements/lines93.72%, branches76.00%                                                                                                                                               |
+| Migration004 disposable PostgreSQL18                            | PASS with all migrations, existing-data upgrade and constraint/rollback checks                                                                                                                             |
+| Local development upgrade                                       | PASS on explicitly guarded known localhost database;2 users preserved; no real user MFA enrollment performed                                                                                               |
+| Chrome smoke                                                    | PASS real Admin password login restricted to MFA setup, management API403 MFA_REQUIRED, all management permissions false, desktop1440/mobile390 no overflow or Vietnamese corruption; screenshot inspected |
+| Final local startup                                             | PASS /security HTTP200; running latest build                                                                                                                                                               |
+| Local changed-path/risk policy and git diff --check             | PASS; not a PR/human approval                                                                                                                                                                              |
+| Dependency audit                                                | REUSED prior unchanged-lockfile production-only audits reporting0 vulnerabilities; no new dependency/install/audit performed                                                                               |
+| Governance checks                                               | REUSED unchanged policy validators/governance unit evidence from AUTH-002; no governance code changed by AUTH-003                                                                                          |
+| Semgrep / SonarQube / trusted PR CI                             | NOT VERIFIED: Semgrep not available locally; no trusted pipeline/Sonar result                                                                                                                              |
+| Production / active scan                                        | NOT RUN                                                                                                                                                                                                    |
 
 Affected tests were rerun after actual security-review fixes, recovery-code regeneration and UI navigation/reset regression additions; unchanged dependency scans/full CI were not repeated. Final test run had no failures. Live browser smoke did not enroll a factor or perform recovery on the user's actual account, so they retain control of their authenticator/recovery codes. Complete recovery/TOTP/session workflows were exercised through real HTTP + disposable DB and focused UI tests.
 
