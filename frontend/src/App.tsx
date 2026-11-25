@@ -44,6 +44,7 @@ import {
   type Profile,
 } from './services/api';
 import './assets/styles/workspace.css';
+import './assets/styles/account-layout.css';
 
 // Kept only in memory: remove credentials from browser history before any request.
 const linkPath = window.location.pathname;
@@ -831,13 +832,15 @@ export default function App() {
     );
   else if (profile && path === '/security')
     content = (
-      <>
-        <AccountSecurity profile={profile} />
+      <div className="account-settings-layout">
+        <div className="account-settings-main">
+          <AccountSecurity profile={profile} />
+        </div>
         {passkeys &&
           profile.security?.mfaEnabled &&
           profile.security.mfaVerified &&
           ['ADMIN', 'HR'].includes(profile.organization.role) && <PasskeySettings />}
-      </>
+      </div>
     );
   else if (path === '/security') content = login;
   else if (path === '/forgot-password') content = <Forgot />;

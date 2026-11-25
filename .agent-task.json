@@ -1,16 +1,17 @@
 {
-  "id": "RPT-003",
-  "summary": "Build Compliance and Statutory Reporting module for PIT tax (05/KK-TNCN, 05/QTT-TNCN), Social Insurance (SI/HI/UI/Trade Union, D02-LT), and Labor Utilization (01/PLI) under Vietnamese legal regulations",
-  "allowed_scopes": ["frontend", "backend", "database", "tests"],
-  "risk": "high",
-  "security_review_required": true,
+  "id": "ACCOUNT-LAYOUT-001",
+  "summary": "Compact account settings presentation without changing authentication behavior; retain catalog and report library layout fixes",
+  "allowed_scopes": ["frontend"],
+  "risk": "normal",
+  "security_review_required": false,
   "acceptance": [
-    "Implement RPT-TAX-01 PIT periodic declaration (Form 05/KK-TNCN) and progressive 7-tier tax brackets with payroll slip reconciliation",
-    "Implement RPT-TAX-02 PIT annual finalization (Form 05/QTT-TNCN & 05-1/BK-TNCN) with proxy authorization and tax balance settlement",
-    "Implement RPT-INS-01 statutory insurance contributions (SI 8%/17.5%, HI 1.5%/3%, UI 1%/1%, Trade Union 2%) with statutory wage caps",
-    "Implement RPT-INS-02 insurance labor fluctuations (Form D02-LT) tracking enrollments, terminations, and salary adjustments",
-    "Implement RPT-LAB-01 bi-annual/annual labor utilization reporting (Form 01/PLI per Decree 145/2020/ND-CP)",
-    "Integrate filters, UTF-8 BOM CSV exports, audit logging, and responsive UI in ReportingCenter",
-    "Enforce strict tenant isolation, RBAC (HR/ADMIN only), audit logging, and regression tests"
+    "Account settings use a bounded content width, compact typography and consistent cards",
+    "Preserve MFA, recovery, session and passkey behavior and permission conditions",
+    "Separate catalog navigation, filters, table and pagination with consistent spacing",
+    "Align filter controls across desktop, tablet and mobile and center empty table states",
+    "Tablet toolbar uses full-width tabs and a consistently aligned search/action row",
+    "Mobile tabs scroll without shrinking and search/action stack without excess height",
+    "Preserve existing translations and report library interactions",
+    "Run formatting, frontend validation and existing report builder tests"
   ]
 }

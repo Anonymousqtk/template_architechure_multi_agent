@@ -815,7 +815,7 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
   };
 
   return (
-    <div>
+    <div className="org-catalog org-positions-catalog">
       <div className="org-toolbar">
         <form
           className="org-filters"
@@ -970,7 +970,9 @@ export function PositionsPanel({ profile }: { profile: Profile }) {
             ))}
             {!loading && !error && positions.length === 0 && (
               <tr>
-                <td colSpan={canManage ? 8 : 7}>Không tìm thấy vị trí nào.</td>
+                <td className="org-catalog-empty" colSpan={canManage ? 8 : 7}>
+                  Không tìm thấy vị trí nào.
+                </td>
               </tr>
             )}
           </tbody>
@@ -1408,7 +1410,7 @@ export function OrganizationView({
       {tab === 'positions' && (
         <>
           {canManageCatalog && (
-            <div className="org-action-cell" role="group" aria-label={tr.catalog}>
+            <div className="org-catalog-switch" role="group" aria-label={tr.catalog}>
               <button
                 type="button"
                 className="secondary"

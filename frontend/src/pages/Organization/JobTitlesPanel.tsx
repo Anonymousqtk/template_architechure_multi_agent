@@ -81,7 +81,7 @@ export function JobTitlesPanel({ organizationId }: { organizationId: string }) {
 
   const title = editing === 'new' ? null : editing;
   return (
-    <section aria-label={tr('Danh mục chức danh')}>
+    <section className="org-catalog" aria-label={tr('Danh mục chức danh')}>
       <div className="org-toolbar">
         <form
           className="org-filters"
@@ -230,7 +230,9 @@ export function JobTitlesPanel({ organizationId }: { organizationId: string }) {
             ))}
             {!loading && !listError && !items.length && (
               <tr>
-                <td colSpan={4}>{tr('Không tìm thấy chức danh.')}</td>
+                <td className="org-catalog-empty" colSpan={4}>
+                  {tr('Không tìm thấy chức danh.')}
+                </td>
               </tr>
             )}
           </tbody>
