@@ -367,7 +367,22 @@ describe('RPT-002 ReportBuilderStudio UI', () => {
     fireEvent.click(screen.getByText('+ New Formula Field'));
     await waitFor(() => expect(screen.getByLabelText('Metric Name')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText('Metric Name'), { target: { value: 'Double HC' } });
-    fireEvent.change(screen.getByLabelText('Safe Formula Expression'), {
+    const exprInput = screen.getByLabelText('Safe Formula Expression') as HTMLTextAreaElement;
+
+    // Without focusing the expression, inserting function then field appends to the end
+    fireEvent.click(screen.getByRole('button', { name: 'IF(cond, a, b)' }));
+    fireEvent.click(screen.getByRole('button', { name: '[emp_id]' }));
+    expect(exprInput.value).toBe('IF(cond, a, b) [emp_id]');
+
+    // Focusing/selecting inside the expression inserts the field at that exact position
+    fireEvent.change(exprInput, { target: { value: 'IF(cond, a, b)' } });
+    fireEvent.focus(exprInput);
+    exprInput.setSelectionRange(3, 7);
+    fireEvent.select(exprInput);
+    fireEvent.click(screen.getByRole('button', { name: '[emp_id]' }));
+    expect(exprInput.value).toBe('IF([emp_id], a, b)');
+
+    fireEvent.change(exprInput, {
       target: { value: '[emp_id] * 2' },
     });
     fireEvent.click(screen.getByText('Validate Syntax'));

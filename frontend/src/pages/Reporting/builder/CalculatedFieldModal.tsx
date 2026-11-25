@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SlideDialog } from '../../../components/common/SlideDialog';
 import type { Locale } from '../../../i18n';
 import type { ReportBuilderMessages } from '../reportBuilderMessages';
@@ -52,9 +52,54 @@ export function CalculatedFieldModal({
     errorMessage?: string;
   } | null>(null);
 
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const selectionRef = useRef<{ start: number; end: number } | null>(null);
+  const pendingCaretRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (pendingCaretRef.current === null) return;
+    const caret = pendingCaretRef.current;
+    pendingCaretRef.current = null;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(caret, caret);
+  }, [formula]);
+
+  const syncSelection = (el: HTMLTextAreaElement) => {
+    selectionRef.current = {
+      start: el.selectionStart ?? el.value.length,
+      end: el.selectionEnd ?? el.value.length,
+    };
+  };
+
   const insertToken = (snippet: string) => {
-    setFormula((prev) => (prev ? `${prev} ${snippet}` : snippet));
+    const selection = selectionRef.current;
+    if (!selection) {
+      setFormula((prev) => (prev ? `${prev} ${snippet}` : snippet));
+      setValidation(null);
+      return;
+    }
+
+    const start = Math.max(0, Math.min(selection.start, formula.length));
+    const end = Math.max(start, Math.min(selection.end, formula.length));
+    const nextFormula = `${formula.slice(0, start)}${snippet}${formula.slice(end)}`;
+    const nextCaret = start + snippet.length;
+
+    selectionRef.current = { start: nextCaret, end: nextCaret };
     setValidation(null);
+
+    if (nextFormula === formula) {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(nextCaret, nextCaret);
+      }
+      return;
+    }
+
+    pendingCaretRef.current = nextCaret;
+    setFormula(nextFormula);
   };
 
   const handleCheck = async () => {
@@ -142,13 +187,19 @@ export function CalculatedFieldModal({
             {msg.formulaModal.expressionLabel}
           </label>
           <textarea
+            ref={textareaRef}
             id="rbs-calc-expr"
             rows={4}
             className="rbs-input"
             style={{ height: 'auto', padding: '0.6rem', fontFamily: 'ui-monospace, monospace' }}
             value={formula}
+            onFocus={(e) => syncSelection(e.currentTarget)}
+            onClick={(e) => syncSelection(e.currentTarget)}
+            onKeyUp={(e) => syncSelection(e.currentTarget)}
+            onSelect={(e) => syncSelection(e.currentTarget)}
             onChange={(e) => {
               setFormula(e.target.value);
+              syncSelection(e.currentTarget);
               setValidation(null);
             }}
             placeholder={msg.formulaModal.expressionPlaceholder}
@@ -163,6 +214,7 @@ export function CalculatedFieldModal({
                 key={f.id}
                 type="button"
                 className="rbs-token-chip"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => insertToken(`[${f.id}]`)}
                 title={locale === 'en' ? f.labelEn : f.labelVi}
               >
@@ -180,6 +232,7 @@ export function CalculatedFieldModal({
                 key={fn}
                 type="button"
                 className="rbs-token-chip"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => insertToken(fn)}
               >
                 {fn}
