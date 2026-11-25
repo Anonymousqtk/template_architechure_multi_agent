@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { setLocale } from '../../i18n';
 import { request, type Profile } from '../../services/api';
 import { reportBuilderMessages } from './reportBuilderMessages';
+import { reportBuilderGuideMessages } from './reportBuilderGuideMessages';
 import { ReportBuilderStudio } from './builder/ReportBuilderStudio';
 import type {
   EntityMeta,
@@ -160,6 +161,109 @@ const mockExecResult: ReportExecutionResult = {
 };
 
 describe('RPT-002 ReportBuilderStudio UI', () => {
+  it('hands guided detail configuration to Studio and executes it as a new report', async () => {
+    setupApiMocks();
+    setLocale('en');
+    const t = reportBuilderGuideMessages.en;
+    render(
+      <ReportBuilderStudio
+        organizationId="org-1"
+        currentUserId="u-hr"
+        userRole="HR"
+        locale="en"
+        msg={reportBuilderMessages.en}
+      />,
+    );
+    const start = await screen.findByRole('button', {
+      name: new RegExp(t.guided + ' ' + t.guidedHint),
+    });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+    fireEvent.click(screen.getByRole('button', { name: t.next }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Departments' }));
+    fireEvent.click(screen.getByRole('button', { name: t.next }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Full Name' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Department Name' }));
+    fireEvent.click(screen.getByRole('button', { name: t.next }));
+    fireEvent.click(screen.getByRole('button', { name: t.next }));
+    fireEvent.change(screen.getByLabelText(t.name), {
+      target: { value: 'People and departments' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: t.finish }));
+    expect(screen.getByLabelText('Report name')).toHaveValue('People and departments');
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.stringContaining('/builder/execute'),
+        expect.objectContaining({
+          reportId: undefined,
+          definition: expect.objectContaining({
+            primaryEntity: 'employees',
+            relatedEntities: ['departments'],
+            columns: [{ fieldId: 'emp_full_name' }, { fieldId: 'dept_name' }],
+          }),
+        }),
+        'POST',
+      ),
+    );
+    expect(screen.getByRole('button', { name: /^Save$/ })).toBeEnabled();
+    expect(screen.getByText('Save Report to Library')).toBeVisible();
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Save Report' }));
+      });
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.stringContaining('/builder/library'),
+        expect.objectContaining({
+          name: 'People and departments',
+          definition: expect.objectContaining({
+            columns: [{ fieldId: 'emp_full_name' }, { fieldId: 'dept_name' }],
+          }),
+        }),
+        'POST',
+      );
+      const saved = screen.getByText(reportBuilderMessages.en.toolbar.savedSuccess);
+      expect(saved.closest('.rbs-save-action')).not.toBeNull();
+      expect(saved).not.toHaveClass('rbs-pill');
+      act(() => vi.advanceTimersByTime(3999));
+      expect(saved).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(1));
+      expect(
+        screen.queryByText(reportBuilderMessages.en.toolbar.savedSuccess),
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('distinguishes stale results from unsaved changes and clears staleness on undo or rerun', async () => {
+    setupApiMocks();
+    setLocale('en');
+    render(
+      <ReportBuilderStudio
+        organizationId="org-1"
+        currentUserId="u-hr"
+        userRole="HR"
+        locale="en"
+        msg={reportBuilderMessages.en}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'Templates' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use Template' }));
+    await screen.findByText('Total Records: 2');
+    fireEvent.click(screen.getByLabelText('+ Columns: Full Name'));
+    expect(screen.getByText(reportBuilderGuideMessages.en.stale)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.queryByText(reportBuilderGuideMessages.en.stale)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(screen.getByText(reportBuilderGuideMessages.en.stale)).toBeVisible();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Run Report' })[0]);
+    await waitFor(() =>
+      expect(screen.queryByText(reportBuilderGuideMessages.en.stale)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+  });
+
   afterEach(() => {
     cleanup();
     mockRequest.mockReset();
@@ -299,7 +403,9 @@ describe('RPT-002 ReportBuilderStudio UI', () => {
     );
 
     await waitFor(() => expect(screen.getByText('Mẫu báo cáo chuẩn')).toBeInTheDocument());
-    fireEvent.click(screen.getAllByText('+ Tạo báo cáo trống')[0]);
+    const advanced = screen.getByRole('button', { name: /^Studio nâng cao/ });
+    await waitFor(() => expect(advanced).toBeEnabled());
+    fireEvent.click(advanced);
     expect(screen.getByRole('heading', { name: 'Trường dữ liệu' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Cấu hình báo cáo' })).toBeInTheDocument();
     expect(screen.getAllByText('Chạy báo cáo').length).toBeGreaterThanOrEqual(1);
@@ -319,8 +425,9 @@ describe('RPT-002 ReportBuilderStudio UI', () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByText('+ New Blank Report')).toBeInTheDocument());
-    fireEvent.click(screen.getAllByText('+ New Blank Report')[0]);
+    const advanced = await screen.findByRole('button', { name: /^Advanced Studio/ });
+    await waitFor(() => expect(advanced).toBeEnabled());
+    fireEvent.click(advanced);
 
     // Tap field row to open Quick Destination Sheet instead of drag-and-drop
     await waitFor(() => expect(screen.getByText('Full Name')).toBeInTheDocument());

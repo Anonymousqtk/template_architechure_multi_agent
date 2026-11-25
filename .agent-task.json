@@ -1,17 +1,21 @@
 {
-  "id": "ACCOUNT-LAYOUT-001",
-  "summary": "Compact account settings presentation without changing authentication behavior; retain catalog and report library layout fixes",
+  "id": "RBS-STEPS-001",
+  "summary": "Make all five report creation steps visible without horizontal scrolling on mobile and tablet; compact the guide header",
   "allowed_scopes": ["frontend"],
   "risk": "normal",
   "security_review_required": false,
   "acceptance": [
-    "Account settings use a bounded content width, compact typography and consistent cards",
-    "Preserve MFA, recovery, session and passkey behavior and permission conditions",
-    "Separate catalog navigation, filters, table and pagination with consistent spacing",
-    "Align filter controls across desktop, tablet and mobile and center empty table states",
-    "Tablet toolbar uses full-width tabs and a consistently aligned search/action row",
-    "Mobile tabs scroll without shrinking and search/action stack without excess height",
-    "Preserve existing translations and report library interactions",
-    "Run formatting, frontend validation and existing report builder tests"
+    "All five labeled steps remain visible at 320px, mobile and tablet widths without clipping or horizontal scrolling",
+    "Differentiate completed, current and upcoming steps with accessible state labels in Vietnamese and English",
+    "Use a compact back link and introduction while preserving workflow state and validation",
+    "Save feedback stays beside Save, disappears after four seconds and never occupies a workspace row",
+    "Other actionable notices remain visible until dismissed, and save feedback clears on edits",
+    "Report brand pills retain 12px typography without inheriting global logo styles at any viewport or stylesheet order",
+    "Provide a localized five-step report builder with detail and summary workflows, supported related data, filtering, preview and saving through Studio",
+    "Explain source grain, field meaning, formats, aggregation and join limitations using authorized metadata",
+    "Warn before source resets and distinguish stale execution results from unsaved changes",
+    "Validate guided workflow behavior, existing reporting tests, types, lint, formatting and i18n",
+    "Verify mobile, tablet and desktop layouts and keep the active guide step visible",
+    "Preserve advanced Studio workflows and existing report access controls"
   ]
 }

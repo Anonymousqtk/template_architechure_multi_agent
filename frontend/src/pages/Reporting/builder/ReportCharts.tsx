@@ -180,7 +180,7 @@ export function ReportCharts({ locale, msg, vizType, definition, result }: Props
     return (
       <div className="rbs-chart-card">
         {hoveredText && (
-          <div className="rbs-pill brand" style={{ marginBottom: '8px' }}>
+          <div className="rbs-pill rbs-pill-brand" style={{ marginBottom: '8px' }}>
             {hoveredText}
           </div>
         )}
@@ -259,7 +259,7 @@ export function ReportCharts({ locale, msg, vizType, definition, result }: Props
   return (
     <div className="rbs-chart-card">
       {hoveredText && (
-        <div className="rbs-pill brand" style={{ marginBottom: '8px' }}>
+        <div className="rbs-pill rbs-pill-brand" style={{ marginBottom: '8px' }}>
           {hoveredText}
         </div>
       )}

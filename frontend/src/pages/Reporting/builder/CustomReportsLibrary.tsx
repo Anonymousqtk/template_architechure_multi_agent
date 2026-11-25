@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Locale } from '../../../i18n';
 import type { ReportBuilderMessages } from '../reportBuilderMessages';
+import { reportBuilderGuideMessages } from '../reportBuilderGuideMessages';
 import type { CustomReportRecord, EntityMeta, PrebuiltTemplate } from './reportBuilderTypes';
 
 type LibrarySection = 'MY' | 'SHARED' | 'TEMPLATES' | 'FAVORITES' | 'RECENT';
@@ -14,6 +15,7 @@ interface Props {
   templates: PrebuiltTemplate[];
   loading: boolean;
   onCreateBlank: () => void;
+  onCreateGuided: () => void;
   onOpenReport: (report: CustomReportRecord) => void;
   onUseTemplate: (template: PrebuiltTemplate) => void;
   onDuplicateReport: (report: CustomReportRecord) => void;
@@ -31,6 +33,7 @@ export function CustomReportsLibrary({
   templates,
   loading,
   onCreateBlank,
+  onCreateGuided,
   onOpenReport,
   onUseTemplate,
   onDuplicateReport,
@@ -38,6 +41,7 @@ export function CustomReportsLibrary({
   onToggleFavorite,
   onShareReport,
 }: Props) {
+  const guide = reportBuilderGuideMessages[locale];
   const [section, setSection] = useState<LibrarySection>('MY');
   const [query, setQuery] = useState('');
 
@@ -107,6 +111,38 @@ export function CustomReportsLibrary({
 
   return (
     <div className="rbs-shell">
+      <section className="rbs-library-intro" aria-label={guide.introTitle}>
+        <h2>{guide.introTitle}</h2>
+        <p>{guide.introBody}</p>
+        <div className="rbs-guide-options">
+          <button
+            type="button"
+            className="rbs-guide-choice"
+            onClick={() => setSection('TEMPLATES')}
+          >
+            <strong>{guide.templates}</strong>
+            <span>{guide.templatesHint}</span>
+          </button>
+          <button
+            type="button"
+            className="rbs-guide-choice"
+            disabled={loading}
+            onClick={onCreateGuided}
+          >
+            <strong>{guide.guided}</strong>
+            <span>{guide.guidedHint}</span>
+          </button>
+          <button
+            type="button"
+            className="rbs-guide-choice"
+            disabled={loading}
+            onClick={onCreateBlank}
+          >
+            <strong>{guide.advanced}</strong>
+            <span>{guide.advancedHint}</span>
+          </button>
+        </div>
+      </section>
       <div className="rbs-library-bar">
         <div className="rbs-lib-tabs" role="tablist" aria-label={msg.backToLibrary}>
           {sections.map((s) => (
@@ -136,8 +172,13 @@ export function CustomReportsLibrary({
               aria-label={msg.library.searchPlaceholder}
             />
           </div>
-          <button type="button" className="rbs-btn primary" onClick={onCreateBlank}>
-            {`+ ${msg.library.newBlankReport}`}
+          <button
+            type="button"
+            className="rbs-btn primary"
+            disabled={loading}
+            onClick={onCreateGuided}
+          >
+            {`+ ${guide.guided}`}
           </button>
         </div>
       </div>
@@ -157,7 +198,7 @@ export function CustomReportsLibrary({
                         <h3 className="rbs-lib-card-title">
                           {locale === 'en' ? tpl.nameEn : tpl.nameVi}
                         </h3>
-                        <span className="rbs-pill brand">
+                        <span className="rbs-pill rbs-pill-brand">
                           {msg.canvas.views[tpl.visualizationType]}
                         </span>
                       </div>
@@ -193,14 +234,14 @@ export function CustomReportsLibrary({
           {filteredReports.length === 0 && filteredTemplates.length === 0 ? (
             <div className="rbs-status-box">
               <h3>{msg.library.emptyTitle}</h3>
-              <p style={{ color: 'var(--text-muted, #64748b)' }}>{msg.library.emptySubtitle}</p>
+              <p style={{ color: 'var(--text-muted, #64748b)' }}>{guide.guidedHint}</p>
               <button
                 type="button"
                 className="rbs-btn primary"
                 style={{ marginTop: '0.75rem' }}
-                onClick={onCreateBlank}
+                onClick={onCreateGuided}
               >
-                {`+ ${msg.library.newBlankReport}`}
+                {guide.guided}
               </button>
             </div>
           ) : (
@@ -230,7 +271,7 @@ export function CustomReportsLibrary({
                     </div>
                     <div>
                       <div className="rbs-lib-meta">
-                        <span className="rbs-pill brand">
+                        <span className="rbs-pill rbs-pill-brand">
                           {msg.canvas.views[rep.visualizationType] ?? rep.visualizationType}
                         </span>
                         <span className="rbs-pill">{getVisibilityLabel(rep.visibility)}</span>

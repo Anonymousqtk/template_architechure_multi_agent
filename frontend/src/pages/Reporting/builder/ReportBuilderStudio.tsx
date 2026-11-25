@@ -9,6 +9,9 @@ import { CustomReportsLibrary } from './CustomReportsLibrary';
 import { DataExplorerPanel } from './DataExplorerPanel';
 import { ReportCanvasPanel } from './ReportCanvasPanel';
 import { ReportConfigPanel } from './ReportConfigPanel';
+import { ReportCreationGuide } from './ReportCreationGuide';
+import { ReportOverview, countReportFilters } from './ReportGuideInfo';
+import { reportBuilderGuideMessages } from '../reportBuilderGuideMessages';
 import type {
   CalculatedFieldConfig,
   CustomReportRecord,
@@ -136,7 +139,8 @@ export function ReportBuilderStudio({
   locale,
   msg,
 }: Props) {
-  const [viewMode, setViewMode] = useState<'LIBRARY' | 'STUDIO'>('LIBRARY');
+  const [viewMode, setViewMode] = useState<'LIBRARY' | 'STUDIO' | 'GUIDED'>('LIBRARY');
+  const guide = reportBuilderGuideMessages[locale];
   const [entities, setEntities] = useState<EntityMeta[]>([]);
   const [fields, setFields] = useState<FieldMeta[]>([]);
   const [templates, setTemplates] = useState<PrebuiltTemplate[]>([]);
@@ -157,10 +161,17 @@ export function ReportBuilderStudio({
     useReportBuilderHistory(createEmptyReportDefinition('employees'));
 
   const [result, setResult] = useState<ReportExecutionResult | null>(null);
+  const [resultDefinition, setResultDefinition] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (savedAt === null) return;
+    const timer = window.setTimeout(() => setSavedAt(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [savedAt]);
   const [exportOpen, setExportOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [exportJob, setExportJob] = useState<ExportJobState | null>(null);
@@ -252,6 +263,7 @@ export function ReportBuilderStudio({
         );
         if (abortCounter.current === reqId) {
           setResult(res);
+          setResultDefinition(JSON.stringify(def));
         }
       } catch (err) {
         if (abortCounter.current === reqId) {
@@ -267,6 +279,7 @@ export function ReportBuilderStudio({
   );
 
   const openBlankInStudio = () => {
+    setSavedAt(null);
     const firstEntity = entities[0]?.id ?? 'employees';
     setActiveReportId(null);
     setReportName(msg.library.newBlankReport);
@@ -284,6 +297,7 @@ export function ReportBuilderStudio({
   };
 
   const openReportInStudio = (report: CustomReportRecord) => {
+    setSavedAt(null);
     const norm = normalizeDefinition({
       ...report.definition,
       visualizationType: report.visualizationType ?? report.definition.visualizationType,
@@ -305,6 +319,7 @@ export function ReportBuilderStudio({
   };
 
   const openTemplateInStudio = (tpl: PrebuiltTemplate) => {
+    setSavedAt(null);
     const norm = normalizeDefinition({
       ...tpl.definition,
       visualizationType: tpl.visualizationType,
@@ -326,11 +341,23 @@ export function ReportBuilderStudio({
   };
 
   const handleUpdateDef = (next: ReportDefinition) => {
+    setSavedAt(null);
     setDefinition(next);
     setDirty(true);
   };
 
   const handleChangePrimaryEntity = (entityId: EntityId) => {
+    if (entityId === definition.primaryEntity) return;
+    const hasConfiguration =
+      definition.columns.length +
+        definition.rows.length +
+        definition.values.length +
+        definition.groupBy.length +
+        definition.pivotColumns.length +
+        definition.calculatedFields.length +
+        countReportFilters(definition.filters) >
+      0;
+    if (hasConfiguration && !window.confirm(guide.resetSource)) return;
     const fresh = createEmptyReportDefinition(entityId);
     handleUpdateDef(fresh);
     setResult(null);
@@ -338,6 +365,17 @@ export function ReportBuilderStudio({
 
   const handleToggleRelated = (entityId: EntityId) => {
     const exists = definition.relatedEntities.includes(entityId);
+    if (exists) {
+      const sourceFields = fields.filter((f) => f.entity === entityId).map((f) => f.id);
+      // Includes filter rules and formula references; never leave dangling fields.
+      const config = JSON.stringify({ ...definition, relatedEntities: [] });
+      if (
+        sourceFields.some((id) => config.includes(JSON.stringify(id)) || config.includes(`[${id}]`))
+      ) {
+        setNotice(guide.relatedInUse);
+        return;
+      }
+    }
     const nextRel = exists
       ? definition.relatedEntities.filter((e) => e !== entityId)
       : [...definition.relatedEntities, entityId];
@@ -355,6 +393,8 @@ export function ReportBuilderStudio({
       return;
     }
     setSaving(true);
+    setNotice(null);
+    setSavedAt(null);
     try {
       const res = await request<{ report: CustomReportRecord }>(
         `/api/organizations/${organizationId}/reports/builder/library/${activeReportId}`,
@@ -370,7 +410,7 @@ export function ReportBuilderStudio({
         'PATCH',
       );
       setDirty(false);
-      setNotice(msg.toolbar.savedSuccess);
+      setSavedAt(Date.now());
       setLibraryReports((prev) => prev.map((r) => (r.id === res.report.id ? res.report : r)));
     } catch (err) {
       setNotice(errorText(err));
@@ -388,6 +428,8 @@ export function ReportBuilderStudio({
     isTemplate: boolean;
   }) => {
     setSaving(true);
+    setSavedAt(null);
+    setNotice(null);
     try {
       if (shareModalState.mode === 'SHARE' && shareModalState.targetReport) {
         const target = shareModalState.targetReport;
@@ -455,7 +497,8 @@ export function ReportBuilderStudio({
         setDirty(false);
         setLibraryReports((prev) => [res.report, ...prev]);
       }
-      setNotice(msg.toolbar.savedSuccess);
+      setNotice(null);
+      setSavedAt(Date.now());
       setShareModalState({ open: false, mode: 'SAVE_AS' });
     } catch (err) {
       setNotice(errorText(err));
@@ -615,6 +658,10 @@ export function ReportBuilderStudio({
           templates={templates}
           loading={libraryLoading}
           onCreateBlank={openBlankInStudio}
+          onCreateGuided={() => {
+            openBlankInStudio();
+            setViewMode('GUIDED');
+          }}
           onOpenReport={openReportInStudio}
           onUseTemplate={openTemplateInStudio}
           onDuplicateReport={handleDuplicate}
@@ -640,6 +687,36 @@ export function ReportBuilderStudio({
           />
         )}
       </>
+    );
+  }
+
+  if (viewMode === 'GUIDED') {
+    return (
+      <ReportCreationGuide
+        locale={locale}
+        msg={msg}
+        entities={entities}
+        fields={fields}
+        result={result}
+        resultDefinition={resultDefinition}
+        running={running}
+        error={runError}
+        onPreview={(draft) => void executeReport(draft, 1)}
+        onCancel={() => {
+          ++abortCounter.current;
+          setRunning(false);
+          setViewMode('LIBRARY');
+        }}
+        onComplete={(draft, name) => {
+          openBlankInStudio();
+          resetHistory(draft);
+          setReportName(name);
+          setDirty(true);
+          setMobileTab('RESULT');
+          setShareModalState({ open: true, mode: 'SAVE_AS' });
+          void executeReport(draft, 1);
+        }}
+      />
     );
   }
 
@@ -702,6 +779,7 @@ export function ReportBuilderStudio({
               value={reportName}
               onChange={(e) => {
                 setReportName(e.target.value);
+                setSavedAt(null);
                 setDirty(true);
               }}
             />
@@ -714,7 +792,10 @@ export function ReportBuilderStudio({
               type="button"
               className="rbs-btn ghost rbs-desktop-only-btn"
               disabled={!canUndo}
-              onClick={undo}
+              onClick={() => {
+                setSavedAt(null);
+                undo();
+              }}
               title={msg.toolbar.undo}
             >
               {msg.toolbar.undo}
@@ -723,7 +804,10 @@ export function ReportBuilderStudio({
               type="button"
               className="rbs-btn ghost rbs-desktop-only-btn"
               disabled={!canRedo}
-              onClick={redo}
+              onClick={() => {
+                setSavedAt(null);
+                redo();
+              }}
               title={msg.toolbar.redo}
             >
               {msg.toolbar.redo}
@@ -886,7 +970,7 @@ export function ReportBuilderStudio({
               )}
             </div>
 
-            <div className="rbs-toolbar-action-cell">
+            <div className="rbs-toolbar-action-cell rbs-save-action">
               <button
                 type="button"
                 className="rbs-btn primary rbs-toolbar-action-btn"
@@ -897,19 +981,32 @@ export function ReportBuilderStudio({
                   {saving ? msg.toolbar.saving : msg.toolbar.save}
                 </span>
               </button>
+              {savedAt !== null && (
+                <span className="rbs-save-feedback" role="status">
+                  {msg.toolbar.savedSuccess}
+                </span>
+              )}
             </div>
           </div>
         </div>
 
         {notice && (
-          <div className="rbs-pill brand" role="status" style={{ margin: '8px 16px 0' }}>
-            {notice}
+          <div className="rbs-inline-notice" role="status">
+            <span>{notice}</span>
+            <button
+              type="button"
+              className="rbs-btn sm icon-only"
+              aria-label={msg.common.close}
+              onClick={() => setNotice(null)}
+            >
+              ×
+            </button>
           </div>
         )}
 
         {exportJob && (
           <div
-            className="rbs-pill brand"
+            className="rbs-pill rbs-pill-brand"
             style={{ justifyContent: 'space-between', margin: '8px 16px 0' }}
           >
             <span>
@@ -976,6 +1073,28 @@ export function ReportBuilderStudio({
             {`${msg.config.title} (${totalConfigCount})`}
           </button>
         </div>
+
+        <ReportOverview
+          definition={definition}
+          entities={entities}
+          fields={fields}
+          locale={locale}
+          msg={msg}
+          expanded={false}
+        />
+        {result && resultDefinition !== JSON.stringify(definition) && (
+          <div className="rbs-guide-stale" role="status">
+            <span>{guide.stale}</span>
+            <button
+              type="button"
+              className="rbs-btn"
+              disabled={running}
+              onClick={runReportAndFocusResult}
+            >
+              {msg.toolbar.runReport}
+            </button>
+          </div>
+        )}
 
         {/* 3-Panel Resizable Workspace */}
         <div

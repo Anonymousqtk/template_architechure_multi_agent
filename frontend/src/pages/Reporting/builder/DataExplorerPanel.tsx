@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { SearchableSelect } from '../../../components/common/SearchableSelect';
 import type { Locale } from '../../../i18n';
 import type { ReportBuilderMessages } from '../reportBuilderMessages';
+import { reportBuilderGuideMessages } from '../reportBuilderGuideMessages';
+import { FieldGuide, sourceGrain } from './ReportGuideInfo';
 import type {
   CalculatedFieldConfig,
   DropZoneName,
@@ -53,6 +55,7 @@ export function DataExplorerPanel({
   onTapField,
   onCloseDrawer,
 }: Props) {
+  const guide = reportBuilderGuideMessages[locale];
   const [search, setSearch] = useState('');
   const [showRelated, setShowRelated] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -140,6 +143,16 @@ export function DataExplorerPanel({
             ariaLabel={msg.explorer.primaryEntity}
             searchPlaceholder={msg.explorer.searchFields}
           />
+          {activeEntityMeta && (
+            <div className="rbs-guide-note">
+              <p>
+                {locale === 'en' ? activeEntityMeta.descriptionEn : activeEntityMeta.descriptionVi}
+              </p>
+              <p>
+                {guide.grainLabel}: {sourceGrain(activeEntityMeta.id, locale)}
+              </p>
+            </div>
+          )}
         </div>
 
         {activeEntityMeta && activeEntityMeta.relatedEntities.length > 0 && (
@@ -155,6 +168,7 @@ export function DataExplorerPanel({
             </button>
             {showRelated && (
               <div className="rbs-related-list" style={{ marginTop: '6px' }}>
+                <p className="rbs-guide-note">{guide.relatedHint}</p>
                 {activeEntityMeta.relatedEntities.map((rel) => {
                   const target = entities.find((e) => e.id === rel.entity);
                   if (!target) return null;
@@ -175,6 +189,7 @@ export function DataExplorerPanel({
                     </label>
                   );
                 })}
+                <p className="rbs-guide-note">{guide.unavailableJoin}</p>
               </div>
             )}
           </div>
@@ -236,43 +251,45 @@ export function DataExplorerPanel({
                       const label = locale === 'en' ? f.labelEn : f.labelVi;
                       const desc = locale === 'en' ? f.descriptionEn : f.descriptionVi;
                       return (
-                        <div
-                          key={f.id}
-                          className="rbs-field-item"
-                          draggable
-                          title={desc}
-                          onClick={() => onTapField?.(f)}
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('text/plain', f.id);
-                            e.dataTransfer.effectAllowed = 'copy';
-                          }}
-                        >
-                          <div className="rbs-field-main">
-                            <span className="rbs-drag-grip" aria-hidden="true">
-                              ⋮⋮
-                            </span>
-                            <span className="rbs-field-title">{label}</span>
+                        <div key={f.id} className="rbs-field-entry">
+                          <div
+                            className="rbs-field-item"
+                            draggable
+                            title={desc}
+                            onClick={() => onTapField?.(f)}
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', f.id);
+                              e.dataTransfer.effectAllowed = 'copy';
+                            }}
+                          >
+                            <div className="rbs-field-main">
+                              <span className="rbs-drag-grip" aria-hidden="true">
+                                ⋮⋮
+                              </span>
+                              <span className="rbs-field-title">{label}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span
+                                className="rbs-field-type-pill"
+                                title={msg.explorer.types[f.dataType]}
+                              >
+                                {TYPE_ICONS[f.dataType]}
+                              </span>
+                              <button
+                                type="button"
+                                className="rbs-chip-btn"
+                                aria-label={`${msg.explorer.quickAddColumns}: ${label}`}
+                                title={msg.config.zones[quickTargetZone]}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onQuickAddField(f, quickTargetZone);
+                                }}
+                              >
+                                +
+                              </button>
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span
-                              className="rbs-field-type-pill"
-                              title={msg.explorer.types[f.dataType]}
-                            >
-                              {TYPE_ICONS[f.dataType]}
-                            </span>
-                            <button
-                              type="button"
-                              className="rbs-chip-btn"
-                              aria-label={`${msg.explorer.quickAddColumns}: ${label}`}
-                              title={msg.config.zones[quickTargetZone]}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onQuickAddField(f, quickTargetZone);
-                              }}
-                            >
-                              +
-                            </button>
-                          </div>
+                          <FieldGuide field={f} entities={entities} locale={locale} msg={msg} />
                         </div>
                       );
                     })}

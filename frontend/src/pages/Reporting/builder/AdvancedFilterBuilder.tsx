@@ -3,9 +3,11 @@ import { SearchableSelect } from '../../../components/common/SearchableSelect';
 import { SlideDialog } from '../../../components/common/SlideDialog';
 import type { Locale } from '../../../i18n';
 import type { ReportBuilderMessages } from '../reportBuilderMessages';
+import { reportBuilderGuideMessages } from '../reportBuilderGuideMessages';
 import type { FieldMeta, FilterGroup, FilterOperator, FilterRule } from './reportBuilderTypes';
 
 interface Props {
+  simple?: boolean;
   locale: Locale;
   msg: ReportBuilderMessages;
   availableFields: FieldMeta[];
@@ -27,6 +29,7 @@ const RELATIVE_DATE_KEYS = [
 ] as const;
 
 export function AdvancedFilterBuilder({
+  simple = false,
   locale,
   msg,
   availableFields,
@@ -73,21 +76,25 @@ export function AdvancedFilterBuilder({
       <div className="rbs-filter-group" style={{ marginLeft: depth > 0 ? '12px' : 0 }}>
         <div className="rbs-filter-header">
           <div style={{ minWidth: '220px' }}>
-            <select
-              className="rbs-select"
-              value={group.combinator}
-              onChange={(e) => onChange({ ...group, combinator: e.target.value as 'AND' | 'OR' })}
-            >
-              <option value="AND">{msg.filterBuilder.combinatorAnd}</option>
-              <option value="OR">{msg.filterBuilder.combinatorOr}</option>
-            </select>
+            {simple ? (
+              <span>{msg.filterBuilder.combinatorAnd}</span>
+            ) : (
+              <select
+                className="rbs-select"
+                value={group.combinator}
+                onChange={(e) => onChange({ ...group, combinator: e.target.value as 'AND' | 'OR' })}
+              >
+                <option value="AND">{msg.filterBuilder.combinatorAnd}</option>
+                <option value="OR">{msg.filterBuilder.combinatorOr}</option>
+              </select>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button type="button" className="rbs-btn" onClick={addRule}>
               {msg.filterBuilder.addRule}
             </button>
-            {depth < 3 && (
+            {!simple && depth < 3 && (
               <button type="button" className="rbs-btn" onClick={addSubGroup}>
                 {msg.filterBuilder.addGroup}
               </button>
@@ -186,6 +193,7 @@ export function AdvancedFilterBuilder({
                       className="rbs-input"
                       value={String(rule.value ?? '')}
                       placeholder={msg.filterBuilder.valuePlaceholder}
+                      aria-label={msg.filterBuilder.valuePlaceholder}
                       onChange={(e) => updateRule({ value: e.target.value })}
                     />
                     <input
@@ -199,6 +207,7 @@ export function AdvancedFilterBuilder({
                       className="rbs-input"
                       value={String(rule.valueTo ?? '')}
                       placeholder={msg.filterBuilder.valueToPlaceholder}
+                      aria-label={msg.filterBuilder.valueToPlaceholder}
                       onChange={(e) => updateRule({ valueTo: e.target.value })}
                     />
                   </div>
@@ -264,6 +273,7 @@ export function AdvancedFilterBuilder({
                       Array.isArray(rule.value) ? rule.value.join(', ') : String(rule.value ?? '')
                     }
                     placeholder={msg.filterBuilder.valuePlaceholder}
+                    aria-label={msg.filterBuilder.valuePlaceholder}
                     onChange={(e) =>
                       updateRule({
                         value:
@@ -318,7 +328,7 @@ export function AdvancedFilterBuilder({
 
   return (
     <SlideDialog
-      label={msg.filterBuilder.title}
+      label={simple ? reportBuilderGuideMessages[locale].filters : msg.filterBuilder.title}
       onClose={onClose}
       action={
         <button type="button" className="primary" onClick={() => onApply(draft)}>
@@ -327,7 +337,9 @@ export function AdvancedFilterBuilder({
       }
     >
       <div className="rbs-shell" style={{ minHeight: 0, gap: '12px' }}>
-        <h3 style={{ margin: 0 }}>{msg.filterBuilder.title}</h3>
+        <h3 style={{ margin: 0 }}>
+          {simple ? reportBuilderGuideMessages[locale].filters : msg.filterBuilder.title}
+        </h3>
         {renderGroup(draft, setDraft)}
       </div>
     </SlideDialog>

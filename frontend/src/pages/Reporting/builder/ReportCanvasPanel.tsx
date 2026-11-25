@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { SlideDialog } from '../../../components/common/SlideDialog';
 import type { Locale } from '../../../i18n';
 import type { ReportBuilderMessages } from '../reportBuilderMessages';
+import { reportBuilderGuideMessages } from '../reportBuilderGuideMessages';
 import { ReportCharts } from './ReportCharts';
 import type {
   ConditionalFormattingRule,
@@ -188,7 +189,7 @@ export function ReportCanvasPanel({
                 </span>
                 <span className="rbs-pill">{`${result.meta.executionMs}ms`}</span>
                 {result.meta.cached && (
-                  <span className="rbs-pill brand">{msg.canvas.cachedBadge}</span>
+                  <span className="rbs-pill rbs-pill-brand">{msg.canvas.cachedBadge}</span>
                 )}
               </>
             )}
@@ -253,6 +254,11 @@ export function ReportCanvasPanel({
       </div>
 
       <div className="rbs-canvas-body">
+        {!loading && !error && result && result.rows.length === 0 && (
+          <p className="rbs-guide-note" role="status">
+            {reportBuilderGuideMessages[locale].emptyResult}
+          </p>
+        )}
         {loading && <div className="rbs-status-box">{msg.toolbar.running}</div>}
 
         {!loading && error && (
