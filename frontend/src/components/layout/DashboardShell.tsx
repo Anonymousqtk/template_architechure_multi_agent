@@ -1,3 +1,4 @@
+import { BrandIcon } from '../common/BrandIcon';
 import { LanguageSelector } from '../../i18n/LanguageSelector';
 import { useTranslation } from '../../i18n';
 import { useSlideClose } from '../../hooks/useSlideClose';
@@ -412,7 +413,7 @@ export function DashboardShell({
         <div className="dash-brand-row">
           <a className="dash-brand" href="/app" aria-label="ManagerHR trang chủ">
             <span className="dash-brand-mark" aria-hidden="true">
-              M
+              <BrandIcon />
             </span>
             <strong>ManagerHR</strong>
           </a>
@@ -454,7 +455,7 @@ export function DashboardShell({
         <div className="dash-mobile-title">
           <a className="dash-brand" href="/app">
             <span className="dash-brand-mark" aria-hidden="true">
-              M
+              <BrandIcon />
             </span>
             <strong>ManagerHR</strong>
           </a>

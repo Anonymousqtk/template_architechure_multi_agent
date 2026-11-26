@@ -1,3 +1,4 @@
+import { BrandIcon } from './components/common/BrandIcon';
 import { authShellEnglish } from './i18n/authShellMessages';
 import { invitationEnglish } from './i18n/invitationMessages';
 import { roleLabel } from './features/users/account-types';
@@ -798,7 +799,9 @@ export default function App() {
       return (
         <div className="workspace-loading-splash" role="status" aria-live="polite">
           <div className="workspace-loading-inner">
-            <span className="dash-brand-mark" aria-hidden="true" />
+            <span className="dash-brand-mark" aria-hidden="true">
+              <BrandIcon />
+            </span>
             <div className="workspace-loading-text">
               <strong>ManagerHR</strong>
               <span>{t('syncingWorkspace')}</span>
@@ -978,15 +981,7 @@ export default function App() {
           aria-label={shellText('ManagerHR trang chủ')}
         >
           <span className="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path
-                d="M4 18V6l8 8 8-8v12"
-                stroke="currentColor"
-                strokeWidth="2.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <BrandIcon />
           </span>
           Manager<span>HR</span>
         </a>
