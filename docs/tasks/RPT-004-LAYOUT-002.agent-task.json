@@ -1,0 +1,23 @@
+{
+  "id": "RPT-004-LAYOUT-002",
+  "risk": "high",
+  "acceptance": [
+    "Tenant isolated and permission gated executive analytics",
+    "Documented KPI formulas with null for unavailable data",
+    "Reuse recorded attendance and payroll results without recalculating business rules",
+    "Localized dashboard filters cost comparisons and read-only audit views",
+    "Targeted formula filtering RBAC tenant isolation and UI tests",
+    "Establish a clear dashboard hierarchy with greeting, filters, workforce, attendance, cost and audit sections",
+    "Use consistent accessible colors, responsive cards and reduced-motion-aware interactions",
+    "Preserve data requests, authorization gates, missing-data states and Vietnamese/English localization",
+    "Identify the observed local executive API 404 without using user credentials",
+    "Build and restart only the identified local backend with its existing configuration",
+    "Display localized actionable errors for unavailable analytics API",
+    "Keep overview focused on four KPIs and paired visualization panels",
+    "Collapse detailed finance, historical data and management account activity by default",
+    "Use neutral surfaces with one accent and verify real browser layouts"
+  ],
+  "security_review_required": true,
+  "summary": "Rebuild dashboard information hierarchy with four overview KPIs, paired charts, neutral styling and progressive disclosure",
+  "allowed_scopes": ["frontend", "backend", "governance"]
+}

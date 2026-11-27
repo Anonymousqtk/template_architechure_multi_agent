@@ -1,11 +1,13 @@
-﻿{
-  "id": "UI-LOGO-001",
+{
+  "id": "HOME-FOCUS-004",
+  "summary": "Focus home on three role-specific shortcuts and the essential analytics overview",
+  "allowed_scopes": ["frontend"],
   "risk": "normal",
-  "acceptance": [
-    "Dashboard desktop and mobile use login logo artwork and styling",
-    "Preserve login behavior and pass targeted UI validation"
-  ],
   "security_review_required": false,
-  "summary": "Align dashboard logo with login branding",
-  "allowed_scopes": ["frontend"]
+  "acceptance": [
+    "At most three relevant home shortcuts per role",
+    "Remove duplicated hero and account shortcuts",
+    "Collapse secondary operational analytics",
+    "Preserve localized labels, access gates and responsive navigation"
+  ]
 }

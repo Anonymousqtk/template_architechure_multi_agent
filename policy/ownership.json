@@ -11,10 +11,10 @@
     "optimizer": { "mode": "advisory", "editable_prefixes": [] },
     "tester": { "mode": "writer", "editable_prefixes": ["frontend/", "backend/", "tests/"] }
   },
-  "protected_prefixes": [".github/", ".codex/", "scripts/", "policy/", "contracts/"],
+  "protected_prefixes": [".github/", ".codex/", ".claude/", "scripts/", "policy/", "contracts/"],
   "sensitive_prefixes": ["backend/auth/", "backend/security/", "database/migrations/"],
   "sensitive_path_terms": ["auth", "permission", "payment", "secret", "credential", "token"],
-  "protected_files": ["AGENTS.md", "database/check.sh"],
+  "protected_files": ["AGENTS.md", "CLAUDE.md", "database/check.sh"],
   "code_prefixes": ["frontend/", "backend/", "database/", "tests/"],
   "configuration_file": ".agent-task.json"
 }

@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
 import { setLocale } from '../../i18n';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Dashboard } from './Dashboard';
+import { HomeLaunchpad } from './HomeLaunchpad';
 import { request, type Profile } from '../../services/api';
 vi.mock('../../services/api', async (original) => ({
   ...(await original<typeof import('../../services/api')>()),
   request: vi.fn(),
 }));
 const mock = vi.mocked(request);
+vi.mock('./ExecutiveAnalytics', () => ({ ExecutiveAnalytics: () => null }));
 const profile: Profile = {
   user: { id: 'admin', email: 'admin@example.test', fullName: 'Admin' },
   organization: { id: 'org-a', name: 'Company', role: 'ADMIN' },
@@ -71,6 +74,7 @@ const fixture = async (path: string) => {
 const card = (name: string) => within(screen.getByRole('heading', { name }).closest('section')!);
 const stat = (name: string) => within(screen.getByText(name).closest('.dash-stat-card')!);
 beforeEach(() => {
+  setLocale('vi');
   mock.mockReset();
   mock.mockImplementation(fixture);
 });
@@ -78,11 +82,11 @@ afterEach(cleanup);
 describe('permission-scoped dashboard', () => {
   it('updates overview labels when the language changes', async () => {
     setLocale('vi');
-    render(<Dashboard profile={profile} />);
+    renderAccounts(<Dashboard profile={profile} />);
     expect(await screen.findByText('Tổng tài khoản')).toBeVisible();
     act(() => setLocale('en'));
     expect(screen.getByText('Total accounts')).toBeVisible();
-    expect(screen.getByText('Common actions')).toBeVisible();
+    expect(screen.getByText('Everyday tasks')).toBeVisible();
     expect(screen.getByText('Invitation tracking')).toBeVisible();
     expect(screen.getByText('Recent activity')).toBeVisible();
     act(() => setLocale('vi'));
@@ -94,7 +98,7 @@ describe('permission-scoped dashboard', () => {
       if (path.includes('status=active') && failed) throw Error('offline');
       return fixture(path);
     });
-    render(<Dashboard profile={profile} />);
+    renderAccounts(<Dashboard profile={profile} />);
     await screen.findByRole('alert');
     expect(screen.getByText('Xem 1 mục bị ảnh hưởng')).toBeVisible();
     const before = mock.mock.calls.length;
@@ -107,7 +111,7 @@ describe('permission-scoped dashboard', () => {
     expect(stat('Tổng tài khoản').getByText('12')).toBeVisible();
   });
   it('uses server totals and labels invitation statistics as a recent sample', async () => {
-    render(<Dashboard profile={profile} />);
+    renderAccounts(<Dashboard profile={profile} />);
     await waitFor(() => expect(stat('Đang hoạt động').getByText('10')).toBeVisible());
     expect(stat('Tổng tài khoản').getByText('12')).toBeVisible();
     expect(stat('Đã khóa').getByText('2')).toBeVisible();
@@ -126,7 +130,7 @@ describe('permission-scoped dashboard', () => {
       organization: { ...profile.organization, role: 'EMPLOYEE' as const },
       permissions: { invite: false, grantHR: false },
     };
-    render(<Dashboard profile={employee} />);
+    renderAccounts(<Dashboard profile={employee} />);
     expect(await screen.findByText('Chrome')).toBeVisible();
     expect(stat('Phiên đăng nhập').getByText('1')).toBeVisible();
     expect(stat('Xác thực hai bước').getByText('Đã bật')).toBeVisible();
@@ -135,7 +139,7 @@ describe('permission-scoped dashboard', () => {
     expect(screen.queryByRole('heading', { name: 'Hoạt động gần đây' })).not.toBeInTheDocument();
   });
   it('Manager reads scoped users but never invitations or audit', async () => {
-    render(
+    renderAccounts(
       <Dashboard
         profile={{
           ...profile,
@@ -159,7 +163,7 @@ describe('permission-scoped dashboard', () => {
       if (path.includes('status=active')) throw Error('offline');
       return fixture(path);
     });
-    render(<Dashboard profile={profile} />);
+    renderAccounts(<Dashboard profile={profile} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Một số dữ liệu chưa tải được');
     expect(stat('Đang hoạt động').getByText('—')).toBeVisible();
     expect(stat('Tổng tài khoản').getByText('12')).toBeVisible();
@@ -171,7 +175,7 @@ describe('permission-scoped dashboard', () => {
       if (path.includes('/invitations')) return { items: [] };
       return fixture(path);
     });
-    render(<Dashboard profile={profile} />);
+    renderAccounts(<Dashboard profile={profile} />);
     await screen.findByRole('alert');
     expect(card('Theo dõi lời mời').getByText('Chưa có dữ liệu')).toBeVisible();
     fail = false;
@@ -180,3 +184,46 @@ describe('permission-scoped dashboard', () => {
     expect(stat('Tổng tài khoản').getByText('12')).toBeVisible();
   });
 });
+
+// Account regression cases exercise the explicitly expanded management area.
+it('keeps system account activity separate from the executive overview', async () => {
+  setLocale('en');
+  render(<Dashboard profile={profile} />);
+  const summary = screen.getByText('Accounts and system activity');
+  expect(summary.closest('details')).not.toHaveAttribute('open');
+  expect(screen.queryByRole('heading', { name: 'Common actions' })).not.toBeInTheDocument();
+  expect(screen.getByText('Total accounts')).not.toBeVisible();
+  fireEvent.click(summary);
+  expect(await screen.findByText('Total accounts')).toBeVisible();
+});
+
+it.each(['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'] as const)(
+  'limits %s home shortcuts to three daily tasks',
+  (role) => {
+    setLocale('en');
+    render(
+      <HomeLaunchpad profile={{ ...profile, organization: { ...profile.organization, role } }} />,
+    );
+    const shortcuts = within(screen.getByRole('navigation', { name: 'Application shortcuts' }));
+    expect(shortcuts.getAllByRole('link')).toHaveLength(3);
+    expect(shortcuts.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+      '/admin/attendance',
+      '/admin/employees',
+      ['ADMIN', 'HR'].includes(role)
+        ? '/admin/payroll'
+        : role === 'MANAGER'
+          ? '/admin/reports'
+          : '/admin/my-payslips',
+    ]);
+    expect(
+      shortcuts.queryByRole('link', { name: /accounting|invitations|catalog|security/i }),
+    ).toBeNull();
+  },
+);
+
+function renderAccounts(ui: ReactElement) {
+  const view = render(ui);
+  const summary = view.container.querySelector('.dash-account-overview > summary');
+  if (summary && !summary.parentElement?.hasAttribute('open')) fireEvent.click(summary);
+  return view;
+}

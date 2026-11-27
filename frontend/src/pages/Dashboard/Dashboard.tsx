@@ -1,4 +1,8 @@
 import { dashboardEnglish } from './dashboardMessages';
+import { ExecutiveAnalytics } from './ExecutiveAnalytics';
+import { executiveMessages } from './executiveMessages';
+import { HomeLaunchpad } from './HomeLaunchpad';
+import { homeMessages } from './homeMessages';
 import { useTranslation } from '../../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { errorText, request, type Profile, type Invitation } from '../../services/api';
@@ -22,6 +26,7 @@ type DashboardMetric = {
 };
 export function Dashboard({ profile }: { profile: Profile }) {
   const { t, locale } = useTranslation();
+  const home = homeMessages[locale];
   const tr = (text: string) => (locale === 'en' ? (dashboardEnglish[text] ?? text) : text);
   const events: Record<string, string> = {
     LOGIN: tr('Đăng nhập'),
@@ -187,330 +192,350 @@ export function Dashboard({ profile }: { profile: Profile }) {
         },
       ];
   return (
-    <div className="hr-dashboard">
-      <header className="dash-page-heading">
+    <div className="hr-dashboard" data-executive={profile.organization.role !== 'EMPLOYEE'}>
+      <header className="dash-page-heading home-hero">
         <div className="dash-page-copy">
           <p className="dash-page-kicker">{t('overview')}</p>
           <h1 className="dash-page-title">
             {t('greeting')} {profile.user.fullName}
           </h1>
           <p className="dash-page-subtitle">{cards ? t('teamOverview') : t('personalOverview')}</p>
+          <div className="dash-page-meta">
+            <span>
+              <DashIcon name="building" />
+              {profile.organization.name}
+            </span>
+            <span>
+              <DashIcon name="user" />
+              {home.roleBadge}: {roleLabel(profile.organization.role, locale)}
+            </span>
+            <span>
+              <DashIcon name="calendar" />
+              {today}
+            </span>
+          </div>
         </div>
-        <div className="dash-page-meta">
-          <span>
-            <DashIcon name="building" />
-            {profile.organization.name}
-          </span>
-          <span>
-            <DashIcon name="calendar" />
-            {today}
-          </span>
+        <div className="home-hero-actions">
+          {!profile.security?.mfaEnabled && (
+            <a
+              className="home-hero-status"
+              href="/security"
+              data-state={profile.security?.mfaEnabled ? 'on' : 'off'}
+            >
+              <DashIcon name="shield" />
+              <span>{profile.security?.mfaEnabled ? home.mfaOn : home.mfaOff}</span>
+              {!profile.security?.mfaEnabled && <b>{home.enableMfa}</b>}
+            </a>
+          )}
+          {['ADMIN', 'HR'].includes(profile.organization.role) && (
+            <div className="home-hero-buttons">
+              <a className="primary" href="/admin/reports">
+                <DashIcon name="catalog" />
+                {home.openReports}
+              </a>
+            </div>
+          )}
         </div>
       </header>
-      {errors.length > 0 && (
-        <div role="alert" className="dash-data-error">
-          <div>
-            <strong>{tr('Một số dữ liệu chưa tải được')}</strong>
-            <p>{tr('Các mục thiếu được hiển thị bằng dấu —. Dữ liệu đã tải vẫn được giữ lại.')}</p>
-            <details>
-              <summary>
-                {locale === 'en'
-                  ? `View ${errors.length} affected items`
-                  : `Xem ${errors.length} mục bị ảnh hưởng`}
-              </summary>
-              <ul>
-                {errors.map((key) => (
-                  <li key={key}>
-                    <b>{resourceLabels[key] ?? key}:</b> {failureDetails[key]}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </div>
-          <button onClick={() => setRevision((value) => value + 1)} disabled={loading}>
-            {loading ? tr('Đang tải lại…') : tr('Thử tải lại')}
-          </button>
-        </div>
-      )}
-      {loading && (
-        <p role="status" className="dash-loading">
-          {t('loadingOverview')}
-        </p>
-      )}
-      <section className="dash-shortcuts">
-        <div className="dash-shortcuts-heading">
-          <span className="dash-section-kicker">{t('quickStart')}</span>
-          <h2>{t('commonActions')}</h2>
-        </div>
-        <div className="dash-quick-links">
-          <a href="/admin/attendance">
-            <DashIcon name="clock" />
-            {t('attendance')}
-            <span aria-hidden="true">→</span>
-          </a>
-          {profile.permissions.readUsers && (
-            <a href="/admin/users">
-              <DashIcon name="users" />
-              {t('viewMembers')}
-              <span aria-hidden="true">→</span>
-            </a>
-          )}
-          {profile.permissions.invite && (
-            <a href="/admin/invitations">
-              <DashIcon name="mail" />
-              {t('inviteColleagues')}
-              <span aria-hidden="true">→</span>
-            </a>
-          )}
-        </div>
-      </section>
-      <section className="dash-stat-grid" aria-label={tr('Ch? s? ch?nh')}>
-        {metrics.map((metric) => (
-          <article className={'dash-card dash-stat-card tone-' + metric.tone} key={metric.label}>
-            <div className="dash-stat-heading">
-              <span className={'dash-stat-icon tone-' + metric.tone}>
-                <DashIcon name={metric.icon} />
-              </span>
-              <h2>{metric.label}</h2>
+      <HomeLaunchpad profile={profile} />
+      <ExecutiveAnalytics
+        key={`${profile.organization.id}:${profile.user.id}:${profile.organization.role}`}
+        profile={profile}
+      />
+      <details className="dash-account-overview" open={profile.organization.role === 'EMPLOYEE'}>
+        <summary>{executiveMessages[locale].accountOverview}</summary>
+        <div className="dash-account-content">
+          {errors.length > 0 && (
+            <div role="alert" className="dash-data-error">
+              <div>
+                <strong>{tr('Một số dữ liệu chưa tải được')}</strong>
+                <p>
+                  {tr('Các mục thiếu được hiển thị bằng dấu —. Dữ liệu đã tải vẫn được giữ lại.')}
+                </p>
+                <details>
+                  <summary>
+                    {locale === 'en'
+                      ? `View ${errors.length} affected items`
+                      : `Xem ${errors.length} mục bị ảnh hưởng`}
+                  </summary>
+                  <ul>
+                    {errors.map((key) => (
+                      <li key={key}>
+                        <b>{resourceLabels[key] ?? key}:</b> {failureDetails[key]}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+              <button onClick={() => setRevision((value) => value + 1)} disabled={loading}>
+                {loading ? tr('Đang tải lại…') : tr('Thử tải lại')}
+              </button>
             </div>
-            <strong className="dash-number">{metric.value}</strong>
-            <p>{metric.detail}</p>
-            {metric.progress !== undefined && (
-              <div className="dash-progress" aria-label={metric.detail}>
-                <span style={{ width: metric.progress + '%' }} />
-              </div>
-            )}
-          </article>
-        ))}
-      </section>
-      <div className="dash-overview-reports">
-        <section className="dash-card">
-          <header className="dash-card-heading">
-            <div>
-              <h2>{cards ? t('roleBreakdown') : t('yourAccount')}</h2>
-              <p>
-                {cards ? tr('Theo quyền truy cập hiện tại') : tr('Thông tin được tổ chức xác nhận')}
-              </p>
-            </div>
-            <DashIcon name="users" />
-          </header>
-          {cards ? (
-            <>
-              <div className="dash-role-chart">
-                {Object.entries(roleLabels).map(([role]) => {
-                  const value = count(role);
-                  return (
-                    <div key={role}>
-                      <span>{display(value)}</span>
-                      <div className="dash-bar-track">
-                        <i
-                          style={{
-                            height:
-                              (total && value !== null
-                                ? Math.max((value / total) * 100, value ? 5 : 0)
-                                : 0) + '%',
-                          }}
-                        />
-                      </div>
-                      <small>{roleLabel(role, locale)}</small>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="dash-card-footnote">
-                {total === 0
-                  ? tr('Chưa có tài khoản trong phạm vi của bạn.')
-                  : tr('Tài khoản trong phạm vi quản lý của bạn.')}
-              </div>
-            </>
-          ) : (
-            <dl className="dash-personal-details">
-              <div>
-                <dt>Email</dt>
-                <dd>{profile.user.email}</dd>
-              </div>
-              <div>
-                <dt>{tr('Tổ chức')}</dt>
-                <dd>{profile.organization.name}</dd>
-              </div>
-              <div>
-                <dt>{tr('Vai trò')}</dt>
-                <dd>{roleLabel(profile.organization.role, locale)}</dd>
-              </div>
-              <a href="/app?view=profile">{tr('Cập nhật thông tin cá nhân →')}</a>
-            </dl>
           )}
-        </section>
-        <section className="dash-card">
-          <header className="dash-card-heading">
-            <div>
-              <h2>
-                {profile.permissions.invite ? tr('Theo dõi lời mời') : tr('Thiết bị & đăng nhập')}
-              </h2>
-              <p>
-                {profile.permissions.invite
-                  ? tr('Tối đa 8 lời mời mới nhất')
-                  : tr('Các phiên đăng nhập của bạn')}
-              </p>
-            </div>
-            <DashIcon name={profile.permissions.invite ? 'mail' : 'shield'} />
-          </header>
-          {profile.permissions.invite ? (
-            <div className="dash-invite-report">
-              <div>
-                <strong className="dash-number">{display(invitations?.length)}</strong>
-                <p>{tr('Lời mời gần nhất')}</p>
-                <ul>
-                  <li>
-                    <i className="purple-dot" />
-                    {tr('Chờ tham gia')} <b>{display(pending)}</b>
-                  </li>
-                  <li>
-                    <i className="green-dot" />
-                    {tr('Đã tham gia')} <b>{display(accepted)}</b>
-                  </li>
-                  <li>
-                    <i className="orange-dot" />
-                    {tr('Hết hạn / thu hồi')}{' '}
-                    <b>
-                      {display(
-                        invitations
-                          ? invitations.length - (pending || 0) - (accepted || 0)
-                          : undefined,
-                      )}
-                    </b>
-                  </li>
-                </ul>
-              </div>
-              <div
-                className="dash-gauge"
-                style={{
-                  background: 'conic-gradient(#7367f0 ' + invitationPercent + '%,#eeebff 0)',
-                }}
+          {loading && (
+            <p role="status" className="dash-loading">
+              {t('loadingOverview')}
+            </p>
+          )}
+          <section className="dash-stat-grid" aria-label={tr('Chỉ số chính')}>
+            {metrics.map((metric) => (
+              <article
+                className={'dash-card dash-stat-card tone-' + metric.tone}
+                key={metric.label}
               >
-                <div>
-                  <small>{tr('Đã tham gia')}</small>
-                  <strong>{!loading && invitations ? invitationPercent + '%' : '—'}</strong>
-                  <small>
-                    {invitations?.length
-                      ? accepted + '/' + invitations.length + tr(' lời mời')
-                      : tr('Chưa có dữ liệu')}
-                  </small>
+                <div className="dash-stat-heading">
+                  <span className={'dash-stat-icon tone-' + metric.tone}>
+                    <DashIcon name={metric.icon} />
+                  </span>
+                  <h2>{metric.label}</h2>
                 </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <ul className="dash-session-preview">
-                {sessions?.slice(0, 3).map((session) => (
-                  <li key={session.id}>
-                    <DashIcon name="clock" />
+                <strong className="dash-number">{metric.value}</strong>
+                <p>{metric.detail}</p>
+                {metric.progress !== undefined && (
+                  <div className="dash-progress" aria-label={metric.detail}>
+                    <span style={{ width: metric.progress + '%' }} />
+                  </div>
+                )}
+              </article>
+            ))}
+          </section>
+          <div className="dash-overview-reports">
+            <section className="dash-card">
+              <header className="dash-card-heading">
+                <div>
+                  <h2>{cards ? t('roleBreakdown') : t('yourAccount')}</h2>
+                  <p>
+                    {cards
+                      ? tr('Theo quyền truy cập hiện tại')
+                      : tr('Thông tin được tổ chức xác nhận')}
+                  </p>
+                </div>
+                <DashIcon name="users" />
+              </header>
+              {cards ? (
+                <>
+                  <div className="dash-role-chart">
+                    {Object.entries(roleLabels).map(([role]) => {
+                      const value = count(role);
+                      return (
+                        <div key={role}>
+                          <span>{display(value)}</span>
+                          <div className="dash-bar-track">
+                            <i
+                              style={{
+                                height:
+                                  (total && value !== null
+                                    ? Math.max((value / total) * 100, value ? 5 : 0)
+                                    : 0) + '%',
+                              }}
+                            />
+                          </div>
+                          <small>{roleLabel(role, locale)}</small>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="dash-card-footnote">
+                    {total === 0
+                      ? tr('Chưa có tài khoản trong phạm vi của bạn.')
+                      : tr('Tài khoản trong phạm vi quản lý của bạn.')}
+                  </div>
+                </>
+              ) : (
+                <dl className="dash-personal-details">
+                  <div>
+                    <dt>Email</dt>
+                    <dd>{profile.user.email}</dd>
+                  </div>
+                  <div>
+                    <dt>{tr('Tổ chức')}</dt>
+                    <dd>{profile.organization.name}</dd>
+                  </div>
+                  <div>
+                    <dt>{tr('Vai trò')}</dt>
+                    <dd>{roleLabel(profile.organization.role, locale)}</dd>
+                  </div>
+                  <a href="/app?view=profile">{tr('Cập nhật thông tin cá nhân →')}</a>
+                </dl>
+              )}
+            </section>
+            <section className="dash-card">
+              <header className="dash-card-heading">
+                <div>
+                  <h2>
+                    {profile.permissions.invite
+                      ? tr('Theo dõi lời mời')
+                      : tr('Thiết bị & đăng nhập')}
+                  </h2>
+                  <p>
+                    {profile.permissions.invite
+                      ? tr('Tối đa 8 lời mời mới nhất')
+                      : tr('Các phiên đăng nhập của bạn')}
+                  </p>
+                </div>
+                <DashIcon name={profile.permissions.invite ? 'mail' : 'shield'} />
+              </header>
+              {profile.permissions.invite ? (
+                <div className="dash-invite-report">
+                  <div>
+                    <strong className="dash-number">{display(invitations?.length)}</strong>
+                    <p>{tr('Lời mời gần nhất')}</p>
+                    <ul>
+                      <li>
+                        <i className="purple-dot" />
+                        {tr('Chờ tham gia')} <b>{display(pending)}</b>
+                      </li>
+                      <li>
+                        <i className="green-dot" />
+                        {tr('Đã tham gia')} <b>{display(accepted)}</b>
+                      </li>
+                      <li>
+                        <i className="orange-dot" />
+                        {tr('Hết hạn / thu hồi')}{' '}
+                        <b>
+                          {display(
+                            invitations
+                              ? invitations.length - (pending || 0) - (accepted || 0)
+                              : undefined,
+                          )}
+                        </b>
+                      </li>
+                    </ul>
+                  </div>
+                  <div
+                    className="dash-gauge"
+                    style={{
+                      background: 'conic-gradient(#7367f0 ' + invitationPercent + '%,#eeebff 0)',
+                    }}
+                  >
                     <div>
-                      <strong>{session.deviceLabel}</strong>
+                      <small>{tr('Đã tham gia')}</small>
+                      <strong>{!loading && invitations ? invitationPercent + '%' : '—'}</strong>
                       <small>
-                        {session.current ? tr('Phiên hiện tại') : tr('Phiên khác của bạn')}
+                        {invitations?.length
+                          ? accepted + '/' + invitations.length + tr(' lời mời')
+                          : tr('Chưa có dữ liệu')}
                       </small>
                     </div>
-                  </li>
-                ))}
-              </ul>
-              {!loading && sessions?.length === 0 && <p>{tr('Chưa có phiên để hiển thị.')}</p>}
-              <a href="/security">{tr('Xem thiết bị & bảo mật →')}</a>
-            </>
-          )}
-        </section>
-      </div>
-      {profile.permissions.viewAudit ? (
-        <section className="dash-card dash-activity-card">
-          <header className="dash-card-heading">
-            <div>
-              <h2>{tr('Hoạt động gần đây')}</h2>
-              <p>{tr('5 sự kiện mới nhất trong tổ chức')}</p>
-            </div>
-            <a href="/admin/audit">{tr('Xem tất cả →')}</a>
-          </header>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>{tr('Hoạt động')}</th>
-                  <th>{tr('Thời gian')}</th>
-                  <th>{tr('Kết quả')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {audit?.map((event) => (
-                  <tr key={event.id}>
-                    <td>{events[event.eventType] || event.eventType}</td>
-                    <td>
-                      {new Date(event.createdAt).toLocaleString(
-                        locale === 'en' ? 'en-US' : 'vi-VN',
-                      )}
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          'dash-status ' + (event.metadata?.outcome === 'DENIED' ? 'denied' : '')
-                        }
-                      >
-                        {event.metadata?.outcome === 'DENIED' ? tr('Từ chối') : tr('Thành công')}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {!audit?.length && (
-                  <tr>
-                    <td colSpan={3}>
-                      {loading
-                        ? tr('Đang tải…')
-                        : errors.includes('audit')
-                          ? tr('Chưa tải được nhật ký.')
-                          : tr('Chưa có hoạt động.')}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <ul className="dash-session-preview">
+                    {sessions?.slice(0, 3).map((session) => (
+                      <li key={session.id}>
+                        <DashIcon name="clock" />
+                        <div>
+                          <strong>{session.deviceLabel}</strong>
+                          <small>
+                            {session.current ? tr('Phiên hiện tại') : tr('Phiên khác của bạn')}
+                          </small>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {!loading && sessions?.length === 0 && <p>{tr('Chưa có phiên để hiển thị.')}</p>}
+                  <a href="/security">{tr('Xem thiết bị & bảo mật →')}</a>
+                </>
+              )}
+            </section>
           </div>
-        </section>
-      ) : (
-        cards && (
-          <section className="dash-card dash-activity-card">
-            <header className="dash-card-heading">
-              <div>
-                <h2>{tr('Thành viên gần đây')}</h2>
-                <p>{tr('Trong phạm vi bạn được xem')}</p>
-              </div>
-              <a href="/admin/users">{tr('Xem danh sách →')}</a>
-            </header>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>{tr('Họ và tên')}</th>
-                    <th>Email</th>
-                    <th>{tr('Vai trò')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members?.map((member) => (
-                    <tr key={member.id}>
-                      <td>{member.fullName}</td>
-                      <td>{member.email}</td>
-                      <td>{roleLabel(member.role, locale)}</td>
-                    </tr>
-                  ))}
-                  {!members?.length && (
+          {profile.permissions.viewAudit ? (
+            <section className="dash-card dash-activity-card">
+              <header className="dash-card-heading">
+                <div>
+                  <h2>{tr('Hoạt động gần đây')}</h2>
+                  <p>{tr('5 sự kiện mới nhất trong tổ chức')}</p>
+                </div>
+                <a href="/admin/audit">{tr('Xem tất cả →')}</a>
+              </header>
+              <div className="table-wrap">
+                <table>
+                  <thead>
                     <tr>
-                      <td colSpan={3}>{loading ? tr('Đang tải…') : tr('Chưa có dữ liệu.')}</td>
+                      <th>{tr('Hoạt động')}</th>
+                      <th>{tr('Thời gian')}</th>
+                      <th>{tr('Kết quả')}</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )
-      )}
+                  </thead>
+                  <tbody>
+                    {audit?.map((event) => (
+                      <tr key={event.id}>
+                        <td>{events[event.eventType] || event.eventType}</td>
+                        <td>
+                          {new Date(event.createdAt).toLocaleString(
+                            locale === 'en' ? 'en-US' : 'vi-VN',
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            className={
+                              'dash-status ' +
+                              (event.metadata?.outcome === 'DENIED' ? 'denied' : '')
+                            }
+                          >
+                            {event.metadata?.outcome === 'DENIED'
+                              ? tr('Từ chối')
+                              : tr('Thành công')}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {!audit?.length && (
+                      <tr>
+                        <td colSpan={3}>
+                          {loading
+                            ? tr('Đang tải…')
+                            : errors.includes('audit')
+                              ? tr('Chưa tải được nhật ký.')
+                              : tr('Chưa có hoạt động.')}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : (
+            cards && (
+              <section className="dash-card dash-activity-card">
+                <header className="dash-card-heading">
+                  <div>
+                    <h2>{tr('Thành viên gần đây')}</h2>
+                    <p>{tr('Trong phạm vi bạn được xem')}</p>
+                  </div>
+                  <a href="/admin/users">{tr('Xem danh sách →')}</a>
+                </header>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{tr('Họ và tên')}</th>
+                        <th>Email</th>
+                        <th>{tr('Vai trò')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members?.map((member) => (
+                        <tr key={member.id}>
+                          <td>{member.fullName}</td>
+                          <td>{member.email}</td>
+                          <td>{roleLabel(member.role, locale)}</td>
+                        </tr>
+                      ))}
+                      {!members?.length && (
+                        <tr>
+                          <td colSpan={3}>{loading ? tr('Đang tải…') : tr('Chưa có dữ liệu.')}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )
+          )}
+        </div>
+      </details>
     </div>
   );
 }

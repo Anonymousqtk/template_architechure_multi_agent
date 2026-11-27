@@ -1,81 +1,36 @@
-# ManagerHR | Governing instructions (Manager = main Codex session)
+# ManagerHR — agent rules (Codex + Claude Code, token-lean)
 
-## Repository formatting
+Loaded every turn: keep this file short. Details live in `policy/*.json` and `docs/` — open them only when the task needs them.
 
-- Follow the root Prettier and EditorConfig settings for future changes.
-- Run the relevant formatter and validation checks before completing each implementation task; report checks that could not run.
-- Preserve behavior and respect the exclusions in .prettierignore.
+## Non-negotiable
 
-## Internationalization
+- Auth is invitation-only: no anonymous registration, no role self-assignment, no automatic admin bootstrap. Auth/RBAC/permission/secret/migration work is **high risk**: needs security controls, negative-authorization tests and human approval to merge.
+- No deploy, production change, destructive migration, active scan, model switch, API fallback or third-party skill install without explicit human approval.
+- Never claim a check, scan or approval passed without an actual result. Report unexecuted checks as NOT VERIFIED.
+- Never fabricate security fixes; schema SQL is a migration proposal, not proof it was applied.
+- New user-facing text (including a11y text and errors) goes into the translation system in Vietnamese and English; never translate user data or identifiers.
+- Follow root Prettier/EditorConfig and `.prettierignore`.
+- `policy/ownership.json` is the source of truth for ownership; enforcement is `scripts/policy_check.py`, CI and human review, not this file.
 
-- Put all new user-facing text in the existing translation system, including accessibility text and feedback.
-- Supply every new translation key in all supported languages; preserve identifiers and user-generated content.
-- Run the i18n validation and relevant tests for new pages and localization changes, and report remaining gaps.
+## Workflow (single agent first)
 
-## Authority and limits
+1. `git status` + `git diff --name-only`. Write a fresh `.agent-task.json` (copy `.agent-task.example.json`; UTF-8 **without BOM**) containing only this task's id, scope, risk and acceptance. Archive the old one in `docs/tasks/` if unfinished.
+2. Read only the files you will change and their direct callers/tests. Use search (grep) for symbols instead of reading large files whole; read line ranges.
+3. Implement in the main session. Prefer deterministic tools (lint, typecheck, tests, existing scan output) over AI review.
+4. Verify with targeted checks only; do not rerun checks on unchanged inputs. Stop after a test fails twice and report root cause.
+5. Report briefly: task id, changed paths, commands run with PASS/FAIL/NOT VERIFIED, subagents used and why, open risks, approvals needed.
 
-- `policy/ownership.json` is the single source of truth for file ownership and sensitivity.
-- This file is a behavioral instruction, NOT a permissions sandbox. Enforce mechanically via `scripts/policy_check.py`, CI, protected branches and human review.
-- Never claim an action has been approved or a scanner passed unless an independent result exists.
+Auth tasks: read `docs/AUTH-INVITE-DESIGN.md`, `contracts/api.md`, `docs/AUTH-TEST-MATRIX.md` — only the sections relevant to the change.
 
-## Before touching code (mandatory)
+## Delegation
 
-1. Read `policy/ownership.json`, `.agent-task.json` (if present) and `git diff --name-only`.
-2. Define the task ID, scope(s), acceptance criteria, risk and whether security review is needed in `.agent-task.json` (copy example).
-3. Detect protected/security-sensitive paths; high risk requires explicit human approval to merge. No deploy, destructive database migration or active scan without explicit approval.
-4. Identify the minimum files necessary. Do not dump the repository or full CI logs into agent context.
-5. Check if deterministic lint, typecheck, test, SAST or dependency tools already answer the question; do not pay tokens for duplicate agent review.
+- Small/medium task: **0 subagents**. Complex or high risk: at most **1** bounded, read-only subagent (e.g. `reviewer` or `security`), only if it saves total work. Ask before more. Never two agents on one file.
+- Give a subagent the diff or exact paths and the question, not the whole context; it returns findings only (path:line, severity, fix).
+- Ownership when assigned: `frontend/`, `backend/`, `database/`; tests in those dirs or `tests/`. Governance (`AGENTS.md`, `.codex/`, `.claude/`, `policy/`, `scripts/`, `.github/`) is main-agent only and high risk.
+- Skills: use at most one, only when the task matches (`.claude/skills/` for Claude, `.codex/skills/` for Codex). Standards in `policy/skill-sources.json` are references, not installs.
 
-## Routing and scope
+## Checks
 
-- Default: main agent implements all tasks. Never delegate based on file count alone.
-- For complex tasks, justify at most one bounded subagent (total per task); require explicit approval to exceed this. Concurrency cap: one.
-- Frontend owns `frontend/`; Backend owns `backend/`; Database owns `database/`.
-- Tester owns tests inside `frontend/`, `backend/` or `tests/` only when assigned; coordinate with builder to avoid file collisions.
-- Security and Reviewer are advisory/read-only by default. Optimizer proposes changes only after benchmark evidence.
-- Never permit two agents to modify the same file concurrently.
-- Main agent is responsible for shared governance/config changes and must mark them high risk.
-
-## Finalize (mandatory)
-
-- Run `python3 -m unittest discover -s tests` for policy changes and `python3 scripts/policy_check.py` in a PR context.
-- Run targeted project tests; CI is authoritative for final merge.
-- Provide compact report: task id; changed paths; commands actually run and outcomes; unresolved issues; approvals required.
-- Never report a security finding as eliminated without evidence.
-
-## V4 model and token policy (mandatory behavior)
-
-- Read `policy/model-routing.json` for role and escalation rules; it is NOT a runtime model selector.
-- Read `policy/token-budget.json` for soft delegation/retry guardrails.
-- Default to no subagent on small tasks; zero for medium; at most one bounded subagent for complex tasks.
-- Never silently switch model, buy credits, invoke API fallback or imply hard token enforcement.
-- Escalate only for an enumerated trigger with recorded evidence and explicit operator approval.
-- Security checks, migration safety and verified CI quality gates override token-saving heuristics.
-
-## V5 skills (mandatory routing policy)
-
-- Read `policy/skill-routing.json` to choose from pre-approved project skills when the task needs a repeatable workflow.
-- Skills are local at `.codex/skills/*/SKILL.md`; normally select at most one, one by default; cross-cutting needs an explicit reason. Only load matching SKILL.md, not the full catalog.
-- Use `policy/skill-sources.json` for approved standards and vendor documentation. Standards are references, not externally installed skills; verify the actual project framework/version.
-- Do not automatically clone, install, fetch or execute third-party skills/scripts, even if search results recommend them. Require human code review and pinned revision before installation.
-- `scripts/check_skill_policy.py` validates metadata and routing, but cannot prove an agent invoked a skill or complied with an external standard.
-- Preserve Security and CI gates even if skipping subagents to reduce tokens.
-
-## AUTH-001 project-specific constraints
-
-- Follow `docs/AUTH-INVITE-DESIGN.md`, `docs/AGENT-TASK-AUTH-001.md`, `contracts/api.md` and `docs/AUTH-TEST-MATRIX.md` for authentication tasks.
-- Authentication is invitation-only. No anonymous registration, no role self-assignment, no automatic admin bootstrap.
-- Treat auth as high risk: require Security review and test evidence before release.
-- Schema SQL is a reviewable migration proposal, not proof of successful application.
-
-## V5.3 — TOKEN-LEAN STRICT (overrides earlier delegation advice)
-
-- SINGLE-AGENT FIRST: use main Codex session for implementation, tests and summary. The seven role TOMLs remain available but are not a mandatory pipeline.
-- No subagent by default for small/medium tasks. For complex or high-risk work: at most ONE total subagent if the parent cannot do a bounded independent portion efficiently. Ask the user before creating additional subagents.
-- Do NOT invoke Security, Tester and Reviewer as separate agents automatically. Run ordinary CLI scanners/tests locally; main agent analyzes actionable failures. High-risk auth/RBAC requires security controls and evidence, not necessarily a dedicated subagent.
-- Read task-specific policy only; do not open every policy and SKILL.md at startup. Root AGENTS.md applies; read the relevant policy on demand.
-- Check existing git diff and targeted tests first. Do not rerun identical checks on unchanged code and same inputs. Re-run tests affected by changes and full CI for release.
-- Limit terminal output: concise failure excerpts, paths and line ranges; never print full dependency trees, entire logs or entire source files unnecessarily.
-- Use existing Codex account model (inherit). No fabricated names, automatic model switching, API fallback or claims of enforced token quotas.
-- Auth security requirements, permission checks, migration safety, secret protection and required CI gates are non-negotiable.
-- Report: scope, changed files, checks actually run (PASS/FAIL/NOT VERIFIED), delegation count and why, outstanding risks.
+- Code: `npm run check` (format, lint, typecheck, i18n) or the per-workspace equivalent; targeted `npm test` in `frontend/` or `backend/`.
+- Governance/policy changes: `python -m unittest discover -s tests`; in PR context `python scripts/policy_check.py`. CI is authoritative for merge.
+- Never paste full logs, dependency trees or whole source files into context; quote failing excerpts with path:line.

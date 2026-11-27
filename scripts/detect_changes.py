@@ -15,7 +15,7 @@ else:
 
 all_scopes = {'frontend': False, 'backend': False, 'database': False}
 for path in changed:
-    if path.startswith(('.github/', '.codex/', 'scripts/', 'policy/')) or path in ('AGENTS.md', 'database/check.sh', 'package.json', 'package-lock.json'):
+    if path.startswith(('.github/', '.codex/', '.claude/', 'scripts/', 'policy/')) or path in ('AGENTS.md', 'CLAUDE.md', 'database/check.sh', 'package.json', 'package-lock.json'):
         all_scopes = dict.fromkeys(all_scopes, True)
         break
     if path.startswith('contracts/'):

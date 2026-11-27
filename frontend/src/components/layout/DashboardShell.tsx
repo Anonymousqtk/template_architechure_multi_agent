@@ -13,6 +13,8 @@ import type { Profile } from '../../services/api';
 import { roleLabel } from '../../features/users/account-types';
 import '../../assets/styles/dashboard.css';
 import '../../assets/styles/drawers.css';
+import '../../assets/styles/home.css';
+import { shellMessages } from '../../pages/Dashboard/homeMessages';
 export function DashIcon({ name }: { name: string }) {
   const paths: Record<string, string> = {
     home: 'M3 10 12 3l9 7v10H3V10 M9 20v-7h6v7',
@@ -72,6 +74,7 @@ export function DashboardShell({
   children,
 }: Props) {
   const { t, locale } = useTranslation();
+  const shell = shellMessages[locale];
   const [compact, setCompact] = useState(false),
     [preview, setPreview] = useState(false),
     [query, setQuery] = useState('');
@@ -382,7 +385,7 @@ export function DashboardShell({
   return (
     <div className={'hr-workspace' + (compact ? ' is-compact' : '')} onClick={handleWorkspaceClick}>
       <a className="skip-link" href="#main-content">
-        Đến nội dung chính
+        {shell.skip}
       </a>
       <aside
         ref={sidebar}
@@ -411,7 +414,7 @@ export function DashboardShell({
         }}
       >
         <div className="dash-brand-row">
-          <a className="dash-brand" href="/app" aria-label="ManagerHR trang chủ">
+          <a className="dash-brand" href="/app" aria-label={shell.brandHome}>
             <span className="dash-brand-mark" aria-hidden="true">
               <BrandIcon />
             </span>
@@ -419,7 +422,7 @@ export function DashboardShell({
           </a>
           <button
             className="dash-pin"
-            aria-label={compact ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}
+            aria-label={compact ? shell.expandNav : shell.collapseNav}
             aria-pressed={!compact}
             onClick={() => {
               setCompact(!compact);
@@ -441,7 +444,7 @@ export function DashboardShell({
       <dialog
         className={'dash-mobile-menu' + (mobileClosing ? ' is-closing' : '')}
         ref={mobile}
-        aria-label="Điều hướng"
+        aria-label={shell.navigation}
         onCancel={(event) => {
           event.preventDefault();
           closeMobile();
@@ -459,7 +462,7 @@ export function DashboardShell({
             </span>
             <strong>ManagerHR</strong>
           </a>
-          <button onClick={closeMobile} aria-label="Đóng menu" disabled={mobileClosing}>
+          <button onClick={closeMobile} aria-label={shell.closeMenu} disabled={mobileClosing}>
             ×
           </button>
         </div>
@@ -470,7 +473,7 @@ export function DashboardShell({
           <button
             className="dash-mobile-toggle dash-icon-button"
             ref={openButton}
-            aria-label="Mở điều hướng"
+            aria-label={shell.openNav}
             onClick={() => {
               cancelMobileClose();
               previousOverflow.current = document.body.style.overflow;
@@ -491,8 +494,8 @@ export function DashboardShell({
               <DashIcon name="search" />
               <input
                 type="search"
-                aria-label="Tìm thành viên từ dashboard"
-                placeholder="Tìm thành viên"
+                aria-label={shell.searchLabel}
+                placeholder={shell.searchPlaceholder}
                 value={query}
                 maxLength={100}
                 onChange={(event) => setQuery(event.target.value)}

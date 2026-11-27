@@ -5,6 +5,13 @@ import type { Server } from 'node:http';
 import { createApp } from '../src/app.js';
 import { hashPassword } from '../src/security.js';
 import type { Mailer } from '../src/mail.js';
+import {
+  costPerEmployee,
+  moneyChangePercent,
+  lifecycleKpis,
+  parseAnalyticsRange,
+  ratio,
+} from '../src/executive-analytics.js';
 
 if (process.env.MIGRATION_TEST_BACKEND !== 'true' || !process.env.DATABASE_URL) {
   throw new Error(
@@ -1266,5 +1273,325 @@ describe('RPT-001: Core HR & Attendance Reporting Center', () => {
       `/api/organizations/${orgB}/reports/tax-summary?periodId=${period1Id}`,
     );
     expect(crossOrgRes.status).toBe(404);
+  });
+});
+
+describe('RPT-004 executive analytics', () => {
+  const range = 'startDate=2026-01-01&endDate=2026-01-31';
+  const endpoint = () => `/api/organizations/${orgA}/reports/executive`;
+
+  it('defines lifecycle formulas, null denominators and exact cost division without invented history', () => {
+    expect(lifecycleKpis({ opening: 100, closing: 120, departures: 11, retained: 95 })).toEqual({
+      growth: 20,
+      turnover: 10,
+      retention: 95,
+    });
+    expect(
+      lifecycleKpis({ opening: null, closing: null, departures: null, retained: null }),
+    ).toEqual({ growth: null, turnover: null, retention: null });
+    expect(ratio(0, 10)).toBe(0);
+    expect(ratio(10, 0)).toBeNull();
+    expect(costPerEmployee('9007199254740993.99', 3)).toBe('3002399751580331.33');
+    expect(costPerEmployee(null, 1)).toBeNull();
+    expect(costPerEmployee('1.00', 0)).toBeNull();
+    expect(costPerEmployee('0.01', 2)).toBe('0.01');
+    expect(moneyChangePercent('22000000.00', '25000000.00')).toBe(-12);
+    expect(moneyChangePercent('100.01', '100.00')).toBe(0.01);
+    expect(moneyChangePercent('0.00', '0.00')).toBeNull();
+    expect(parseAnalyticsRange({ startDate: '2026-03-01', endDate: '2026-03-31' })).toMatchObject({
+      compareStartDate: '2026-01-29',
+      compareEndDate: '2026-02-28',
+    });
+    for (const raw of [
+      { startDate: '2026-02-30', endDate: '2026-03-31' },
+      { startDate: '2026-03-31', endDate: '2026-03-01' },
+      { startDate: '2024-01-01', endDate: '2026-03-01' },
+      { startDate: '2026-03-01', endDate: '2026-03-31', compareStartDate: '2026-01-01' },
+      {
+        startDate: '2026-03-01',
+        endDate: '2026-03-31',
+        compareStartDate: '2026-03-01',
+        compareEndDate: '2026-03-31',
+      },
+    ])
+      expect(() => parseAnalyticsRange(raw)).toThrow();
+  });
+
+  it('reconciles recorded payroll, expenses and payments while keeping missing sources null', async () => {
+    await setupPayrollTestData();
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+    const january = await hr.request(`${endpoint()}?${range}`);
+    expect(january.status, january.text).toBe(200);
+    expect(january.headers.get('cache-control')).toBe('no-store');
+    expect(january.body.workforce.headcount).toBe(2);
+    expect(january.body.lifecycle).toEqual({
+      growth: null,
+      turnover: null,
+      retention: null,
+      departures: null,
+    });
+    expect(january.body.cost.current).toMatchObject({
+      records: 2,
+      employees: 2,
+      gross: '46000000.00',
+      averageSalary: '23000000.000000000000',
+      net: '42300000.00',
+    });
+    expect(
+      january.body.cost.current.departments.reduce((n: number, d: any) => n + Number(d.gross), 0),
+    ).toBe(46000000);
+    expect(january.body.cost.journal).toMatchObject({
+      recognized: '46000000.00',
+      liabilityMovement: '46000000.00',
+    });
+    expect(january.body.cost.costPerEmployee).toBe('23000000.00');
+    expect(january.body.cost.current.insurance.employer).toBeNull();
+    expect(january.body.cost.current.payments.amount).toBeNull();
+    expect(january.body.attendance.attendanceRate).toBeNull();
+    const february = await hr.request(
+      `${endpoint()}?startDate=2026-02-01&endDate=2026-02-28&compareStartDate=2026-01-01&compareEndDate=2026-01-31`,
+    );
+    expect(february.status, february.text).toBe(200);
+    expect(february.body.cost.current.gross).toBeNull(); // Draft period excluded.
+    expect(february.body.cost.current.payments.amount).toBe('32900000.00'); // Actual February payment dates.
+    expect(february.body.cost.previous.gross).toBe('46000000.00');
+    expect(february.body.cost.grossChangePercent).toBeNull();
+    expect(JSON.stringify(january.body.cost)).not.toContain('EMP001');
+    const insuranceProfiles = [randomUUID(), randomUUID()];
+    await pool.query(
+      `INSERT INTO employee_social_insurance(id,organization_id,employee_id,si_code,insured_name,enrollment_date,currency)
+      VALUES($1,$2,$3,'SI-DEV','Dev','2026-01-01','VND'),($4,$2,$5,'SI-SALES','Sales','2026-01-01','USD')`,
+      [insuranceProfiles[0], orgA, empDevRecordId, insuranceProfiles[1], empSalesRecordId],
+    );
+    await pool.query(
+      `INSERT INTO social_insurance_contributions(id,organization_id,employee_id,si_profile_id,contribution_month,si_salary,employer_amount,employee_amount,status)
+      VALUES($1,$2,$3,$4,'2026-01-01',1000,123.45,67.89,'CONFIRMED'),($5,$2,$6,$7,'2026-01-01',1000,999,888,'CONFIRMED')`,
+      [
+        randomUUID(),
+        orgA,
+        empDevRecordId,
+        insuranceProfiles[0],
+        randomUUID(),
+        empSalesRecordId,
+        insuranceProfiles[1],
+      ],
+    );
+    const recorded = await hr.request(`${endpoint()}?${range}`);
+    expect(recorded.status, recorded.text).toBe(200);
+    expect(recorded.body.cost.current.insurance).toMatchObject({
+      records: 1,
+      employer: '123.45',
+      employee: '67.89',
+      excludedCurrencyRecords: 1,
+    });
+    await pool.query(
+      "UPDATE payroll_slips SET status='CONFIRMED' WHERE organization_id=$1 AND period_id IN(SELECT id FROM payroll_periods WHERE organization_id=$1 AND code='KY-2026-02')",
+      [orgA],
+    );
+    await pool.query(
+      "UPDATE payroll_periods SET status='APPROVED' WHERE organization_id=$1 AND code='KY-2026-02'",
+      [orgA],
+    );
+    const comparison = await hr.request(
+      `${endpoint()}?startDate=2026-02-01&endDate=2026-02-28&compareStartDate=2026-01-01&compareEndDate=2026-01-31&departmentId=${deptDevId}`,
+    );
+    expect(comparison.status, comparison.text).toBe(200);
+    expect(comparison.body.cost.current.gross).toBe('22000000.00');
+    expect(comparison.body.cost.previous.gross).toBe('25000000.00');
+    expect(comparison.body.cost.grossChangePercent).toBe(-12);
+  });
+
+  it('enforces role and tenant boundaries and never returns financial data to a manager', async () => {
+    await setupPayrollTestData();
+    const manager = new Client();
+    await manager.login('manager@acme.test');
+    const scoped = await manager.request(`${endpoint()}?${range}`);
+    expect(scoped.status, scoped.text).toBe(200);
+    expect(scoped.body.workforce.headcount).toBe(1);
+    expect(scoped.body.cost).toBeNull();
+    expect(scoped.body.capabilities).toMatchObject({ financial: false, audit: false });
+    expect(scoped.body.departments.map((d: any) => d.id)).toEqual([deptDevId]);
+    expect(
+      (await manager.request(`${endpoint()}?${range}&departmentId=${deptSalesId}`)).status,
+    ).toBe(403);
+    expect((await manager.request(`${endpoint()}/audit?${range}`)).status).toBe(403);
+    expect(
+      (await manager.request(`/api/organizations/${orgB}/reports/executive?${range}`)).status,
+    ).toBe(403);
+    const employee = new Client();
+    await employee.login('dev@acme.test');
+    expect((await employee.request(`${endpoint()}?${range}`)).status).toBe(403);
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+    expect((await hr.request(`${endpoint()}/audit?${range}`)).status).toBe(403);
+    await createUser('admin@beta.test', orgB, 'ADMIN', 'Beta admin');
+    const beta = new Client();
+    await beta.login('admin@beta.test');
+    const empty = await beta.request(`/api/organizations/${orgB}/reports/executive?${range}`);
+    expect(empty.status, empty.text).toBe(200);
+    expect(empty.body.workforce.headcount).toBe(0);
+    expect(empty.body.cost.current.gross).toBeNull();
+    expect(empty.body.structure).toEqual([]);
+  });
+
+  it('filters both comparison ranges, current department attribution and recursive branches', async () => {
+    await setupPayrollTestData();
+    const root = randomUUID();
+    await pool.query(
+      "INSERT INTO departments(id,organization_id,code,name) VALUES($1,$2,'ROOT','Root')",
+      [root, orgA],
+    );
+    await pool.query('UPDATE departments SET parent_id=$1 WHERE id=ANY($2::uuid[])', [
+      root,
+      [deptDevId, deptSalesId],
+    ]);
+    const hr = new Client();
+    await hr.login('hr@acme.test');
+    const selected = await hr.request(
+      `${endpoint()}?${range}&branchId=${root}&departmentId=${deptDevId}`,
+    );
+    expect(selected.status, selected.text).toBe(200);
+    expect(selected.body.workforce.headcount).toBe(1);
+    expect(selected.body.cost.current.gross).toBe('25000000.00');
+    expect(selected.body.cost.journal.recognized).toBe('25000000.00');
+    expect(selected.body.cost.journal.liabilityMovement).toBeNull(); // Unallocated liability is not invented per department.
+    const branch = await hr.request(`${endpoint()}?${range}&branchId=${root}`);
+    expect(branch.body.workforce.headcount).toBe(2);
+    await pool.query('UPDATE departments SET manager_user_id=$1 WHERE id=$2', [managerId, root]);
+    const manager = new Client();
+    await manager.login('manager@acme.test');
+    const managedBranch = await manager.request(`${endpoint()}?${range}&branchId=${root}`);
+    expect(managedBranch.status, managedBranch.text).toBe(200);
+    expect(managedBranch.body.workforce.headcount).toBe(2);
+    expect(managedBranch.body.cost).toBeNull();
+    const partial = await hr.request(`${endpoint()}?startDate=2026-01-02&endDate=2026-01-31`);
+    expect(partial.body.cost.current.gross).toBeNull();
+    for (const suffix of [
+      'startDate=2026-02-30&endDate=2026-03-31',
+      `${range}&grain=day`,
+      `${range}&departmentId=invalid`,
+      `${range}&salary=true`,
+    ]) {
+      expect((await hr.request(`${endpoint()}?${suffix}`)).status).toBe(400);
+    }
+  });
+
+  it('uses the authoritative ATT ledger including approved corrections, leave and overtime rules', async () => {
+    const admin = new Client();
+    await admin.login('admin@acme.test');
+    const schedules = await pool.query('SELECT id FROM work_schedule WHERE organization_id=$1', [
+      orgA,
+    ]);
+    await pool.query('UPDATE work_schedule SET overtime_after=0 WHERE id=$1', [
+      schedules.rows[0].id,
+    ]);
+    await pool.query('UPDATE attendance_punches SET checked_out_at=$1 WHERE schedule_id=$2', [
+      '2026-03-10T11:30:00Z',
+      schedules.rows[0].id,
+    ]);
+    const ledger = await admin.request(
+      `/api/organizations/${orgA}/attendance/employees/${empDevRecordId}/ledger?from=2026-03-01&to=2026-03-31`,
+    );
+    expect(ledger.status, ledger.text).toBe(200);
+    const res = await admin.request(`${endpoint()}?startDate=2026-03-01&endDate=2026-03-31`);
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.attendance).toMatchObject({
+      schedules: 1,
+      present: 1,
+      attendanceRate: 100,
+      absenteeismRate: 0,
+      leaveRate: 0,
+      overtimeRate: 10.17,
+    });
+    expect(Number(res.body.attendance.overtimeMinutes)).toBe(60);
+    expect(Number(res.body.attendance.recordedMinutes)).toBe(590);
+    expect(JSON.stringify(ledger.body)).toContain('"overtimeMinutes":60');
+    await pool.query(
+      `INSERT INTO attendance_adjustments(id,organization_id,schedule_id,created_by,reason,proposed_in,proposed_out,status,reviewed_by,reviewed_at)
+      VALUES($1,$2,$3,$4,'Correction','2026-03-10T01:30:00Z','2026-03-10T10:30:00Z','APPROVED',$5,now())`,
+      [randomUUID(), orgA, schedules.rows[0].id, employeeId, adminId],
+    );
+    const corrected = await admin.request(`${endpoint()}?startDate=2026-03-01&endDate=2026-03-31`);
+    expect(corrected.status, corrected.text).toBe(200);
+    expect(corrected.body.attendance.overtimeRate).toBe(0);
+    expect(Number(corrected.body.attendance.recordedMinutes)).toBe(540);
+    await pool.query(
+      `INSERT INTO work_schedule(id,organization_id,employee_id,shift_id,label,work_date,time_zone,starts_at,ends_at,early_check_in,late_grace,early_grace,attendance_kind)
+      SELECT gen_random_uuid(),organization_id,employee_id,shift_id,label,'2026-03-15',time_zone,'2026-03-15T01:30:00Z','2026-03-15T10:30:00Z',early_check_in,late_grace,early_grace,attendance_kind FROM work_schedule WHERE id=$1`,
+      [schedules.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO work_schedule(id,organization_id,employee_id,shift_id,label,work_date,time_zone,starts_at,ends_at,early_check_in,late_grace,early_grace,attendance_kind)
+      SELECT gen_random_uuid(),organization_id,employee_id,shift_id,label,'2026-03-16',time_zone,'2026-03-16T01:30:00Z','2026-03-16T10:30:00Z',early_check_in,late_grace,early_grace,attendance_kind FROM work_schedule WHERE id=$1`,
+      [schedules.rows[0].id],
+    );
+    const withLeave = await admin.request(`${endpoint()}?startDate=2026-03-01&endDate=2026-03-31`);
+    expect(withLeave.body.attendance).toMatchObject({
+      schedules: 3,
+      present: 1,
+      leave: 1,
+      absent: 1,
+      attendanceRate: 33.33,
+      absenteeismRate: 33.33,
+      leaveRate: 33.33,
+    });
+  });
+
+  it('returns filtered read-only audit headers from all sources without sensitive metadata', async () => {
+    const admin = new Client();
+    await admin.login('admin@acme.test');
+    const subject = randomUUID();
+    await pool.query(
+      `INSERT INTO auth_audit_events(id,event_type,actor_user_id,organization_id,metadata,created_at)
+      VALUES($1,'PAYROLL_APPROVED',$2,$3,$4::jsonb,'2026-01-15T12:00:00Z')`,
+      [randomUUID(), adminId, orgA, JSON.stringify({ periodId: subject, salary: 'TOP_SECRET' })],
+    );
+    await pool.query(
+      `INSERT INTO auth_audit_events(id,event_type,organization_id,metadata,created_at)
+      VALUES($1,'PAYROLL_APPROVED',$2,$3::jsonb,'2026-01-15T12:00:00Z')`,
+      [randomUUID(), orgB, JSON.stringify({ periodId: subject })],
+    );
+    await pool.query(
+      `INSERT INTO compliance_audit_logs(id,organization_id,action,target_type,target_id,performed_by,created_at)
+      VALUES($1,$2,'PAYROLL_APPROVED','PAYROLL',$3,$4,'2026-01-15T12:00:00Z')`,
+      [randomUUID(), orgA, subject, adminId],
+    );
+    await pool.query(
+      `INSERT INTO report_export_audit_logs(id,organization_id,report_code,format,exported_by,exported_at)
+      VALUES($1,$2,'RPT-PAY-01','CSV',$3,'2026-01-16T12:00:00Z')`,
+      [randomUUID(), orgA, adminId],
+    );
+    await pool.query(
+      `INSERT INTO auth_audit_events(id,event_type,organization_id,created_at)
+      VALUES($1,'MFA_FAILED',$2,'2025-12-31T18:00:00Z')`,
+      [randomUUID(), orgA],
+    );
+    const filtered = await admin.request(
+      `${endpoint()}/audit?${range}&actorId=${adminId}&action=PAYROLL_APPROVED&target=${subject}&limit=1`,
+    );
+    expect(filtered.status, filtered.text).toBe(200);
+    expect(filtered.body.total).toBe(2);
+    expect(filtered.body.items).toHaveLength(1);
+    expect(filtered.body.items[0]).not.toHaveProperty('metadata');
+    expect(JSON.stringify(filtered.body)).not.toContain('TOP_SECRET');
+    const all = await admin.request(`${endpoint()}/audit?${range}`);
+    expect(all.body.total).toBe(4);
+    expect(all.body.items.map((r: any) => r.source).sort()).toEqual([
+      'AUTH_HR_PAY',
+      'AUTH_HR_PAY',
+      'COMPLIANCE',
+      'REPORTING',
+    ]);
+    expect(
+      (await admin.request(`/api/organizations/${orgB}/reports/executive/audit?${range}`)).status,
+    ).toBe(403);
+    expect((await admin.request(`${endpoint()}/audit?${range}&actorId=invalid`)).status).toBe(400);
+    expect((await admin.request(`${endpoint()}/audit`, 'DELETE', {})).status).toBe(404);
+    const access = await pool.query(
+      "SELECT event_type FROM auth_audit_events WHERE organization_id=$1 AND event_type='EXECUTIVE_AUDIT_VIEWED'",
+      [orgA],
+    );
+    expect(access.rowCount).toBe(2);
   });
 });

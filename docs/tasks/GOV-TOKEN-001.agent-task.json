@@ -1,0 +1,15 @@
+{
+  "id": "GOV-TOKEN-001",
+  "summary": "Make agent governance token-lean and Claude Code compatible without weakening security, i18n or CI gates",
+  "allowed_scopes": ["governance"],
+  "risk": "high",
+  "security_review_required": true,
+  "acceptance": [
+    "AGENTS.md is compact, non-contradictory and keeps every non-negotiable rule",
+    "Claude Code read-only reviewer and security subagents exist with restricted tools and a cheaper model",
+    "Claude skills load on demand and reuse .codex skill bodies without duplication",
+    "Generated, coverage and dependency folders are denied from agent reads",
+    ".claude/ is a protected governance path",
+    "Policy unit tests pass"
+  ]
+}
